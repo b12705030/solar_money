@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>屋頂太陽能可行性評估</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="components-ui.jsx"></script>
+<script type="text/babel" src="screen-landing.jsx"></script>
+<script type="text/babel" src="screen-wizard.jsx"></script>
+<script type="text/babel" src="screen-results.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const STEPS = ["地址", "用電", "目標", "參數", "結果"];
+
+// Tweakable defaults
+const TWEAKS_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "theme": "forest",
+  "density": "comfortable",
+  "numericStyle": "standard"
+}/*EDITMODE-END*/;
+
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === "forest") {
+    root.style.setProperty("--green-900", "#1B4332");
+    root.style.setProperty("--green-700", "#2D6A4F");
+    root.style.setProperty("--green-500", "#40916C");
+    root.style.setProperty("--green-300", "#95D5B2");
+    root.style.setProperty("--green-200", "#B7E4C7");
+    root.style.setProperty("--green-100", "#D8F3DC");
+    root.style.setProperty("--green-50",  "#F0F9F2");
+  } else if (theme === "ocean") {
+    root.style.setProperty("--green-900", "#0B3954");
+    root.style.setProperty("--green-700", "#1D5A80");
+    root.style.setProperty("--green-500", "#3E89AE");
+    root.style.setProperty("--green-300", "#98C8DF");
+    root.style.setProperty("--green-200", "#BFDCEC");
+    root.style.setProperty("--green-100", "#DCEBF3");
+    root.style.setProperty("--green-50",  "#EFF6FA");
+  } else if (theme === "earth") {
+    root.style.setProperty("--green-900", "#3E2A14");
+    root.style.setProperty("--green-700", "#6B4423");
+    root.style.setProperty("--green-500", "#A67849");
+    root.style.setProperty("--green-300", "#D4B896");
+    root.style.setProperty("--green-200", "#E5CFAE");
+    root.style.setProperty("--green-100", "#F0E3CE");
+    root.style.setProperty("--green-50",  "#F8F1E3");
+  }
+}
+
+function applyDensity(d) {
+  const root = document.documentElement;
+  if (d === "compact") {
+    root.style.setProperty("--radius-lg", "16px");
+    root.style.setProperty("--radius-md", "12px");
+  } else {
+    root.style.setProperty("--radius-lg", "22px");
+    root.style.setProperty("--radius-md", "16px");
+  }
+}
+
+function App() {
+  const [step, setStep] = useState(() => {
+    const saved = localStorage.getItem("solar_step");
+    return saved ? +saved : -1; // -1 = landing
+  });
+  const [state, setState] = useState(() => {
+    const saved = localStorage.getItem("solar_state");
+    return saved ? JSON.parse(saved) : { monthlyKwh: 350 };
+  });
+  const [exiting, setExiting] = useState(null);
+  const [tweaks, setTweaks] = useState(TWEAKS_DEFAULTS);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+
+  useEffect(() => { localStorage.setItem("solar_step", step); }, [step]);
+  useEffect(() => { localStorage.setItem("solar_state", JSON.stringify(state)); }, [state]);
+
+  // Tweaks integration
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.data) return;
+      if (e.data.type === "__activate_edit_mode") setTweaksOpen(true);
+      else if (e.data.type === "__deactivate_edit_mode") setTweaksOpen(false);
+    };
+    window.addEventListener("message", handler);
+    window.parent.postMessage({ type: "__edit_mode_available" }, "*");
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  useEffect(() => {
+    applyTheme(tweaks.theme);
+    applyDensity(tweaks.density);
+  }, [tweaks]);
+
+  const updateTweak = (k, v) => {
+    const next = { ...tweaks, [k]: v };
+    setTweaks(next);
+    window.parent.postMessage({ type: "__edit_mode_set_keys", edits: { [k]: v } }, "*");
+  };
+
+  const update = (patch) => setState(s => ({ ...s, ...patch }));
+
+  const go = (next) => {
+    setExiting(step);
+    setTimeout(() => { setStep(next); setExiting(null); }, 50);
+  };
+
+  const canAdvance = () => {
+    if (step === 0) return !!state.address;
+    if (step === 1) return state.monthlyKwh > 0;
+    if (step === 2) return !!state.goal;
+    if (step === 3) return true;
+    return true;
+  };
+
+  const reset = () => {
+    setState({ monthlyKwh: 350 });
+    setStep(-1);
+  };
+
+  // Landing (step = -1)
+  if (step === -1) {
+    return (
+      <div className="app">
+        <TopBar />
+        <main style={{ maxWidth: 1200, width: "100%", margin: "0 auto", padding: "0 40px", flex: 1 }}>
+          <Landing onStart={() => go(0)} />
+        </main>
+        <Footer />
+        {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+      </div>
+    );
+  }
+
+  // Results (step = 4)
+  if (step === 4) {
+    return (
+      <div className="app">
+        <TopBar onHome={reset} />
+        <ProgressBar step={4} steps={STEPS} />
+        <main style={{ maxWidth: 1200, width: "100%", margin: "0 auto", padding: "0 40px", flex: 1 }}>
+          <div className="wizard-viewport" style={{ padding: "24px 0" }}>
+            <div className="screen active">
+              <Results state={state} onRestart={reset} />
+            </div>
+          </div>
+        </main>
+        {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+      </div>
+    );
+  }
+
+  // Wizard steps 0–3
+  return (
+    <div className="app">
+      <TopBar onHome={reset} />
+      <ProgressBar step={step} steps={STEPS} />
+      <main style={{ maxWidth: 1200, width: "100%", margin: "0 auto", padding: "0 40px", flex: 1, position: "relative", overflow: "hidden" }}>
+        <div style={{ padding: "30px 0 40px", position: "relative", minHeight: 520 }}>
+          {[0,1,2,3].map(i => (
+            <div key={i} className={`screen ${i === step && exiting !== step ? "active" : ""} ${exiting === i ? "exit-left" : ""}`}>
+              {i === 0 && <StepAddress state={state} update={update} />}
+              {i === 1 && <StepUsage state={state} update={update} />}
+              {i === 2 && <StepGoal state={state} update={update} />}
+              {i === 3 && <StepParams state={state} update={update} />}
+            </div>
+          ))}
+        </div>
+      </main>
+
+      <div className="wizard-footer">
+        <button
+          className="btn-nav"
+          onClick={() => step === 0 ? go(-1) : go(step - 1)}
+        >
+          <ChevronIcon dir="left" /> 上一步
+        </button>
+        <span className="step-hint">
+          Step <b className="num" style={{ color: "var(--green-700)" }}>{step + 1}</b> / 4 · {STEPS[step]}
+        </span>
+        <button
+          className="btn btn-primary"
+          onClick={() => go(step + 1)}
+          disabled={!canAdvance()}
+          style={{ opacity: canAdvance() ? 1 : 0.5, pointerEvents: canAdvance() ? "auto" : "none" }}
+        >
+          {step === 3 ? "看結果" : "下一步"}
+          <ChevronIcon dir="right" size={14} />
+        </button>
+      </div>
+
+      {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+    </div>
+  );
+}
+
+function TopBar({ onHome }) {
+  return (
+    <div className="topbar">
+      <button className="brand" onClick={onHome}>
+        <div className="brand-mark" />
+        <div className="brand-meta">
+          <span>屋頂日光</span>
+          <span className="sub">台灣屋頂太陽能自助評估</span>
+        </div>
+      </button>
+      <div className="topbar-actions">
+        <span>資料來源：中央氣象署 · 台電 · 能源署</span>
+        <span className="pill">Beta</span>
+      </div>
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <footer style={{
+      borderTop: "1px solid var(--ink-100)",
+      padding: "24px 40px",
+      display: "flex", justifyContent: "space-between",
+      fontSize: 12, color: "var(--ink-500)",
+      maxWidth: 1400, margin: "0 auto", width: "100%",
+    }}>
+      <div>© 2026 屋頂日光 · 評估結果僅供參考，實際發電量以廠商實勘為準</div>
+      <div style={{ display: "flex", gap: 20 }}>
+        <a href="#" style={{ color: "inherit" }}>關於</a>
+        <a href="#" style={{ color: "inherit" }}>常見問題</a>
+        <a href="#" style={{ color: "inherit" }}>資料授權</a>
+      </div>
+    </footer>
+  );
+}
+
+function TweaksPanel({ tweaks, update }) {
+  return (
+    <div className="tweaks-panel">
+      <h4>
+        <span>Tweaks</span>
+        <span style={{ fontSize: 10, color: "var(--ink-400)", fontWeight: 400 }}>設計變體</span>
+      </h4>
+
+      <div className="tweaks-row">
+        <label>主題色</label>
+        <div className="swatches">
+          {[
+            { id: "forest", colors: ["#2D6A4F", "#B7E4C7"] },
+            { id: "ocean",  colors: ["#1D5A80", "#BFDCEC"] },
+            { id: "earth",  colors: ["#6B4423", "#E5CFAE"] },
+          ].map(t => (
+            <div key={t.id}
+              className={`swatch ${tweaks.theme === t.id ? "active" : ""}`}
+              onClick={() => update("theme", t.id)}
+              style={{ background: `linear-gradient(135deg, ${t.colors[0]} 50%, ${t.colors[1]} 50%)` }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="tweaks-row">
+        <label>圓角風格</label>
+        <div style={{ display: "flex", gap: 4 }}>
+          {["comfortable", "compact"].map(d => (
+            <button key={d}
+              onClick={() => update("density", d)}
+              style={{
+                padding: "4px 10px", fontSize: 11,
+                borderRadius: 6,
+                border: "1px solid",
+                borderColor: tweaks.density === d ? "var(--green-700)" : "var(--ink-200)",
+                background: tweaks.density === d ? "var(--green-50)" : "var(--white)",
+                color: tweaks.density === d ? "var(--green-700)" : "var(--ink-500)",
+              }}>
+              {d === "comfortable" ? "柔和" : "俐落"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--ink-100)" }}>
+        設定自動儲存。切換主題可即時預覽在整個 wizard 的視覺效果。
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
