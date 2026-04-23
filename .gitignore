@@ -1,0 +1,12 @@
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Misc
+.env*
+*.log
+.DS_Store
+solar-app.zip
