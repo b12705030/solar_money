@@ -14,12 +14,12 @@ function HeroVisual() {
         boxShadow: '0 0 80px rgba(232,165,60,0.4)',
       }} />
       {/* Sun rays */}
-      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} viewBox="0 0 400 500">
+      <svg suppressHydrationWarning style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} viewBox="0 0 400 500">
         {Array.from({ length: 12 }).map((_, i) => {
           const angle = (i * 30) * Math.PI / 180;
           const cx = 320, cy = 140;
           return (
-            <line key={i}
+            <line suppressHydrationWarning key={i}
               x1={cx + Math.cos(angle) * 60} y1={cy + Math.sin(angle) * 60}
               x2={cx + Math.cos(angle) * 80} y2={cy + Math.sin(angle) * 80}
               stroke="#E8A53C" strokeWidth="2" strokeLinecap="round" opacity="0.5"

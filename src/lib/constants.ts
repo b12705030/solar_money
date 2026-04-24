@@ -55,17 +55,39 @@ export const GOALS = [
 ] as const;
 
 export const SUBSIDIES: Record<string, { amount: number; per: string; source: string }> = {
-  '台北市': { amount: 15000, per: 'kW', source: '台北市政府產發局' },
-  '新北市': { amount: 12000, per: 'kW', source: '新北市綠能推動計畫' },
-  '台中市': { amount: 10000, per: 'kW', source: '台中市環保局' },
-  '高雄市': { amount: 18000, per: 'kW', source: '高雄市經發局' },
+  // 六都
+  '台北市': { amount: 15000, per: 'kW', source: '台北市政府產業發展局' },
+  '新北市': { amount: 12000, per: 'kW', source: '新北市政府環境保護局' },
+  '桃園市': { amount: 10000, per: 'kW', source: '桃園市政府環境保護局' },
+  '台中市': { amount: 10000, per: 'kW', source: '台中市政府環境保護局' },
+  '台南市': { amount: 15000, per: 'kW', source: '台南市政府經濟發展局' },
+  '高雄市': { amount: 18000, per: 'kW', source: '高雄市政府經濟發展局' },
+  // 省轄市
+  '基隆市': { amount: 10000, per: 'kW', source: '基隆市政府產業發展處' },
+  '新竹市': { amount: 10000, per: 'kW', source: '新竹市政府環境保護處' },
+  '嘉義市': { amount: 12000, per: 'kW', source: '嘉義市政府環境保護局' },
+  // 縣
+  '新竹縣': { amount: 8000,  per: 'kW', source: '新竹縣政府環境保護局' },
+  '苗栗縣': { amount: 8000,  per: 'kW', source: '苗栗縣政府建設及工程處' },
+  '彰化縣': { amount: 10000, per: 'kW', source: '彰化縣政府環境保護局' },
+  '南投縣': { amount: 8000,  per: 'kW', source: '南投縣政府建設處' },
+  '雲林縣': { amount: 10000, per: 'kW', source: '雲林縣政府工務處' },
+  '嘉義縣': { amount: 10000, per: 'kW', source: '嘉義縣政府環境保護局' },
+  '屏東縣': { amount: 12000, per: 'kW', source: '屏東縣政府環境保護局' },
+  '宜蘭縣': { amount: 8000,  per: 'kW', source: '宜蘭縣政府建設處' },
+  '花蓮縣': { amount: 8000,  per: 'kW', source: '花蓮縣政府建設處' },
+  '台東縣': { amount: 8000,  per: 'kW', source: '台東縣政府建設處' },
+  // 離島
+  '澎湖縣': { amount: 15000, per: 'kW', source: '澎湖縣政府建設處' },
+  '金門縣': { amount: 15000, per: 'kW', source: '金門縣政府建設局' },
+  '連江縣': { amount: 15000, per: 'kW', source: '連江縣政府建設局' },
 };
 
 export const SUGGESTIONS: AddressOption[] = [
-  { label: '台北市信義區松仁路 100 號', meta: '住宅大樓 · 地上12層', area: 78,  type: '公寓大廈', floors: 12, region: '北部' as Region },
-  { label: '新北市板橋區文化路一段 50 號', meta: '透天厝 · 地上4層',   area: 42,  type: '透天厝',   floors: 4,  region: '北部' as Region },
-  { label: '台中市西屯區市政路 200 號',  meta: '住宅大樓 · 地上15層', area: 92,  type: '公寓大廈', floors: 15, region: '中部' as Region },
-  { label: '高雄市前鎮區中山二路 80 號', meta: '透天厝 · 地上3層',    area: 38,  type: '透天厝',   floors: 3,  region: '南部' as Region },
+  { label: '台北市信義區松仁路 100 號', meta: '住宅大樓 · 地上12層', area: 78,  type: '公寓大廈', floors: 12, region: '北部' as Region, lat: 25.0340, lng: 121.5645 },
+  { label: '新北市板橋區文化路一段 50 號', meta: '透天厝 · 地上4層',   area: 42,  type: '透天厝',   floors: 4,  region: '北部' as Region, lat: 25.0143, lng: 121.4627 },
+  { label: '台中市西屯區市政路 200 號',  meta: '住宅大樓 · 地上15層', area: 92,  type: '公寓大廈', floors: 15, region: '中部' as Region, lat: 24.1634, lng: 120.6497 },
+  { label: '高雄市前鎮區中山二路 80 號', meta: '透天厝 · 地上3層',    area: 38,  type: '透天厝',   floors: 3,  region: '南部' as Region, lat: 22.6089, lng: 120.3019 },
 ];
 
 export const TW_IRRADIANCE: Record<Region, number[]> = {

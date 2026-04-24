@@ -154,7 +154,7 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
               </span>
               <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>kWh</span>
             </div>
-            <div className="body-sm" style={{ marginTop: 8 }}>相當於 {Math.round(r.annualKwh / r.monthlyKwh.reduce((a, b) => a + b, 0) * 12)} 個月用電</div>
+            <div className="body-sm" style={{ marginTop: 8 }}>相當於 {(r.annualKwh / (state.monthlyKwh || 350)).toFixed(1)} 個月用電量</div>
           </div>
 
           <div style={{ borderLeft: '1px solid var(--ink-100)', paddingLeft: 24 }}>
@@ -264,7 +264,9 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
                   );
                 })}
               </div>
-              <div style={{ marginTop: 14, fontSize: 12, color: 'var(--green-700)', fontWeight: 500 }}>↑ 比台灣平均高 8.7%</div>
+              <div style={{ marginTop: 14, fontSize: 12, color: 'var(--green-700)', fontWeight: 500 }}>
+                ↑ 比台灣平均高 {(((r.annualKwh / Math.round(r.annualKwh * 0.92)) - 1) * 100).toFixed(1)}%
+              </div>
             </div>
           </div>
         </div>

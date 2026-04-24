@@ -23,27 +23,7 @@ export default function App() {
   const [exiting, setExiting] = useState<number | null>(null);
   const [tweaks, setTweaks] = useState<TweaksState>(TWEAKS_DEFAULTS);
   const [tweaksOpen, setTweaksOpen] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
 
-  // Restore from localStorage after hydration
-  useEffect(() => {
-    const savedStep = localStorage.getItem('solar_step');
-    const savedState = localStorage.getItem('solar_state');
-    if (savedStep) setStep(+savedStep);
-    if (savedState) {
-      try { setState(JSON.parse(savedState)); } catch { /* ignore */ }
-    }
-    setHydrated(true);
-  }, []);
-
-  // Persist step and state
-  useEffect(() => {
-    if (hydrated) localStorage.setItem('solar_step', String(step));
-  }, [step, hydrated]);
-
-  useEffect(() => {
-    if (hydrated) localStorage.setItem('solar_state', JSON.stringify(state));
-  }, [state, hydrated]);
 
   // Apply theme/density CSS variables
   useEffect(() => { applyTheme(tweaks.theme); }, [tweaks.theme]);
@@ -86,13 +66,15 @@ export default function App() {
     setStep(-1);
   };
 
+  const start = () => { setState(DEFAULT_STATE); go(0); };
+
   // Landing
   if (step === -1) {
     return (
       <div className="app">
         <TopBar />
         <main style={{ maxWidth: 1200, width: '100%', margin: '0 auto', padding: '0 40px', flex: 1 }}>
-          <Landing onStart={() => go(0)} />
+          <Landing onStart={start} />
         </main>
         <Footer />
         {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}

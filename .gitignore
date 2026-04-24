@@ -5,6 +5,11 @@ out/
 # Dependencies
 node_modules/
 
+# Python
+.venv/
+__pycache__/
+*.pyc
+
 # Misc
 .env*
 *.log

@@ -1,5 +1,6 @@
 'use client';
 import { Badge, SunIcon } from '@/components/ui';
+import { Slider } from '@/components/Slider';
 import type { SolarState } from '@/lib/types';
 
 function tariffLabel(kwh: number): string {
@@ -53,11 +54,7 @@ export default function StepUsage({
             <span style={{ fontSize: 22, color: 'var(--ink-500)', fontWeight: 500 }}>度 / 月</span>
           </div>
 
-          <input
-            type="range" min="100" max="1200" value={kwh}
-            onChange={e => update({ monthlyKwh: +e.target.value })}
-            style={{ width: '100%' }}
-          />
+          <Slider min={100} max={1200} value={kwh} onChange={v => update({ monthlyKwh: v })} />
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
             <div style={{ textAlign: 'left' }}>
               <div className="num" style={{ fontSize: 13, fontWeight: 600 }}>100</div>

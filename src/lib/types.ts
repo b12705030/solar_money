@@ -7,6 +7,8 @@ export interface AddressOption {
   type: string;
   floors: number;
   region: Region;
+  lat?: number;
+  lng?: number;
 }
 
 export interface SolarState {

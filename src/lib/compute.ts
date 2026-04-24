@@ -58,11 +58,35 @@ export function computeResults(state: SolarState): ComputedResults {
   };
 }
 
+const COUNTY_PATTERNS: [RegExp, string][] = [
+  [/新北/,       '新北市'],
+  [/台北|臺北/,  '台北市'],
+  [/桃園/,       '桃園市'],
+  [/台中|臺中/,  '台中市'],
+  [/台南|臺南/,  '台南市'],
+  [/高雄/,       '高雄市'],
+  [/基隆/,       '基隆市'],
+  [/新竹市/,     '新竹市'],
+  [/嘉義市/,     '嘉義市'],
+  [/新竹縣/,     '新竹縣'],
+  [/苗栗/,       '苗栗縣'],
+  [/彰化/,       '彰化縣'],
+  [/南投/,       '南投縣'],
+  [/雲林/,       '雲林縣'],
+  [/嘉義縣/,     '嘉義縣'],
+  [/屏東/,       '屏東縣'],
+  [/宜蘭/,       '宜蘭縣'],
+  [/花蓮/,       '花蓮縣'],
+  [/台東|臺東/,  '台東縣'],
+  [/澎湖/,       '澎湖縣'],
+  [/金門/,       '金門縣'],
+  [/連江|馬祖/,  '連江縣'],
+];
+
 export function guessCounty(label?: string): string {
   if (!label) return '台北市';
-  if (label.includes('台北')) return '台北市';
-  if (label.includes('新北')) return '新北市';
-  if (label.includes('台中')) return '台中市';
-  if (label.includes('高雄')) return '高雄市';
+  for (const [re, county] of COUNTY_PATTERNS) {
+    if (re.test(label)) return county;
+  }
   return '台北市';
 }

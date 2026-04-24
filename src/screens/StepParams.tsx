@@ -1,6 +1,7 @@
 'use client';
 import { useEffect } from 'react';
 import { Info } from '@/components/ui';
+import { Slider } from '@/components/Slider';
 import { SUBSIDIES } from '@/lib/constants';
 import { guessCounty } from '@/lib/compute';
 import type { SolarState } from '@/lib/types';
@@ -74,11 +75,7 @@ export default function StepParams({
                 <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 4 }}>/ kW</span>
               </div>
             </div>
-            <input
-              type="range" min="40000" max="75000" step="1000" value={costPerKw}
-              onChange={e => update({ costPerKw: +e.target.value })}
-              style={{ width: '100%' }}
-            />
+            <Slider min={40000} max={75000} step={1000} value={costPerKw} onChange={v => update({ costPerKw: v })} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
               <span className="caption">40,000（競爭價）</span>
               <span className="caption">75,000（高規）</span>

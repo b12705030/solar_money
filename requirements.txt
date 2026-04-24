@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pvlib
+shapely
+numpy
+pandas
+pyproj
+python-dotenv
+httpx
