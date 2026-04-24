@@ -7,3 +7,4 @@ pandas
 pyproj
 python-dotenv
 httpx
+asyncpg

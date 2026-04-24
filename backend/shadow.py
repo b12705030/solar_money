@@ -1,8 +1,7 @@
 """Shadow computation using pvlib + shapely, ported from ntu-cool."""
 from __future__ import annotations
 
-import threading
-from datetime import date, datetime, timedelta
+from datetime import date
 
 import httpx
 import numpy as np
@@ -11,6 +10,9 @@ import pvlib
 from pyproj import Transformer
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
+
+from .db import get_osm_cache, set_osm_cache
 
 OVERPASS_ENDPOINTS = [
     'https://overpass-api.de/api/interpreter',
@@ -18,28 +20,9 @@ OVERPASS_ENDPOINTS = [
     'https://overpass.kumi.systems/api/interpreter',
 ]
 
-# ─── Buildings cache (avoids re-fetching Overpass on every slider tick) ───────
-# Key: rounded bbox string  Value: (elements, fetched_at)
-_bldg_cache: dict[str, tuple[list[dict], datetime]] = {}
-_bldg_lock = threading.Lock()
-_BLDG_TTL = timedelta(hours=1)
-
 
 def _bbox_key(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> str:
     return f'{min_lon:.2f},{min_lat:.2f},{max_lon:.2f},{max_lat:.2f}'
-
-
-def _cache_get(key: str) -> list[dict] | None:
-    with _bldg_lock:
-        entry = _bldg_cache.get(key)
-        if entry and datetime.now() - entry[1] < _BLDG_TTL:
-            return entry[0]
-        return None
-
-
-def _cache_set(key: str, elements: list[dict]) -> None:
-    with _bldg_lock:
-        _bldg_cache[key] = (elements, datetime.now())
 
 
 # ─── Solar position ────────────────────────────────────────────────────────────
@@ -98,59 +81,130 @@ def project_shadow(
 
 # ─── Shadow from frontend-supplied building features ─────────────────────────
 
+def _project_buildings(buildings: list[dict], to_3857) -> list[tuple]:
+    """Project footprints to EPSG:3857. Returns [(Polygon|None, height), ...]."""
+    result = []
+    for bldg in buildings:
+        try:
+            height = float(bldg.get('height') or 10)
+            coords = [to_3857.transform(lng, lt) for lng, lt in bldg['footprint']]
+            if len(coords) < 3:
+                result.append((None, height))
+                continue
+            poly = Polygon(coords)
+            result.append((poly.buffer(0) if not poly.is_valid else poly, height))
+        except Exception:
+            result.append((None, float(bldg.get('height') or 10)))
+    return result
+
+
+def _shadows_for_sun(
+    bldg_polys: list[tuple],   # [(Polygon|None, height), ...]
+    azimuth: float,
+    altitude: float,
+    to_4326,
+) -> tuple[list, list]:
+    """Return (ground_features, roof_shadow_features) for a given sun position."""
+    angle = np.radians(azimuth + 180)
+    max_shadow_len = 500.0 * (altitude / 10.0) * 0.5 if altitude < 10 else 500.0
+
+    # ── Phase 1: per-building shadow polygons ─────────────────────────────────
+    shadow_data: list[tuple] = []   # (bldg_poly, shadow_poly | None, height)
+    features = []
+
+    for bldg_poly, height in bldg_polys:
+        if bldg_poly is None:
+            shadow_data.append((None, None, height))
+            continue
+        try:
+            shadow_len = min(height / np.tan(np.radians(altitude)), max_shadow_len)
+            dx, dy = shadow_len * np.sin(angle), shadow_len * np.cos(angle)
+            tip = Polygon([(x + dx, y + dy) for x, y in bldg_poly.exterior.coords])
+            sp = unary_union([bldg_poly, tip]).convex_hull
+            shadow_data.append((bldg_poly, sp if not sp.is_empty else None, height))
+            if not sp.is_empty:
+                coords_out = [list(to_4326.transform(x, y)) for x, y in sp.exterior.coords]
+                features.append({'type': 'Feature',
+                                  'geometry': {'type': 'Polygon', 'coordinates': [coords_out]},
+                                  'properties': {}})
+        except Exception:
+            shadow_data.append((bldg_poly, None, height))
+
+    # ── Phase 2: roof intersections via STRtree (O(n log n)) ─────────────────
+    roof_features = []
+    valid = [(i, bp, sp, h) for i, (bp, sp, h) in enumerate(shadow_data)
+             if bp is not None and sp is not None]
+
+    if len(valid) >= 2:
+        tree = STRtree([sp for _, _, sp, _ in valid])
+        for i, (bp_i, _, h_i) in enumerate(shadow_data):
+            if bp_i is None:
+                continue
+            overlap = None
+            for k in tree.query(bp_i):
+                orig, bp_j, sp_j, h_j = valid[k]
+                if orig == i or h_j <= h_i:
+                    continue
+                try:
+                    inter = bp_i.intersection(sp_j.difference(bp_j))
+                    if not inter.is_empty:
+                        overlap = inter if overlap is None else overlap.union(inter)
+                except Exception:
+                    continue
+            if overlap is not None and not overlap.is_empty:
+                geoms = list(overlap.geoms) if overlap.geom_type.startswith('Multi') else [overlap]
+                for g in geoms:
+                    if g.geom_type == 'Polygon' and not g.is_empty:
+                        try:
+                            c = [list(to_4326.transform(x, y)) for x, y in g.exterior.coords]
+                            roof_features.append({'type': 'Feature',
+                                                   'geometry': {'type': 'Polygon', 'coordinates': [c]},
+                                                   'properties': {'height': h_i}})
+                        except Exception:
+                            continue
+
+    return features, roof_features
+
+
 def compute_shadows_from_features(
-    buildings: list[dict],   # [{footprint: [[lng,lat],...], height: float}]
+    buildings: list[dict],
     center_lat: float,
     center_lon: float,
     local_hour: int,
 ) -> dict:
-    """
-    Compute shadows for buildings supplied by the frontend (from queryRenderedFeatures).
-    Using frontend-sourced geometry ensures 100% consistency with Mapbox 3D buildings.
-    """
     if not buildings:
-        return {'type': 'FeatureCollection', 'features': []}
-
+        return {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
     azimuth, altitude = compute_solar_position(center_lat, center_lon, _make_timestamp(local_hour))
     if altitude <= 0:
-        return {'type': 'FeatureCollection', 'features': []}
-
+        return {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
     to_3857 = Transformer.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True)
     to_4326 = Transformer.from_crs('EPSG:3857', 'EPSG:4326', always_xy=True)
+    bldg_polys = _project_buildings(buildings, to_3857)
+    features, roof_features = _shadows_for_sun(bldg_polys, azimuth, altitude, to_4326)
+    return {'type': 'FeatureCollection', 'features': features, 'roofShadows': roof_features}
 
-    angle = np.radians(azimuth + 180)
-    max_shadow_len = 500.0 * (altitude / 10.0) * 0.5 if altitude < 10 else 500.0
 
-    features = []
-    for bldg in buildings:
-        try:
-            footprint = bldg['footprint']
-            height = float(bldg.get('height') or 10)
-            shadow_len = min(height / np.tan(np.radians(altitude)), max_shadow_len)
-            dx, dy = shadow_len * np.sin(angle), shadow_len * np.cos(angle)
-
-            coords_3857 = [to_3857.transform(lng, lt) for lng, lt in footprint]
-            if len(coords_3857) < 3:
-                continue
-            building = Polygon(coords_3857)
-            if not building.is_valid:
-                building = building.buffer(0)
-
-            shadow_tip = Polygon([(x + dx, y + dy) for x, y in building.exterior.coords])
-            shadow_poly = unary_union([building, shadow_tip]).convex_hull
-            if shadow_poly.is_empty:
-                continue
-
-            coords_out = [list(to_4326.transform(x, y)) for x, y in shadow_poly.exterior.coords]
-            features.append({
-                'type': 'Feature',
-                'geometry': {'type': 'Polygon', 'coordinates': [coords_out]},
-                'properties': {},
-            })
-        except Exception:
+def precompute_shadows_all_hours(
+    buildings: list[dict],
+    center_lat: float,
+    center_lon: float,
+) -> dict:
+    """Compute shadows for hours 6–19, projecting building footprints only once."""
+    to_3857 = Transformer.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True)
+    to_4326 = Transformer.from_crs('EPSG:3857', 'EPSG:4326', always_xy=True)
+    empty = {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
+    if not buildings:
+        return {str(h): empty for h in range(6, 20)}
+    bldg_polys = _project_buildings(buildings, to_3857)
+    result = {}
+    for hour in range(6, 20):
+        az, alt = compute_solar_position(center_lat, center_lon, _make_timestamp(hour))
+        if alt <= 0:
+            result[str(hour)] = empty
             continue
-
-    return {'type': 'FeatureCollection', 'features': features}
+        features, roof_features = _shadows_for_sun(bldg_polys, az, alt, to_4326)
+        result[str(hour)] = {'type': 'FeatureCollection', 'features': features, 'roofShadows': roof_features}
+    return result
 
 
 # ─── All-buildings shadow (used by /api/shadows) ──────────────────────────────
@@ -158,9 +212,10 @@ def compute_shadows_from_features(
 async def get_buildings(
     min_lon: float, min_lat: float, max_lon: float, max_lat: float,
 ) -> list[dict]:
-    """Return OSM building ways for the bbox, using a 1-hour in-memory cache."""
+    """Return OSM building ways for the bbox. DB cache (7 days) → Overpass fallback."""
     key = _bbox_key(min_lon, min_lat, max_lon, max_lat)
-    cached = _cache_get(key)
+
+    cached = await get_osm_cache(key)
     if cached is not None:
         return cached
 
@@ -176,7 +231,7 @@ async def get_buildings(
                 if res.status_code == 200:
                     elements = res.json().get('elements', [])
                     if elements:
-                        _cache_set(key, elements)
+                        await set_osm_cache(key, elements)
                     return elements
             except Exception:
                 continue

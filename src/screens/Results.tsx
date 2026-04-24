@@ -1,8 +1,20 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Info } from '@/components/ui';
 import { computeResults } from '@/lib/compute';
 import type { SolarState, ComputedResults } from '@/lib/types';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+
+function getUserId(): string {
+  const key = 'solar_user_id';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
 
 const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
@@ -127,6 +139,36 @@ function BreakdownRow({ label, value, color, max }: { label: string; value: numb
 export default function Results({ state, onRestart }: { state: SolarState; onRestart: () => void }) {
   const r: ComputedResults = useMemo(() => computeResults(state), [state]);
   const [tab, setTab] = useState<'generation' | 'investment'>('generation');
+
+  useEffect(() => {
+    const payload = {
+      user_id: getUserId(),
+      address: state.address?.label ?? null,
+      lat: state.address?.lat ?? null,
+      lng: state.address?.lng ?? null,
+      county: state.county ?? null,
+      roof_area_ping: state.roofArea ?? null,
+      monthly_kwh: state.monthlyKwh,
+      goal: state.goal ?? null,
+      capacity_kw: state.capacity ?? null,
+      total_cost: state.totalCost ?? null,
+      subsidy_amount: state.subsidyAmount ?? null,
+      out_of_pocket: state.outOfPocket ?? null,
+      annual_kwh: r.annualKwh,
+      self_sufficiency: r.selfSufficiency,
+      payback_years: r.paybackYears,
+      total_20yr: r.total20yr,
+      annual_revenue: r.annualRevenue,
+      best_angle: r.bestAngle,
+      result: { monthlyKwh: r.monthlyKwh },
+    };
+    fetch(`${API_URL}/api/assessments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const goalLabel = state.goal === 'summer' ? '夏季發電量最高' : state.goal === 'winter' ? '冬季發電量最高' : '全年總發電量最高';
 

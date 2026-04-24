@@ -1,6 +1,7 @@
 # Next.js
 .next/
 out/
+tsconfig.tsbuildinfo
 
 # Dependencies
 node_modules/
@@ -10,8 +11,11 @@ node_modules/
 __pycache__/
 *.pyc
 
+# Environment variables (secrets — commit the .example versions instead)
+.env.local
+backend/.env
+
 # Misc
-.env*
 *.log
 .DS_Store
 solar-app.zip
