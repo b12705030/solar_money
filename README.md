@@ -187,11 +187,11 @@ cp backend/.env.example backend/.env
 # 填入 PostgreSQL 連線字串與 JWT secret
 ```
 
-| 變數 | 說明 |
-|------|------|
-| `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` |
-| `JWT_SECRET` | 任意隨機字串（建議 `openssl rand -hex 32`）；未設定時後端自動產生臨時 key（重啟後 token 失效） |
-| `ADMIN_SECRET` | 管理員 API 可使用的開發測試 secret；未設定時開發預設為 `dev-admin-secret` |
+| 變數 | 說明 | 本地未設定時的行為 |
+|------|------|-------------------|
+| `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` | 必填，無預設 |
+| `JWT_SECRET` | 任意隨機字串（建議 `openssl rand -hex 32`） | 自動產生臨時 key，重啟後 token 失效（本地開發可接受） |
+| `ADMIN_SECRET` | 管理員 API secret | 預設 `dev-admin-secret`（本地開發可接受，部署前必改） |
 
 ### 5. 啟動服務
 
@@ -393,6 +393,48 @@ moveend + 600ms debounce
 | 廠商評價 | `.star-rating`, `.star-btn`, `.star-btn--active` |
 | HistoryDrawer tabs | `.drawer-tabs`, `.drawer-tab`, `.drawer-tab--active`, `.drawer-tab-badge` |
 | Print | `@media print`（隱藏 `.no-print` / `.screen-only`，顯示 `.print-report`） |
+
+---
+
+## 部署
+
+前端（Next.js）和後端（FastAPI）分開部署，資料庫使用現有的 Neon serverless PostgreSQL。
+
+### 前端 — Vercel
+
+1. 到 [vercel.com](https://vercel.com) 連結 GitHub repo，框架自動偵測為 Next.js
+2. 在 Vercel 後台 → Settings → Environment Variables 填入：
+
+| 變數 | 說明 |
+|------|------|
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | Mapbox token |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Places API key（需開啟 Places API New） |
+| `NEXT_PUBLIC_API_URL` | 後端完整 URL，例如 `https://your-backend.railway.app` |
+
+### 後端 — Railway
+
+1. 到 [railway.app](https://railway.app) 新建專案，從 GitHub 部署
+2. Settings → Start Command：`uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
+3. 在 Railway 後台 Variables 填入：
+
+| 變數 | 說明 | 本地未設定時的行為 |
+|------|------|-------------------|
+| `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` | 必填，無預設 |
+| `JWT_SECRET` | `openssl rand -hex 32` 產生的隨機字串 | **自動產生臨時 key，重啟後所有用戶 token 失效** |
+| `ADMIN_SECRET` | 自訂管理員 API secret | **預設為 `dev-admin-secret`，生產環境必須改掉** |
+
+> **注意：** `JWT_SECRET` 和 `ADMIN_SECRET` 本地開發可不設，但部署前務必填入。前者未設定每次重啟都會讓用戶登出；後者預設值是公開資訊，任何人都能呼叫管理員 API。
+
+4. CORS：後端目前 `allow_origins=['*']`，正式上線建議改為只允許 Vercel domain：
+   ```python
+   allow_origins=['https://your-app.vercel.app', 'http://localhost:3000']
+   ```
+
+### 注意事項
+
+- **base64 圖片儲存**：廠商 Logo 和作品集施工照都是以 base64 DataURL 存在 PostgreSQL TEXT 欄位，小張圖沒問題，但大量高解析照片會讓 DB 快速膨脹。規模化前建議改用 [Cloudinary](https://cloudinary.com) 免費方案（每月 25 GB）。
+- **Neon cold start**：Neon serverless 免費方案有連線數限制，後端已用 asyncpg connection pool 處理，應對短暫高峰沒問題。
+- **Railway free tier**：每月 $5 額度，睡眠機制會讓第一個請求慢幾秒；如需避免可升級 Hobby 方案（$5/月）。
 
 ---
 
