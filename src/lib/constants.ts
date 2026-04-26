@@ -54,33 +54,39 @@ export const GOALS = [
   { id: 'roi',     title: '投資回收最快',     desc: '最快看到錢回來',                   icon: 'roi' },
 ] as const;
 
-export const SUBSIDIES: Record<string, { amount: number; per: string; source: string }> = {
+export const PANEL_GRADES = [
+  { id: 'entry',    label: '入門款', costPerKw: 40000, efficiency: '18–19%', desc: '基礎效率，適合預算有限的屋主' },
+  { id: 'standard', label: '標準款', costPerKw: 55000, efficiency: '20–21%', desc: '市場主流，CP 值最高', recommended: true },
+  { id: 'premium',  label: '高效款', costPerKw: 70000, efficiency: '22–23%', desc: '高效模組，同樣屋頂裝更多電' },
+] as const;
+
+export const SUBSIDIES: Record<string, { amount: number; per: string; source: string; updatedAt: string }> = {
   // 六都
-  '台北市': { amount: 15000, per: 'kW', source: '台北市政府產業發展局' },
-  '新北市': { amount: 12000, per: 'kW', source: '新北市政府環境保護局' },
-  '桃園市': { amount: 10000, per: 'kW', source: '桃園市政府環境保護局' },
-  '台中市': { amount: 10000, per: 'kW', source: '台中市政府環境保護局' },
-  '台南市': { amount: 15000, per: 'kW', source: '台南市政府經濟發展局' },
-  '高雄市': { amount: 18000, per: 'kW', source: '高雄市政府經濟發展局' },
+  '台北市': { amount: 15000, per: 'kW', source: '台北市政府產業發展局', updatedAt: '2025-01' },
+  '新北市': { amount: 12000, per: 'kW', source: '新北市政府環境保護局', updatedAt: '2025-01' },
+  '桃園市': { amount: 10000, per: 'kW', source: '桃園市政府環境保護局', updatedAt: '2025-01' },
+  '台中市': { amount: 10000, per: 'kW', source: '台中市政府環境保護局', updatedAt: '2025-01' },
+  '台南市': { amount: 15000, per: 'kW', source: '台南市政府經濟發展局', updatedAt: '2025-01' },
+  '高雄市': { amount: 18000, per: 'kW', source: '高雄市政府經濟發展局', updatedAt: '2025-01' },
   // 省轄市
-  '基隆市': { amount: 10000, per: 'kW', source: '基隆市政府產業發展處' },
-  '新竹市': { amount: 10000, per: 'kW', source: '新竹市政府環境保護處' },
-  '嘉義市': { amount: 12000, per: 'kW', source: '嘉義市政府環境保護局' },
+  '基隆市': { amount: 10000, per: 'kW', source: '基隆市政府產業發展處', updatedAt: '2025-01' },
+  '新竹市': { amount: 10000, per: 'kW', source: '新竹市政府環境保護處', updatedAt: '2025-01' },
+  '嘉義市': { amount: 12000, per: 'kW', source: '嘉義市政府環境保護局', updatedAt: '2025-01' },
   // 縣
-  '新竹縣': { amount: 8000,  per: 'kW', source: '新竹縣政府環境保護局' },
-  '苗栗縣': { amount: 8000,  per: 'kW', source: '苗栗縣政府建設及工程處' },
-  '彰化縣': { amount: 10000, per: 'kW', source: '彰化縣政府環境保護局' },
-  '南投縣': { amount: 8000,  per: 'kW', source: '南投縣政府建設處' },
-  '雲林縣': { amount: 10000, per: 'kW', source: '雲林縣政府工務處' },
-  '嘉義縣': { amount: 10000, per: 'kW', source: '嘉義縣政府環境保護局' },
-  '屏東縣': { amount: 12000, per: 'kW', source: '屏東縣政府環境保護局' },
-  '宜蘭縣': { amount: 8000,  per: 'kW', source: '宜蘭縣政府建設處' },
-  '花蓮縣': { amount: 8000,  per: 'kW', source: '花蓮縣政府建設處' },
-  '台東縣': { amount: 8000,  per: 'kW', source: '台東縣政府建設處' },
+  '新竹縣': { amount: 8000,  per: 'kW', source: '新竹縣政府環境保護局',   updatedAt: '2025-01' },
+  '苗栗縣': { amount: 8000,  per: 'kW', source: '苗栗縣政府建設及工程處', updatedAt: '2025-01' },
+  '彰化縣': { amount: 10000, per: 'kW', source: '彰化縣政府環境保護局',   updatedAt: '2025-01' },
+  '南投縣': { amount: 8000,  per: 'kW', source: '南投縣政府建設處',       updatedAt: '2025-01' },
+  '雲林縣': { amount: 10000, per: 'kW', source: '雲林縣政府工務處',       updatedAt: '2025-01' },
+  '嘉義縣': { amount: 10000, per: 'kW', source: '嘉義縣政府環境保護局',   updatedAt: '2025-01' },
+  '屏東縣': { amount: 12000, per: 'kW', source: '屏東縣政府環境保護局',   updatedAt: '2025-01' },
+  '宜蘭縣': { amount: 8000,  per: 'kW', source: '宜蘭縣政府建設處',       updatedAt: '2025-01' },
+  '花蓮縣': { amount: 8000,  per: 'kW', source: '花蓮縣政府建設處',       updatedAt: '2025-01' },
+  '台東縣': { amount: 8000,  per: 'kW', source: '台東縣政府建設處',       updatedAt: '2025-01' },
   // 離島
-  '澎湖縣': { amount: 15000, per: 'kW', source: '澎湖縣政府建設處' },
-  '金門縣': { amount: 15000, per: 'kW', source: '金門縣政府建設局' },
-  '連江縣': { amount: 15000, per: 'kW', source: '連江縣政府建設局' },
+  '澎湖縣': { amount: 15000, per: 'kW', source: '澎湖縣政府建設處', updatedAt: '2025-01' },
+  '金門縣': { amount: 15000, per: 'kW', source: '金門縣政府建設局', updatedAt: '2025-01' },
+  '連江縣': { amount: 15000, per: 'kW', source: '連江縣政府建設局', updatedAt: '2025-01' },
 };
 
 export const SUGGESTIONS: AddressOption[] = [

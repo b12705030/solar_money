@@ -17,6 +17,8 @@ export interface SolarState {
   roofArea?: number;
   monthlyKwh: number;
   goal?: string;
+  budgetCeiling?: number;
+  panelGrade?: string;
   costPerKw?: number;
   capacity?: number;
   totalCost?: number;
