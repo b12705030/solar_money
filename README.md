@@ -14,14 +14,19 @@
 | 用電量輸入 | 輸入每月平均用電 kWh |
 | 目標選擇 | 全年最大、夏季最大、冬季最大、正午峰值、與用電曲線最匹配、投資回收最快；依地區自動推薦 |
 | 裝機參數 | 預算上限倒推可裝容量；三種面板等級（入門 / 標準 / 高效）即時試算 |
-| 補助快查 | 自動對應 22 縣市政府補助金額（含來源與資料更新日期） |
+| 補助快查 | 自動對應 22 縣市政府補助金額（含來源、資料更新日期、補助公告連結） |
 | 評估結果 | 年發電量、能源自給率、回本年限、20 年累計淨收益、月發電量圖表 |
 | PDF 報告 | 一鍵下載一頁式 A4 評估報告（`window.print()`，無額外依賴） |
-| 推薦廠商 | Results 頁依縣市從 API 顯示最多 3 家廠商；含 loading / empty / error 狀態 |
-| 廠商入駐 | TopBar 提供廠商申請表單，送出後進入待審核狀態；若已登入則自動綁定帳號 |
-| 廠商儀表板 | 廠商登入後可於「廠商後台」編輯資料、管理作品集 |
-| 廠商詢價紀錄 | 民眾聯絡廠商時自動儲存詢價紀錄，廠商可於後台查看 |
-| Admin 管理面板 | Admin 帳號可於「管理後台」審核廠商申請（核准／駁回）、查詢帳號與變更角色 |
+| 推薦廠商 | Results 頁依縣市從 API 顯示最多 3 家廠商（進階方案優先排序）；含 loading / empty / error 狀態 |
+| 廠商入駐 | TopBar 提供廠商申請表單（含 Logo 上傳），送出後進入待審核；被拒可查看原因並重新申請 |
+| 廠商儀表板 | 廠商後台：編輯資料（含 Logo）、管理作品集（施工照 + 規格 + 客戶描述） |
+| 站內詢價 Modal | 已登入用戶點擊「聯絡廠商」後開啟含評估摘要的詢價表單（取代 mailto） |
+| 廠商聊天收件箱 | 1 對 1 聊天室：左側聯絡人列表（含狀態徽章），右側顯示評估資料 + 訊息氣泡 + 回覆輸入框 |
+| 案件狀態追蹤 | 新詢價 → 已聯繫 → 已報價 → 已成交；廠商回覆後自動推進；可手動調整 |
+| 廠商評價機制 | 廠商回覆後用戶可給予 1–5 星評價；廠商頁即時更新平均評分 |
+| 潛在客戶名單 | 廠商後台進階功能：顯示服務縣市內完成評估但未詢價的用戶；免費方案顯示前 3 筆 |
+| 我的詢價紀錄 | 用戶端歷史抽屜「我的詢價」tab：查看廠商回覆、送出星級評價 |
+| Admin 管理面板 | Admin 後台：廠商審核（核准／駁回 + 原因）、帳號管理與角色切換 |
 | 歷史紀錄 | 每次評估自動儲存至 PostgreSQL，支援匿名模式與登入帳號 |
 | 會員系統 | Email 註冊 / 登入（JWT + role），登入後可查看歷史紀錄、並排比較兩筆評估 |
 
@@ -54,9 +59,10 @@ PostgreSQL（Neon serverless）
   ├─ shadow_cache         陰影預計算結果（月份粒度）
   ├─ accounts             會員帳號與角色（user / vendor / admin）
   ├─ assessments          使用者評估紀錄（匿名 or 帳號綁定）
-  ├─ vendors              廠商基本資料、服務縣市、評分
-  ├─ vendor_portfolios    廠商作品集案例
-  └─ inquiries            民眾詢價紀錄（vendor_id + 評估摘要 + 詢問者帳號）
+  ├─ vendors              廠商基本資料、服務縣市、評分、訂閱狀態
+  ├─ vendor_portfolios    廠商作品集案例（含施工照 photo_url、客戶描述）
+  ├─ inquiries            民眾詢價紀錄（含 case_status 案件狀態機）
+  └─ vendor_reviews       廠商評價（inquiry_id UNIQUE，評完不可重複）
 ```
 
 詳細資料庫架構見 [backend/DATABASE.md](backend/DATABASE.md)。
@@ -235,11 +241,16 @@ uvicorn backend.main:app --reload
 
 | Method | Endpoint | 說明 |
 |--------|----------|------|
-| `GET` | `/api/me/vendor` | 取得自己的廠商資料與作品集 |
+| `GET` | `/api/me/vendor` | 取得自己的廠商資料、作品集、訂閱狀態 |
 | `PATCH` | `/api/me/vendor` | 更新廠商資料（名稱、電話、email、縣市、標籤） |
-| `POST` | `/api/me/vendor/portfolios` | 新增作品集項目 |
+| `POST` | `/api/me/vendor/logo` | 更新廠商 Logo（base64 DataURL） |
+| `POST` | `/api/me/vendor/portfolios` | 新增作品集項目（含施工照、規格、客戶描述） |
 | `DELETE` | `/api/me/vendor/portfolios/{id}` | 刪除作品集項目 |
-| `GET` | `/api/me/vendor/inquiries` | 取得收到的詢價紀錄 |
+| `GET` | `/api/me/vendor/inquiries` | 取得收到的詢價紀錄（含 case_status） |
+| `POST` | `/api/me/vendor/inquiries/{id}/reply` | 回覆詢價 |
+| `PATCH` | `/api/me/vendor/inquiries/{id}/status` | 更新案件狀態（new/contacted/quoted/closed） |
+| `GET` | `/api/me/vendor/leads` | 取得潛在客戶名單（進階方案顯示全部，免費前3） |
+| `GET` | `/api/me/application/status` | 查詢自己的廠商申請狀態（含拒絕原因） |
 
 ### 管理員（Bearer JWT，role = admin 或 X-Admin-Secret header）
 
@@ -251,14 +262,21 @@ uvicorn backend.main:app --reload
 | `GET` | `/api/admin/accounts/search?email=` | 依 Email 查詢帳號（id + 目前角色） |
 | `POST` | `/api/admin/accounts/{id}/role` | 調整帳號角色（`user` / `vendor` / `admin`） |
 
+### 用戶（Bearer JWT，role = user）
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/me/assessments` | 取得登入帳號的歷史評估 |
+| `POST` | `/api/me/claim?user_id=<uuid>` | 將匿名評估綁定至登入帳號 |
+| `GET` | `/api/me/inquiries` | 取得自己送出的詢價紀錄（含廠商回覆） |
+| `POST` | `/api/me/inquiries/{id}/review` | 對廠商送出星級評價（1–5 星，每筆詢價限一次） |
+
 ### 會員 Auth
 
 | Method | Endpoint | 說明 |
 |--------|----------|------|
 | `POST` | `/api/auth/register` | 註冊（email + password）→ 回傳 JWT token |
 | `POST` | `/api/auth/login` | 登入 → 回傳 JWT token |
-| `GET` | `/api/me/assessments` | 取得登入帳號的歷史評估（Bearer JWT） |
-| `POST` | `/api/me/claim?user_id=<uuid>` | 將匿名評估綁定至登入帳號（Bearer JWT） |
 
 ### 其他
 
@@ -364,8 +382,16 @@ moveend + 600ms debounce
 | Results CTA | `.results-cta`, `.results-cta-decoration`, `.results-cta-title`, `.results-cta-actions`, `.results-save-btn`, `.results-download-btn`, `.results-save-toast` |
 | Dashboard 共用佈局 | `.dash-page`, `.dash-topbar`, `.dash-topbar-wordmark`, `.dash-topbar-sep`, `.dash-topbar-section`, `.dash-back-btn`, `.dash-body`, `.dash-sidebar`, `.dash-sidebar--collapsed`, `.dash-collapse-btn`, `.dash-nav-list`, `.dash-nav-btn`, `.dash-nav-btn--active`, `.dash-nav-btn-icon`, `.dash-nav-btn-label`, `.dash-nav-badge`, `.dash-nav-badge--dot`, `.dash-content` |
 | Dashboard 內容 | `.dash-content-header`, `.dash-stats`, `.dash-stat`, `.dash-vendor-hero`, `.dash-portfolio-grid`, `.dash-portfolio-card`, `.dash-inquiry-table`, `.dash-application-card`, `.dash-account-search`, `.dash-account-result`, `.dash-save-row`, `.dash-hint`, `.dash-empty`, `.dash-loading` |
-| 廠商入駐 | `.vendor-apply-modal`, `.vendor-apply-login-required`, `.vendor-apply-email-display` |
+| 廠商入駐 | `.vendor-apply-modal`, `.vendor-apply-login-required`, `.vendor-apply-email-display`, `.vendor-apply-rejected-notice` |
 | 廠商狀態標籤 | `.vd-status-badge`, `.vd-status-badge--pending`, `.vd-status-badge--approved`, `.vd-status-badge--rejected` |
+| 作品集施工照 | `.dash-portfolio-photo`, `.dash-portfolio-desc`, `.portfolio-photo-upload-row`, `.portfolio-photo-upload`, `.portfolio-photo-preview` |
+| 站內詢價 Modal | `.inquiry-modal`, `.inquiry-modal-body`, `.inquiry-summary`, `.inquiry-actions` |
+| 廠商聊天收件箱 | `.inq-shell`, `.inq-contacts-col`, `.inq-contact-item`, `.inq-contact-item--active`, `.inq-contact-avatar`, `.inq-cs-badge`, `.inq-chat-col`, `.inq-chat-header`, `.inq-house-chips`, `.inq-messages`, `.inq-system-card`, `.inq-msg-row`, `.inq-msg`, `.inq-msg--user`, `.inq-msg--vendor`, `.inq-input-area`, `.inq-anon-notice` |
+| 案件狀態顏色 | `.cs-new`, `.cs-contacted`, `.cs-quoted`, `.cs-closed`, `.case-stat-new`, `.case-stat-contacted`, `.case-stat-quoted`, `.case-stat-closed` |
+| 潛在客戶名單 | `.leads-grid`, `.lead-card`, `.lead-card--locked`, `.lead-locked-count`, `.lead-locked-label`, `.leads-plan-banner` |
+| 我的詢價（用戶端） | `.user-inquiry-card`, `.user-inquiry-vendor-row`, `.user-inquiry-msg`, `.user-inquiry-reply` |
+| 廠商評價 | `.star-rating`, `.star-btn`, `.star-btn--active` |
+| HistoryDrawer tabs | `.drawer-tabs`, `.drawer-tab`, `.drawer-tab--active`, `.drawer-tab-badge` |
 | Print | `@media print`（隱藏 `.no-print` / `.screen-only`，顯示 `.print-report`） |
 
 ---
