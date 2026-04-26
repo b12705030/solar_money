@@ -201,7 +201,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
       {/* Headline numbers */}
       <div className="card elevated" style={{ padding: 36, marginBottom: 28, background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 24 }}>
+        <div className="results-kpi-grid">
           <div>
             <div className="caption" style={{ marginBottom: 10 }}>年發電量</div>
             <div>
@@ -213,7 +213,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             <div className="body-sm" style={{ marginTop: 8 }}>相當於 {(r.annualKwh / (state.monthlyKwh || 350)).toFixed(1)} 個月用電量</div>
           </div>
 
-          <div style={{ borderLeft: '1px solid var(--ink-100)', paddingLeft: 24 }}>
+          <div className="results-kpi-item--divided">
             <div className="caption" style={{ marginBottom: 10 }}>
               能源自給率<Info tip="自發電量 ÷ 總用電量" />
             </div>
@@ -221,12 +221,12 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>{r.selfSufficiency}</span>
               <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>%</span>
             </div>
-            <div style={{ marginTop: 10, height: 6, background: 'var(--ink-100)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${r.selfSufficiency}%`, background: 'linear-gradient(90deg, var(--green-500), var(--green-700))', transition: 'width 1s var(--ease-out)' }} />
+            <div className="results-kpi-progress">
+              <div className="results-kpi-progress-fill" style={{ width: `${r.selfSufficiency}%` }} />
             </div>
           </div>
 
-          <div style={{ borderLeft: '1px solid var(--ink-100)', paddingLeft: 24 }}>
+          <div className="results-kpi-item--divided">
             <div className="caption" style={{ marginBottom: 10 }}>預估回本年限</div>
             <div>
               <span className="num" style={{ fontSize: 48, fontWeight: 700, color: '#C8861E', lineHeight: 1 }}>{r.paybackYears}</span>
@@ -235,7 +235,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             <div className="body-sm" style={{ marginTop: 8 }}>保固 25 年 · 剩餘純收益 {(25 - r.paybackYears).toFixed(1)} 年</div>
           </div>
 
-          <div style={{ borderLeft: '1px solid var(--ink-100)', paddingLeft: 24 }}>
+          <div className="results-kpi-item--divided">
             <div className="caption" style={{ marginBottom: 10 }}>20 年總收益</div>
             <div>
               <span className="num" style={{ fontSize: 34, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
@@ -249,17 +249,16 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       </div>
 
       {/* Tabs — hidden when printing (both panels show via CSS) */}
-      <div className="tab-nav" style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--ink-200)' }}>
+      <div className="results-tab-nav">
         {([
           { id: 'generation' as const, label: '發電潛力' },
           { id: 'investment' as const, label: '投資試算' },
         ]).map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            padding: '14px 22px', fontSize: 15, fontWeight: 500,
-            color: tab === t.id ? 'var(--green-700)' : 'var(--ink-500)',
-            borderBottom: `2px solid ${tab === t.id ? 'var(--green-700)' : 'transparent'}`,
-            marginBottom: -1, transition: 'all 0.2s',
-          }}>
+          <button
+            key={t.id}
+            className={`results-tab-btn${tab === t.id ? ' results-tab-btn--active' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
             {t.label}
           </button>
         ))}
@@ -399,21 +398,14 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       </div>
 
       {/* CTA */}
-      <div style={{
-        marginTop: 36, padding: 28,
-        background: 'var(--green-900)', color: 'var(--white)',
-        borderRadius: 'var(--radius-lg)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        flexWrap: 'wrap', gap: 16,
-        position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{ position: 'absolute', top: -60, right: -40, width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,165,60,0.2), transparent 70%)' }} />
+      <div className="results-cta">
+        <div className="results-cta-decoration" />
         <div style={{ position: 'relative' }}>
-          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 4, letterSpacing: '0.08em', textTransform: 'uppercase' }}>下一步</div>
-          <div style={{ fontSize: 22, fontWeight: 600 }}>下載完整報告，或找認證廠商實勘</div>
-          <div style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>報告含結構評估項目清單、推薦廠商比較表，PDF 約 12 頁。</div>
+          <div className="results-cta-eyebrow">下一步</div>
+          <div className="results-cta-title">下載完整報告，或找認證廠商實勘</div>
+          <div className="results-cta-sub">報告含結構評估項目清單、推薦廠商比較表，PDF 約 12 頁。</div>
         </div>
-        <div style={{ display: 'flex', gap: 10, position: 'relative' }}>
+        <div className="results-cta-actions">
           <button className="btn btn-secondary" style={{ background: 'transparent', color: 'var(--white)', borderColor: 'rgba(255,255,255,0.3)' }}>
             尋找廠商
           </button>

@@ -38,7 +38,7 @@
   ├─ pvlib NREL SPA       太陽方位角、仰角計算
   ├─ Shapely + pyproj     陰影多邊形幾何計算（EPSG:4326 ↔ 3857）
   ├─ httpx → Overpass API OSM 建物資料（備援用）
-  ├─ passlib[bcrypt]      密碼雜湊
+  ├─ bcrypt               密碼雜湊（直接使用，不透過 passlib）
   ├─ python-jose          JWT 簽發與驗證
   │
   └─ asyncpg
@@ -287,16 +287,21 @@ moveend + 600ms debounce
 
 | 區段 | 主要 class |
 |------|-----------|
-| Design Tokens | CSS 變數（`--green-*`, `--ink-*`, `--shadow-*`） |
+| Design Tokens | CSS 變數（`--green-*`, `--ink-*`, `--shadow-*`, `--amber`, `--ease-out`） |
 | App Shell | `.app`, `.topbar`, `.brand` |
-| Typography | `.eyebrow`, `.h-title`, `.body`, `.caption` |
+| Typography | `.eyebrow`, `.h-title`, `.body`, `.caption`, `.body-sm`, `.num` |
 | Buttons | `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-outline`, `.btn-outline-sm` |
 | Cards | `.card`, `.card.elevated` |
 | Form | `.form-field`, `.form-label`, `.form-input`, `.form-error` |
 | Modal | `.modal-backdrop`, `.modal`, `.tab-switcher`, `.tab-btn` |
-| Drawer | `.drawer`, `.drawer-header`, `.assessment-card`, `.compare-table` |
-| Auth / Results | `.login-banner`, `.avatar` |
-| Print | `@media print`（隱藏 `.screen-only`，顯示 `.print-report`） |
+| Drawer | `.drawer`, `.drawer-header`, `.assessment-card`, `.assessment-card--selected`, `.compare-table` |
+| Auth / TopBar | `.login-banner`, `.avatar` |
+| StepParams | `.budget-card`, `.grade-grid`, `.grade-card`, `.grade-card--active`, `.grade-badges`, `.grade-badge`, `.grade-badge--rec`, `.grade-badge--full` |
+| StepParams 摘要 | `.param-summary-grid`, `.card-section-heading`, `.summary-row`, `.summary-row__label`, `.summary-row__value--green`, `.cost-highlight` |
+| Results KPI | `.results-kpi-grid`, `.results-kpi-item--divided`, `.results-kpi-progress` |
+| Results 標籤 | `.results-tab-nav`, `.results-tab-btn`, `.results-tab-btn--active` |
+| Results CTA | `.results-cta`, `.results-cta-decoration`, `.results-cta-title`, `.results-cta-actions` |
+| Print | `@media print`（隱藏 `.no-print` / `.screen-only`，顯示 `.print-report`） |
 
 ---
 
