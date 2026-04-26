@@ -1,6 +1,14 @@
 'use client';
 
-export default function TopBar({ onHome }: { onHome?: () => void }) {
+interface TopBarProps {
+  onHome?:         () => void;
+  onLoginClick?:   () => void;
+  onHistoryClick?: () => void;
+  user?:           { email: string } | null;
+  onLogout?:       () => void;
+}
+
+export default function TopBar({ onHome, onLoginClick, onHistoryClick, user, onLogout }: TopBarProps) {
   return (
     <div className="topbar">
       <button className="brand" onClick={onHome}>
@@ -10,9 +18,22 @@ export default function TopBar({ onHome }: { onHome?: () => void }) {
           <span className="sub">台灣屋頂太陽能自助評估</span>
         </div>
       </button>
+
       <div className="topbar-actions">
         <span>資料來源：中央氣象署 · 台電 · 能源署</span>
         <span className="pill">Beta</span>
+
+        {user ? (
+          <>
+            <button className="btn-outline-sm" onClick={onHistoryClick}>歷史紀錄</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="avatar">{user.email[0].toUpperCase()}</div>
+              <button className="btn-ghost caption" style={{ padding: '2px 0' }} onClick={onLogout}>登出</button>
+            </div>
+          </>
+        ) : (
+          <button className="btn-outline" onClick={onLoginClick}>登入 / 註冊</button>
+        )}
       </div>
     </div>
   );

@@ -136,7 +136,7 @@ function BreakdownRow({ label, value, color, max }: { label: string; value: numb
   );
 }
 
-export default function Results({ state, onRestart }: { state: SolarState; onRestart: () => void }) {
+export default function Results({ state, onRestart, onLoginClick }: { state: SolarState; onRestart: () => void; onLoginClick?: () => void }) {
   const r: ComputedResults = useMemo(() => computeResults(state), [state]);
   const [tab, setTab] = useState<'generation' | 'investment'>('generation');
 
@@ -405,6 +405,19 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
           </button>
         </div>
       </div>
+
+      {/* 登入提示 banner */}
+      {onLoginClick && (
+        <div className="login-banner">
+          <div>
+            <div className="login-banner-text">儲存這份評估結果</div>
+            <div className="login-banner-sub">登入後可隨時查看歷史紀錄、並排比較不同方案</div>
+          </div>
+          <button className="btn btn-primary" style={{ padding: '7px 18px', flexShrink: 0 }} onClick={onLoginClick}>
+            登入 / 註冊
+          </button>
+        </div>
+      )}
 
       <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
         <button className="btn-ghost" onClick={onRestart} style={{ fontSize: 13 }}>

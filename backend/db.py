@@ -41,9 +41,16 @@ async def init_db() -> None:
                 shadows     JSONB       NOT NULL,
                 computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS accounts (
+                id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                email         TEXT        UNIQUE NOT NULL,
+                password_hash TEXT        NOT NULL,
+                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
             CREATE TABLE IF NOT EXISTS assessments (
                 id               UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
                 user_id          TEXT,
+                account_id       UUID             REFERENCES accounts(id),
                 address          TEXT,
                 lat              DOUBLE PRECISION,
                 lng              DOUBLE PRECISION,
@@ -65,9 +72,10 @@ async def init_db() -> None:
                 created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
         ''')
-        # 相容舊版 assessments（若表已存在但欄位較少，補齊新欄位）
+        # 相容舊版 schema（補齊新欄位）
         for col, definition in [
             ('user_id',          'TEXT'),
+            ('account_id',       'UUID'),
             ('county',           'TEXT'),
             ('roof_area_ping',   'DOUBLE PRECISION'),
             ('monthly_kwh',      'DOUBLE PRECISION'),
@@ -188,6 +196,63 @@ async def save_assessment(data: dict) -> str:
             json.dumps(data.get('result') or {}),
         )
         return str(row['id'])
+
+
+# ─── 帳號 ────────────────────────────────────────────────────────────────────
+
+async def create_account(email: str, password_hash: str) -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            'INSERT INTO accounts (email, password_hash) VALUES ($1, $2) RETURNING id',
+            email, password_hash,
+        )
+        return str(row['id'])
+
+
+async def get_account_by_email(email: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT id, email, password_hash FROM accounts WHERE email = $1', email,
+            )
+            return {**dict(row), 'id': str(row['id'])} if row else None
+    except Exception:
+        return None
+
+
+async def get_account_assessments(account_id: str, limit: int = 20) -> list[dict]:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT id, address, county, annual_kwh, payback_years,
+                          out_of_pocket, capacity_kw, created_at
+                   FROM assessments
+                   WHERE account_id = $1
+                   ORDER BY created_at DESC LIMIT $2''',
+                account_id, limit,
+            )
+            return [
+                {**dict(r), 'id': str(r['id']), 'created_at': r['created_at'].isoformat()}
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+async def claim_anonymous_assessments(user_id: str, account_id: str) -> None:
+    """登入後將同 user_id 的匿名評估綁定到帳號。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                'UPDATE assessments SET account_id = $1 WHERE user_id = $2 AND account_id IS NULL',
+                account_id, user_id,
+            )
+    except Exception:
+        pass
 
 
 async def get_user_assessments(user_id: str, limit: int = 10) -> list[dict]:
