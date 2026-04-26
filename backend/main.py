@@ -15,9 +15,10 @@ from pydantic import BaseModel
 
 from .auth import create_token, decode_token, hash_password, verify_password
 from .db import (claim_anonymous_assessments, close_pool, create_account,
+                 create_vendor_application,
                  get_account_assessments, get_account_by_email, get_shadow_cache,
-                 get_user_assessments, init_db, list_vendors, save_assessment,
-                 set_shadow_cache, shadow_cache_key)
+                 get_user_assessments, get_vendor_detail, init_db, list_vendors,
+                 save_assessment, set_shadow_cache, shadow_cache_key)
 from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
                      get_buildings, precompute_shadows_all_hours, project_shadow)
 
@@ -196,12 +197,61 @@ class VendorResponse(BaseModel):
     tags: List[str]
 
 
+class VendorPortfolioResponse(BaseModel):
+    id: str
+    title: str
+    meta: str
+    capacityKw: float
+    completedYear: Optional[int] = None
+    isFeatured: bool
+
+
+class VendorDetailResponse(VendorResponse):
+    approved: bool
+    subscriptionStatus: str
+    portfolios: List[VendorPortfolioResponse]
+
+
+class VendorApplyRequest(BaseModel):
+    company_name: str
+    company_tax_id: Optional[str] = None
+    contact_name: str
+    email: str
+    phone: str
+    counties: List[str]
+    license_note: Optional[str] = None
+
+
 @app.get('/api/vendors', response_model=List[VendorResponse])
 async def vendors(
     county: Optional[str] = Query(None),
     limit: int = Query(3, le=10),
 ):
     return await list_vendors(county, limit)
+
+
+@app.post('/api/vendors/apply', status_code=201)
+async def apply_vendor(req: VendorApplyRequest):
+    if not req.company_name.strip():
+        raise HTTPException(status_code=422, detail='請填寫公司名稱')
+    if not req.contact_name.strip():
+        raise HTTPException(status_code=422, detail='請填寫聯絡人')
+    if not req.email.strip():
+        raise HTTPException(status_code=422, detail='請填寫 Email')
+    if not req.phone.strip():
+        raise HTTPException(status_code=422, detail='請填寫電話')
+    if len(req.counties) == 0:
+        raise HTTPException(status_code=422, detail='請至少選擇一個服務縣市')
+    vendor_id = await create_vendor_application(req.model_dump())
+    return {'id': vendor_id, 'status': 'pending'}
+
+
+@app.get('/api/vendors/{vendor_id}', response_model=VendorDetailResponse)
+async def vendor_detail(vendor_id: str):
+    vendor = await get_vendor_detail(vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='找不到廠商')
+    return vendor
 
 
 # ─── 帳號 & Auth ─────────────────────────────────────────────────────────────

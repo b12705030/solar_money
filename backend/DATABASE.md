@@ -89,6 +89,8 @@
 |------|------|------|
 | `id` | TEXT PK | 穩定識別碼 |
 | `name` | TEXT | 廠商名稱 |
+| `company_tax_id` | TEXT | 統一編號 |
+| `contact_name` | TEXT | 聯絡人 |
 | `counties` | TEXT[] | 服務縣市 |
 | `rating` | DOUBLE | 平均評分 |
 | `review_count` | INT | 評價數 |
@@ -97,6 +99,8 @@
 | `tags` | TEXT[] | 標籤 |
 | `approved` | BOOLEAN | 是否公開顯示 |
 | `subscription_status` | TEXT | 方案狀態；目前 seed 資料為 `mock` |
+| `application_status` | TEXT | 申請狀態（`pending` / `approved` 等） |
+| `license_note` | TEXT | 相關執照或備註 |
 | `created_at` | TIMESTAMPTZ | 建立時間 |
 
 ---
@@ -197,6 +201,51 @@ Email + 密碼驗證 → 回傳 JWT token。
   }
 ]
 ```
+
+---
+
+### `GET /api/vendors/{id}`
+取得單一廠商詳細資料，包含基本資料與作品集列表。Results 頁的廠商詳細 Modal 使用此 endpoint。
+
+**Response**：同 `GET /api/vendors` 單筆資料，並額外包含：
+
+```json
+{
+  "approved": true,
+  "subscriptionStatus": "mock",
+  "portfolios": [
+    {
+      "id": "<uuid>",
+      "title": "信義區集合住宅屋頂型案場",
+      "meta": "住宅大樓 · 22.4 kWp · 2025 完工",
+      "capacityKw": 22.4,
+      "completedYear": 2025,
+      "isFeatured": true
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/vendors/apply`
+廠商入駐申請。申請送出後寫入 `vendors`，預設 `approved = false`、`application_status = pending`，不會公開出現在推薦列表。
+
+**Request body**：
+
+```json
+{
+  "company_name": "範例能源工程",
+  "company_tax_id": "12345678",
+  "contact_name": "王小明",
+  "email": "vendor@example.com",
+  "phone": "02-1234-5678",
+  "counties": ["台北市", "新北市"],
+  "license_note": "電業相關執照與備註"
+}
+```
+
+**Response**：`{ "id": "vendor-...", "status": "pending" }`
 
 ---
 

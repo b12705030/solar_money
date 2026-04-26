@@ -18,6 +18,7 @@
 | 評估結果 | 年發電量、能源自給率、回本年限、20 年累計淨收益、月發電量圖表 |
 | PDF 報告 | 一鍵下載一頁式 A4 評估報告（`window.print()`，無額外依賴） |
 | 推薦廠商 | Results 頁依縣市從 API 顯示最多 3 家廠商；含 loading / empty / error 狀態 |
+| 廠商入駐 | TopBar 提供廠商申請表單，送出後進入待審核狀態 |
 | 歷史紀錄 | 每次評估自動儲存至 PostgreSQL，支援匿名模式與登入帳號 |
 | 會員系統 | Email 註冊 / 登入（JWT），登入後可查看歷史紀錄、並排比較兩筆評估 |
 
@@ -216,6 +217,8 @@ uvicorn backend.main:app --reload
 | Method | Endpoint | 說明 |
 |--------|----------|------|
 | `GET` | `/api/vendors?county=<縣市>&limit=3` | 依服務縣市取得推薦廠商；未帶 county 時回傳預設推薦 |
+| `GET` | `/api/vendors/{id}` | 取得單一廠商詳細資料與作品集 |
+| `POST` | `/api/vendors/apply` | 廠商入駐申請，預設為待審核且不公開 |
 
 ### 會員 Auth
 
@@ -325,7 +328,7 @@ moveend + 600ms debounce
 | StepParams 摘要 | `.param-summary-grid`, `.card-section-heading`, `.summary-row`, `.summary-row__label`, `.summary-row__value--green`, `.cost-highlight` |
 | Results KPI | `.results-kpi-grid`, `.results-kpi-item--divided`, `.results-kpi-progress` |
 | Results 標籤 | `.results-tab-nav`, `.results-tab-btn`, `.results-tab-btn--active` |
-| Results 廠商推薦 | `.vendor-section`, `.vendor-grid`, `.vendor-card`, `.vendor-contact-btn` |
+| Results 廠商推薦 | `.vendor-section`, `.vendor-grid`, `.vendor-card`, `.vendor-contact-btn`, `.vendor-detail-modal`, `.vendor-portfolio-list` |
 | Results CTA | `.results-cta`, `.results-cta-decoration`, `.results-cta-title`, `.results-cta-actions`, `.results-save-btn`, `.results-download-btn`, `.results-save-toast` |
 | Print | `@media print`（隱藏 `.no-print` / `.screen-only`，顯示 `.print-report`） |
 

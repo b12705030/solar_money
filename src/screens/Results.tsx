@@ -4,7 +4,7 @@ import { Info } from '@/components/ui';
 import { computeResults } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
-import type { SolarState, ComputedResults, VendorRecommendation } from '@/lib/types';
+import type { SolarState, ComputedResults, VendorDetail, VendorRecommendation } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -138,7 +138,15 @@ function BreakdownRow({ label, value, color, max }: { label: string; value: numb
   );
 }
 
-function VendorCard({ vendor, onContact }: { vendor: VendorRecommendation; onContact: (vendor: VendorRecommendation) => void }) {
+function VendorCard({
+  vendor,
+  onContact,
+  onDetail,
+}: {
+  vendor: VendorRecommendation;
+  onContact: (vendor: VendorRecommendation) => void;
+  onDetail: (vendor: VendorRecommendation) => void;
+}) {
   return (
     <div className="vendor-card">
       <div className="vendor-card-header">
@@ -170,9 +178,101 @@ function VendorCard({ vendor, onContact }: { vendor: VendorRecommendation; onCon
           <div>{vendor.phone}</div>
           <div>{vendor.email}</div>
         </div>
-        <button className="btn btn-primary vendor-contact-btn" onClick={() => onContact(vendor)}>
-          聯絡廠商
-        </button>
+        <div className="vendor-card-actions">
+          <button className="btn-ghost vendor-detail-btn" onClick={() => onDetail(vendor)}>
+            查看詳情
+          </button>
+          <button className="btn btn-primary vendor-contact-btn" onClick={() => onContact(vendor)}>
+            聯絡廠商
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VendorDetailModal({
+  vendor,
+  loading,
+  error,
+  onClose,
+  onContact,
+}: {
+  vendor: VendorDetail | null;
+  loading: boolean;
+  error: boolean;
+  onClose: () => void;
+  onContact: (vendor: VendorRecommendation) => void;
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal vendor-detail-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">廠商詳細資料</div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        {loading && <div className="vendor-state">載入廠商資料中⋯</div>}
+        {!loading && error && <div className="vendor-state vendor-state--error">暫時無法載入廠商資料，請稍後再試。</div>}
+
+        {!loading && !error && vendor && (
+          <div className="vendor-detail-content">
+            <div className="vendor-detail-hero">
+              <div>
+                <div className="vendor-detail-name">{vendor.name}</div>
+                <div className="vendor-detail-meta">{vendor.counties.join('、')}</div>
+              </div>
+              <div className="vendor-card-rating">
+                <span>★</span>
+                {vendor.rating.toFixed(1)}
+              </div>
+            </div>
+
+            <div className="vendor-card-tags">
+              {vendor.tags.map(tag => <span key={tag}>{tag}</span>)}
+            </div>
+
+            <div className="vendor-detail-contact">
+              <div>
+                <span className="caption">電話</span>
+                <strong>{vendor.phone || '尚未提供'}</strong>
+              </div>
+              <div>
+                <span className="caption">Email</span>
+                <strong>{vendor.email || '尚未提供'}</strong>
+              </div>
+              <div>
+                <span className="caption">評價</span>
+                <strong>{vendor.reviewCount} 則</strong>
+              </div>
+            </div>
+
+            <div>
+              <div className="vendor-detail-section-title">作品集</div>
+              {vendor.portfolios.length === 0 && (
+                <div className="vendor-state">此廠商尚未上傳作品集。</div>
+              )}
+              {vendor.portfolios.length > 0 && (
+                <div className="vendor-portfolio-list">
+                  {vendor.portfolios.map(portfolio => (
+                    <div className="vendor-portfolio-item" key={portfolio.id}>
+                      <div>
+                        <div className="vendor-portfolio-title">{portfolio.title}</div>
+                        <div className="vendor-card-meta">{portfolio.meta}</div>
+                      </div>
+                      <div className="vendor-portfolio-capacity">{portfolio.capacityKw} kWp</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="vendor-detail-footer">
+              <button className="btn btn-secondary" onClick={onClose}>返回</button>
+              <button className="btn btn-primary" onClick={() => onContact(vendor)}>聯絡廠商</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -190,6 +290,10 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [recommendedVendors, setRecommendedVendors] = useState<VendorRecommendation[]>([]);
   const [vendorsLoading, setVendorsLoading] = useState(false);
   const [vendorsError, setVendorsError] = useState(false);
+  const [vendorDetailOpen, setVendorDetailOpen] = useState(false);
+  const [vendorDetail, setVendorDetail] = useState<VendorDetail | null>(null);
+  const [vendorDetailLoading, setVendorDetailLoading] = useState(false);
+  const [vendorDetailError, setVendorDetailError] = useState(false);
   const loginTimerRef = useRef<number | null>(null);
   const vendorSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -311,6 +415,18 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
     window.setTimeout(() => {
       vendorSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 0);
+  };
+
+  const handleVendorDetail = (vendor: VendorRecommendation) => {
+    setVendorDetailOpen(true);
+    setVendorDetail(null);
+    setVendorDetailError(false);
+    setVendorDetailLoading(true);
+    fetch(`${API_URL}/api/vendors/${encodeURIComponent(vendor.id)}`)
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error('vendor detail request failed'))))
+      .then((detail: VendorDetail) => setVendorDetail(detail))
+      .catch(() => setVendorDetailError(true))
+      .finally(() => setVendorDetailLoading(false));
   };
 
   const goalLabel = state.goal === 'summer' ? '夏季發電量最高' : state.goal === 'winter' ? '冬季發電量最高' : '全年總發電量最高';
@@ -596,7 +712,12 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           {!vendorsLoading && !vendorsError && recommendedVendors.length > 0 && (
             <div className="vendor-grid">
               {recommendedVendors.map(vendor => (
-                <VendorCard key={vendor.id} vendor={vendor} onContact={handleVendorContact} />
+                <VendorCard
+                  key={vendor.id}
+                  vendor={vendor}
+                  onContact={handleVendorContact}
+                  onDetail={handleVendorDetail}
+                />
               ))}
             </div>
           )}
@@ -615,6 +736,15 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         </button>
       </div>
       </div>{/* end screen-only */}
+      {vendorDetailOpen && (
+        <VendorDetailModal
+          vendor={vendorDetail}
+          loading={vendorDetailLoading}
+          error={vendorDetailError}
+          onClose={() => setVendorDetailOpen(false)}
+          onContact={handleVendorContact}
+        />
+      )}
     </div>
   );
 }

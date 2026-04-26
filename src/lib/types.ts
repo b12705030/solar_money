@@ -63,3 +63,18 @@ export interface VendorRecommendation {
   email: string;
   tags: string[];
 }
+
+export interface VendorPortfolio {
+  id: string;
+  title: string;
+  meta: string;
+  capacityKw: number;
+  completedYear: number | null;
+  isFeatured: boolean;
+}
+
+export interface VendorDetail extends VendorRecommendation {
+  approved: boolean;
+  subscriptionStatus: string;
+  portfolios: VendorPortfolio[];
+}

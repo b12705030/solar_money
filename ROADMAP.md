@@ -17,9 +17,9 @@
 | P3 | 歷史評估 UI + 帳號綁定 | `feature/auth` | ✅ 已完成 |
 | P3 | 並排比較 | `feature/auth` | ✅ 已完成 |
 | P3 | 分享連結 | `feature/auth` | ⬜ 未開始 |
-| P4 | 廠商系統基礎版 | `feature/vendor-system` | ⬜ 未開始 |
+| P4 | 廠商系統基礎版 | `feature/vendor-system` | ✅ 申請 MVP 完成 |
 | P4 | 廠商訂閱方案 | `feature/vendor-system` | ⬜ 未開始 |
-| P4 | 評估結果廠商推薦 | `feature/vendor-system` | ✅ API 基礎版完成 |
+| P4 | 評估結果廠商推薦 | `feature/vendor-system` | ✅ 詳細頁基礎版完成 |
 | P5 | 站內訊息 | `feature/messaging` | ⬜ 未開始 |
 | P5 | 廠商評價機制 | `feature/messaging` | ⬜ 未開始 |
 | P6 | 平台後台 | `feature/admin` | ⬜ 未開始 |
@@ -80,7 +80,9 @@
 **目標：** 廠商入駐與媒合，讓完成評估的用戶能直接找到廠商
 
 ### 廠商系統基礎版
-- [ ] 廠商註冊表單（公司名、聯絡人、縣市、服務範圍、執照號碼）
+- [x] TopBar「廠商入駐」入口
+- [x] 廠商註冊申請表單（公司名、統編、聯絡人、Email、電話、服務縣市、執照備註）
+- [x] 後端：`POST /api/vendors/apply`，建立 `approved = false` / `application_status = pending` 廠商
 - [ ] 作品集 CRUD（照片 / 容量 / 地點 / 完工年份）
 - [ ] 後台人工審核（admin approve 後才公開）
 - [ ] 後端：`POST /api/vendors`、`GET/PUT /api/vendors/:id`
@@ -94,12 +96,13 @@
 - [x] Results 頁底部「推薦廠商」區塊（依縣市篩選，最多 3 家）
 - [x] 資料庫：`vendors`、`vendor_portfolios`
 - [x] 後端：`GET /api/vendors?county=xx`
+- [x] 後端：`GET /api/vendors/{id}`
 - [x] 前端：Results 從 API 讀取廠商，含 loading / empty / error 狀態
 - [x] 移除前端廠商 mock fallback；本地測試資料由後端 seed
+- [x] 廠商詳細 Modal（基本資料、服務縣市、聯絡資訊、作品集）
 - [x] 未登入點擊「聯絡廠商」會觸發登入提示
 - [x] 已登入點擊「聯絡廠商」先以 mailto 帶入評估摘要
 - [ ] 廠商頁面與站內訊息完成後，移除 mailto 暫代流程，改為站內詢價 Modal / 訊息流程
-- [ ] 廠商詳細頁（作品集、方案、評分）
 
 ---
 

@@ -7,6 +7,7 @@ import TweaksPanel from '@/components/TweaksPanel';
 import WizardFooter from '@/components/WizardFooter';
 import AuthModal from '@/components/AuthModal';
 import HistoryDrawer from '@/components/HistoryDrawer';
+import VendorApplyModal from '@/components/VendorApplyModal';
 import Landing from '@/screens/Landing';
 import StepAddress from '@/screens/StepAddress';
 import StepUsage from '@/screens/StepUsage';
@@ -29,6 +30,7 @@ function AppInner() {
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [vendorApplyOpen, setVendorApplyOpen] = useState(false);
 
   useEffect(() => { applyTheme(tweaks.theme); }, [tweaks.theme]);
   useEffect(() => { applyDensity(tweaks.density); }, [tweaks.density]);
@@ -70,6 +72,7 @@ function AppInner() {
     user,
     onLoginClick:   () => setAuthOpen(true),
     onHistoryClick: () => setHistoryOpen(true),
+    onVendorApplyClick: () => setVendorApplyOpen(true),
     onLogout:       logout,
   };
 
@@ -83,6 +86,7 @@ function AppInner() {
         <Footer />
         {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
         {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
+        {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} />}
         {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
       </div>
     );
@@ -100,6 +104,7 @@ function AppInner() {
         </main>
         {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
         {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
+        {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} />}
         {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
       </div>
     );
@@ -139,6 +144,7 @@ function AppInner() {
       />
       {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
       {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
+      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} />}
       {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
     </div>
   );

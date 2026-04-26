@@ -4,11 +4,12 @@ interface TopBarProps {
   onHome?:         () => void;
   onLoginClick?:   () => void;
   onHistoryClick?: () => void;
+  onVendorApplyClick?: () => void;
   user?:           { email: string } | null;
   onLogout?:       () => void;
 }
 
-export default function TopBar({ onHome, onLoginClick, onHistoryClick, user, onLogout }: TopBarProps) {
+export default function TopBar({ onHome, onLoginClick, onHistoryClick, onVendorApplyClick, user, onLogout }: TopBarProps) {
   return (
     <div className="topbar">
       <button className="brand" onClick={onHome}>
@@ -22,6 +23,7 @@ export default function TopBar({ onHome, onLoginClick, onHistoryClick, user, onL
       <div className="topbar-actions">
         <span>資料來源：中央氣象署 · 台電 · 能源署</span>
         <span className="pill">Beta</span>
+        <button className="btn-outline-sm" onClick={onVendorApplyClick}>廠商入駐</button>
 
         {user ? (
           <>

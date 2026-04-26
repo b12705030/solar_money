@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from datetime import date
 
 import asyncpg
@@ -133,6 +134,8 @@ async def init_db() -> None:
             CREATE TABLE IF NOT EXISTS vendors (
                 id                  TEXT        PRIMARY KEY,
                 name                TEXT        NOT NULL,
+                company_tax_id      TEXT,
+                contact_name        TEXT,
                 counties            TEXT[]      NOT NULL DEFAULT '{}',
                 rating              DOUBLE PRECISION NOT NULL DEFAULT 0,
                 review_count        INT         NOT NULL DEFAULT 0,
@@ -141,6 +144,8 @@ async def init_db() -> None:
                 tags                TEXT[]      NOT NULL DEFAULT '{}',
                 approved            BOOLEAN     NOT NULL DEFAULT TRUE,
                 subscription_status TEXT        NOT NULL DEFAULT 'mock',
+                application_status  TEXT        NOT NULL DEFAULT 'approved',
+                license_note        TEXT,
                 created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             CREATE TABLE IF NOT EXISTS vendor_portfolios (
@@ -177,6 +182,8 @@ async def init_db() -> None:
                 f"ALTER TABLE assessments ADD COLUMN IF NOT EXISTS {col} {definition}"
             )
         for col, definition in [
+            ('company_tax_id',      'TEXT'),
+            ('contact_name',        'TEXT'),
             ('counties',            "TEXT[] NOT NULL DEFAULT '{}'"),
             ('rating',              'DOUBLE PRECISION NOT NULL DEFAULT 0'),
             ('review_count',        'INT NOT NULL DEFAULT 0'),
@@ -185,6 +192,8 @@ async def init_db() -> None:
             ('tags',                "TEXT[] NOT NULL DEFAULT '{}'"),
             ('approved',            'BOOLEAN NOT NULL DEFAULT TRUE'),
             ('subscription_status', "TEXT NOT NULL DEFAULT 'mock'"),
+            ('application_status',  "TEXT NOT NULL DEFAULT 'approved'"),
+            ('license_note',        'TEXT'),
         ]:
             await conn.execute(
                 f"ALTER TABLE vendors ADD COLUMN IF NOT EXISTS {col} {definition}"
@@ -475,3 +484,77 @@ async def list_vendors(county: str | None = None, limit: int = 3) -> list[dict]:
             ]
     except Exception:
         return []
+
+
+async def get_vendor_detail(vendor_id: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            vendor = await conn.fetchrow(
+                '''SELECT id, name, counties, rating, review_count, phone, email,
+                          tags, approved, subscription_status
+                   FROM vendors
+                   WHERE id = $1 AND approved = TRUE''',
+                vendor_id,
+            )
+            if not vendor:
+                return None
+
+            portfolios = await conn.fetch(
+                '''SELECT id, title, meta, capacity_kw, completed_year, is_featured
+                   FROM vendor_portfolios
+                   WHERE vendor_id = $1
+                   ORDER BY is_featured DESC, completed_year DESC NULLS LAST, created_at DESC''',
+                vendor_id,
+            )
+            portfolio_list = [
+                {
+                    'id': str(p['id']),
+                    'title': p['title'],
+                    'meta': p['meta'],
+                    'capacityKw': float(p['capacity_kw'] or 0),
+                    'completedYear': p['completed_year'],
+                    'isFeatured': bool(p['is_featured']),
+                }
+                for p in portfolios
+            ]
+            featured = portfolio_list[0] if portfolio_list else None
+            return {
+                'id': str(vendor['id']),
+                'name': vendor['name'],
+                'counties': list(vendor['counties'] or []),
+                'portfolioTitle': featured['title'] if featured else '精選太陽能案場',
+                'portfolioMeta': featured['meta'] if featured else '作品集準備中',
+                'capacityKw': featured['capacityKw'] if featured else 0,
+                'rating': float(vendor['rating'] or 0),
+                'reviewCount': int(vendor['review_count'] or 0),
+                'phone': vendor['phone'] or '',
+                'email': vendor['email'] or '',
+                'tags': list(vendor['tags'] or []),
+                'approved': bool(vendor['approved']),
+                'subscriptionStatus': vendor['subscription_status'],
+                'portfolios': portfolio_list,
+            }
+    except Exception:
+        return None
+
+
+async def create_vendor_application(data: dict) -> str:
+    pool = await get_pool()
+    vendor_id = f"vendor-{uuid.uuid4().hex[:12]}"
+    async with pool.acquire() as conn:
+        await conn.execute(
+            '''INSERT INTO vendors
+               (id, name, company_tax_id, contact_name, counties, rating, review_count,
+                phone, email, tags, approved, subscription_status, application_status, license_note)
+               VALUES ($1,$2,$3,$4,$5,0,0,$6,$7,'{}',FALSE,'free','pending',$8)''',
+            vendor_id,
+            data.get('company_name'),
+            data.get('company_tax_id'),
+            data.get('contact_name'),
+            data.get('counties') or [],
+            data.get('phone'),
+            data.get('email'),
+            data.get('license_note'),
+        )
+    return vendor_id
