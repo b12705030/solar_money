@@ -4,7 +4,8 @@ import { Info } from '@/components/ui';
 import { computeResults } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
-import type { SolarState, ComputedResults } from '@/lib/types';
+import { VENDOR_RECOMMENDATIONS } from '@/lib/constants';
+import type { SolarState, ComputedResults, VendorRecommendation } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -138,6 +139,46 @@ function BreakdownRow({ label, value, color, max }: { label: string; value: numb
   );
 }
 
+function VendorCard({ vendor, onContact }: { vendor: VendorRecommendation; onContact: (vendor: VendorRecommendation) => void }) {
+  return (
+    <div className="vendor-card">
+      <div className="vendor-card-header">
+        <div>
+          <div className="vendor-card-name">{vendor.name}</div>
+          <div className="vendor-card-meta">{vendor.portfolioMeta}</div>
+        </div>
+        <div className="vendor-card-rating">
+          <span>★</span>
+          {vendor.rating.toFixed(1)}
+        </div>
+      </div>
+      <div className="vendor-card-portfolio">{vendor.portfolioTitle}</div>
+      <div className="vendor-card-stats">
+        <div>
+          <span className="caption">案例容量</span>
+          <strong>{vendor.capacityKw} kWp</strong>
+        </div>
+        <div>
+          <span className="caption">評價數</span>
+          <strong>{vendor.reviewCount} 則</strong>
+        </div>
+      </div>
+      <div className="vendor-card-tags">
+        {vendor.tags.map(tag => <span key={tag}>{tag}</span>)}
+      </div>
+      <div className="vendor-card-contact">
+        <div>
+          <div>{vendor.phone}</div>
+          <div>{vendor.email}</div>
+        </div>
+        <button className="btn btn-primary vendor-contact-btn" onClick={() => onContact(vendor)}>
+          聯絡廠商
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Results({ state, onRestart, onLoginClick }: { state: SolarState; onRestart: () => void; onLoginClick?: () => void }) {
   const { user } = useAuth();
   const r: ComputedResults = useMemo(() => computeResults(state), [state]);
@@ -145,8 +186,17 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
   const [assessmentStored, setAssessmentStored] = useState(false);
   const [claimedAccountId, setClaimedAccountId] = useState<string | null>(null);
-  const [saveToastVisible, setSaveToastVisible] = useState(false);
+  const [authToastMessage, setAuthToastMessage] = useState('');
+  const [vendorsVisible, setVendorsVisible] = useState(false);
   const loginTimerRef = useRef<number | null>(null);
+  const vendorSectionRef = useRef<HTMLDivElement | null>(null);
+  const recommendedVendors = useMemo(() => {
+    const county = state.county;
+    const matched = county
+      ? VENDOR_RECOMMENDATIONS.filter(vendor => vendor.counties.includes(county))
+      : [];
+    return (matched.length > 0 ? matched : VENDOR_RECOMMENDATIONS).slice(0, 3);
+  }, [state.county]);
 
   useEffect(() => {
     const userId = getUserId();
@@ -195,26 +245,55 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   }, [anonymousUserId, assessmentStored, claimedAccountId, user]);
 
   useEffect(() => {
-    if (saveToastVisible && user) setSaveToastVisible(false);
+    if (authToastMessage && user) setAuthToastMessage('');
     if (user && loginTimerRef.current) {
       window.clearTimeout(loginTimerRef.current);
       loginTimerRef.current = null;
     }
-  }, [saveToastVisible, user]);
+  }, [authToastMessage, user]);
 
   useEffect(() => () => {
     if (loginTimerRef.current) window.clearTimeout(loginTimerRef.current);
   }, []);
 
-  const handleSaveClick = () => {
+  const promptLogin = (message: string) => {
     if (user || !onLoginClick) return;
-    setSaveToastVisible(true);
+    setAuthToastMessage(message);
     if (loginTimerRef.current) window.clearTimeout(loginTimerRef.current);
     loginTimerRef.current = window.setTimeout(() => {
-      setSaveToastVisible(false);
+      setAuthToastMessage('');
       onLoginClick();
       loginTimerRef.current = null;
     }, 2000);
+  };
+
+  const handleSaveClick = () => {
+    promptLogin('需要登入才能儲存，正在開啟登入視窗⋯');
+  };
+
+  const handleVendorContact = (vendor: VendorRecommendation) => {
+    if (!user) {
+      promptLogin('需要登入才能聯絡廠商，正在開啟登入視窗⋯');
+      return;
+    }
+    const subject = encodeURIComponent(`屋頂太陽能評估詢價 - ${state.county ?? '台灣'}`);
+    const body = encodeURIComponent([
+      `廠商您好，我想詢問 ${vendor.name} 的太陽能安裝服務。`,
+      '',
+      `地址：${state.address?.label ?? '尚未填寫'}`,
+      `縣市：${state.county ?? '尚未填寫'}`,
+      `預估容量：${state.capacity ?? '-'} kWp`,
+      `預估年發電量：${r.annualKwh.toLocaleString()} kWh`,
+      `預估回本年限：${r.paybackYears} 年`,
+    ].join('\n'));
+    window.location.href = `mailto:${vendor.email}?subject=${subject}&body=${body}`;
+  };
+
+  const handleFindVendors = () => {
+    setVendorsVisible(true);
+    window.setTimeout(() => {
+      vendorSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
   };
 
   const goalLabel = state.goal === 'summer' ? '夏季發電量最高' : state.goal === 'winter' ? '冬季發電量最高' : '全年總發電量最高';
@@ -452,7 +531,10 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           <div className="results-cta-sub">報告含結構評估項目清單、推薦廠商比較表，PDF 約 12 頁。</div>
         </div>
         <div className="results-cta-actions">
-          <button className="btn btn-secondary" style={{ background: 'transparent', color: 'var(--white)', borderColor: 'rgba(255,255,255,0.3)' }}>
+          <button
+            className="btn btn-secondary results-vendor-jump-btn"
+            onClick={handleFindVendors}
+          >
             尋找廠商
           </button>
           {onLoginClick && (
@@ -476,9 +558,26 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         </div>
       </div>
 
-      {saveToastVisible && !user && (
+      {vendorsVisible && (
+        <div className="vendor-section" ref={vendorSectionRef}>
+          <div className="vendor-section-header">
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 12 }}>推薦廠商</div>
+              <h3 className="h-section" style={{ margin: 0 }}>適合 {state.county ?? '你所在地區'} 的認證廠商</h3>
+            </div>
+            <div className="vendor-section-sub">依服務地區與相似案場初步排序，實際報價仍需現場勘查。</div>
+          </div>
+          <div className="vendor-grid">
+            {recommendedVendors.map(vendor => (
+              <VendorCard key={vendor.id} vendor={vendor} onContact={handleVendorContact} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {authToastMessage && !user && (
         <div className="results-save-toast" role="status" aria-live="polite">
-          需要登入才能儲存，正在開啟登入視窗⋯
+          {authToastMessage}
         </div>
       )}
 

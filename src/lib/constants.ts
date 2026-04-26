@@ -1,4 +1,4 @@
-import type { AddressOption, Region } from './types';
+import type { AddressOption, Region, VendorRecommendation } from './types';
 
 export const STEPS = ['地址', '用電', '目標', '參數', '結果'] as const;
 
@@ -101,3 +101,58 @@ export const TW_IRRADIANCE: Record<Region, number[]> = {
   '中部': [3.1, 3.4, 4.0, 4.5, 4.8, 4.9, 5.3, 5.0, 4.6, 4.1, 3.4, 2.9],
   '南部': [3.6, 3.9, 4.5, 4.9, 5.2, 5.1, 5.5, 5.2, 4.9, 4.5, 3.9, 3.4],
 };
+
+export const VENDOR_RECOMMENDATIONS: VendorRecommendation[] = [
+  {
+    id: 'north-grid',
+    name: '北曜能源工程',
+    counties: ['台北市', '新北市', '基隆市', '桃園市', '宜蘭縣'],
+    portfolioTitle: '信義區集合住宅屋頂型案場',
+    portfolioMeta: '住宅大樓 · 22.4 kWp · 2025 完工',
+    capacityKw: 22.4,
+    rating: 4.8,
+    reviewCount: 36,
+    phone: '02-2758-6108',
+    email: 'hello@northgrid.example',
+    tags: ['集合住宅', '結構評估', '台電併聯'],
+  },
+  {
+    id: 'central-sun',
+    name: '中域日光設計',
+    counties: ['台中市', '彰化縣', '南投縣', '苗栗縣', '雲林縣', '新竹市', '新竹縣'],
+    portfolioTitle: '西屯透天高效模組自用案',
+    portfolioMeta: '透天住宅 · 8.6 kWp · 2024 完工',
+    capacityKw: 8.6,
+    rating: 4.7,
+    reviewCount: 28,
+    phone: '04-2252-3890',
+    email: 'service@centralsun.example',
+    tags: ['透天厝', '自用優化', '補助代辦'],
+  },
+  {
+    id: 'south-volt',
+    name: '南方伏特綠能',
+    counties: ['台南市', '高雄市', '屏東縣', '嘉義市', '嘉義縣', '台東縣', '澎湖縣'],
+    portfolioTitle: '高雄前鎮屋頂售電型系統',
+    portfolioMeta: '透天住宅 · 12.1 kWp · 2025 完工',
+    capacityKw: 12.1,
+    rating: 4.9,
+    reviewCount: 42,
+    phone: '07-335-9021',
+    email: 'contact@southvolt.example',
+    tags: ['售電型', '高日照區', '維運合約'],
+  },
+  {
+    id: 'east-island',
+    name: '東岸島嶼能源',
+    counties: ['花蓮縣', '台東縣', '金門縣', '連江縣', '澎湖縣'],
+    portfolioTitle: '花蓮低樓層住宅抗風支架案',
+    portfolioMeta: '透天住宅 · 7.2 kWp · 2024 完工',
+    capacityKw: 7.2,
+    rating: 4.6,
+    reviewCount: 19,
+    phone: '03-822-5170',
+    email: 'team@eastisland.example',
+    tags: ['離島服務', '抗風支架', '維運巡檢'],
+  },
+];

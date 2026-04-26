@@ -17,6 +17,7 @@
 | 補助快查 | 自動對應 22 縣市政府補助金額（含來源與資料更新日期） |
 | 評估結果 | 年發電量、能源自給率、回本年限、20 年累計淨收益、月發電量圖表 |
 | PDF 報告 | 一鍵下載一頁式 A4 評估報告（`window.print()`，無額外依賴） |
+| 推薦廠商 | Results 頁依縣市顯示最多 3 家 mock 廠商，未登入聯絡會觸發註冊流程 |
 | 歷史紀錄 | 每次評估自動儲存至 PostgreSQL，支援匿名模式與登入帳號 |
 | 會員系統 | Email 註冊 / 登入（JWT），登入後可查看歷史紀錄、並排比較兩筆評估 |
 
@@ -316,6 +317,7 @@ moveend + 600ms debounce
 | StepParams 摘要 | `.param-summary-grid`, `.card-section-heading`, `.summary-row`, `.summary-row__label`, `.summary-row__value--green`, `.cost-highlight` |
 | Results KPI | `.results-kpi-grid`, `.results-kpi-item--divided`, `.results-kpi-progress` |
 | Results 標籤 | `.results-tab-nav`, `.results-tab-btn`, `.results-tab-btn--active` |
+| Results 廠商推薦 | `.vendor-section`, `.vendor-grid`, `.vendor-card`, `.vendor-contact-btn` |
 | Results CTA | `.results-cta`, `.results-cta-decoration`, `.results-cta-title`, `.results-cta-actions`, `.results-save-btn`, `.results-download-btn`, `.results-save-toast` |
 | Print | `@media print`（隱藏 `.no-print` / `.screen-only`，顯示 `.print-report`） |
 

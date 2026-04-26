@@ -19,7 +19,7 @@
 | P3 | 分享連結 | `feature/auth` | ⬜ 未開始 |
 | P4 | 廠商系統基礎版 | `feature/vendor-system` | ⬜ 未開始 |
 | P4 | 廠商訂閱方案 | `feature/vendor-system` | ⬜ 未開始 |
-| P4 | 評估結果廠商推薦 | `feature/vendor-system` | ⬜ 未開始 |
+| P4 | 評估結果廠商推薦 | `feature/vendor-system` | ✅ Mock 版完成 |
 | P5 | 站內訊息 | `feature/messaging` | ⬜ 未開始 |
 | P5 | 廠商評價機制 | `feature/messaging` | ⬜ 未開始 |
 | P6 | 平台後台 | `feature/admin` | ⬜ 未開始 |
@@ -91,7 +91,10 @@
 - [ ] 廠商 Dashboard：帳號管理、方案狀態、收到的案件列表
 
 ### 評估結果廠商推薦
-- [ ] Results 頁底部「推薦廠商」區塊（依縣市篩選，最多 3 家）
+- [x] Results 頁底部「推薦廠商」區塊（mock data，依縣市篩選，最多 3 家）
+- [x] 未登入點擊「聯絡廠商」會觸發登入提示
+- [x] 已登入點擊「聯絡廠商」先以 mailto 帶入評估摘要
+- [ ] 廠商頁面與站內訊息完成後，移除 mailto 暫代流程，改為站內詢價 Modal / 訊息流程
 - [ ] 廠商詳細頁（作品集、方案、評分）
 - [ ] 後端：`GET /api/vendors?county=xx`
 
@@ -103,6 +106,7 @@
 
 ### 站內訊息
 - [ ] Results 頁「向廠商詢價」按鈕（附帶評估摘要）
+- [ ] 取代 Results 推薦廠商 mock 版的 mailto 流程，送出站內詢價單
 - [ ] 詢價表單（描述 + 聯絡偏好）＋送出後顯示案件編號
 - [ ] 廠商端：收件箱 + 回覆輸入框
 - [ ] 用戶端：查看廠商回覆（需登入）

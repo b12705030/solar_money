@@ -49,3 +49,17 @@ export interface ComputedResults {
   selfUsedKwh: number;
   soldKwh: number;
 }
+
+export interface VendorRecommendation {
+  id: string;
+  name: string;
+  counties: string[];
+  portfolioTitle: string;
+  portfolioMeta: string;
+  capacityKw: number;
+  rating: number;
+  reviewCount: number;
+  phone: string;
+  email: string;
+  tags: string[];
+}
