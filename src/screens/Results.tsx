@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Info } from '@/components/ui';
 import { computeResults } from '@/lib/compute';
+import PrintReport from '@/components/PrintReport';
 import type { SolarState, ComputedResults } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -174,6 +175,19 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
 
   return (
     <div style={{ paddingBottom: 40 }}>
+      {/* PDF report — hidden on screen, shown only when printing */}
+      <PrintReport state={state} r={r} />
+
+      {/* Screen layout — hidden when printing */}
+      <div className="screen-only">
+      {/* Print-only header — hidden on screen */}
+      <div className="print-header" style={{ marginBottom: 24, paddingBottom: 16, borderBottom: '2px solid var(--green-200)' }}>
+        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--green-900)' }}>屋頂太陽能可行性評估報告</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 4 }}>
+          {state.address?.label ?? ''} · {state.county ?? ''} · 列印日期：{new Date().toLocaleDateString('zh-TW')}
+        </div>
+      </div>
+
       {/* Summary header */}
       <div style={{ marginBottom: 28 }}>
         <div className="eyebrow" style={{ marginBottom: 16, color: 'var(--amber)' }}>
@@ -234,8 +248,8 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--ink-200)' }}>
+      {/* Tabs — hidden when printing (both panels show via CSS) */}
+      <div className="tab-nav" style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--ink-200)' }}>
         {([
           { id: 'generation' as const, label: '發電潛力' },
           { id: 'investment' as const, label: '投資試算' },
@@ -251,7 +265,9 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
         ))}
       </div>
 
-      {tab === 'generation' ? (
+      {/* Generation panel — always in DOM; hidden via CSS when inactive tab */}
+      <div className={tab !== 'generation' ? 'tab-panel tab-panel--hidden' : 'tab-panel'}>
+        <div className="tab-section-title">發電潛力</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20 }}>
           <div className="card" style={{ padding: 28 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 24 }}>
@@ -312,7 +328,11 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
             </div>
           </div>
         </div>
-      ) : (
+      </div>
+
+      {/* Investment panel — always in DOM; hidden via CSS when inactive tab */}
+      <div className={tab !== 'investment' ? 'tab-panel tab-panel--hidden' : 'tab-panel'}>
+        <div className="tab-section-title">投資試算</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 20 }}>
           {/* Cost breakdown */}
           <div className="card" style={{ padding: 28 }}>
@@ -376,7 +396,7 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* CTA */}
       <div style={{
@@ -397,7 +417,11 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
           <button className="btn btn-secondary" style={{ background: 'transparent', color: 'var(--white)', borderColor: 'rgba(255,255,255,0.3)' }}>
             尋找廠商
           </button>
-          <button className="btn" style={{ background: 'var(--amber)', color: 'var(--green-900)', boxShadow: '0 4px 0 #8B5A10' }}>
+          <button
+            className="btn"
+            style={{ background: 'var(--amber)', color: 'var(--green-900)', boxShadow: '0 4px 0 #8B5A10' }}
+            onClick={() => window.print()}
+          >
             下載評估報告
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M8 2 L8 11 M4 7 L8 11 L12 7 M3 14 L13 14"/>
@@ -406,11 +430,12 @@ export default function Results({ state, onRestart }: { state: SolarState; onRes
         </div>
       </div>
 
-      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
+      <div className="no-print" style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
         <button className="btn-ghost" onClick={onRestart} style={{ fontSize: 13 }}>
           ← 重新評估其他地址
         </button>
       </div>
+      </div>{/* end screen-only */}
     </div>
   );
 }

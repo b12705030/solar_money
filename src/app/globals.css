@@ -357,6 +357,32 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 1px 4px rgba(27, 67, 50, 0.25);
 }
 
+/* ========== Print / PDF Export ========== */
+@media print {
+  /* Hide screen layout and all interactive chrome */
+  .screen-only,
+  .topbar,
+  .progress,
+  .wizard-footer,
+  .tweaks-panel,
+  .no-print { display: none !important; }
+
+  /* Show the dedicated PDF report component */
+  .print-report { display: block !important; }
+
+  /* Force color preservation (backgrounds, dark cards) */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  @page {
+    size: A4;
+    margin: 6mm 10mm;
+  }
+}
+
+/* Hidden normally, shown only when printing */
+.print-report { display: none; }
+.tab-panel--hidden { display: none; }
+
 /* ========== Keyframe Animations ========== */
 @keyframes spin {
   to { transform: rotate(360deg); }
