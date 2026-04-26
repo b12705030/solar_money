@@ -190,8 +190,9 @@ cp backend/.env.example backend/.env
 | 變數 | 說明 | 本地未設定時的行為 |
 |------|------|-------------------|
 | `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` | 必填，無預設 |
-| `JWT_SECRET` | 任意隨機字串（建議 `openssl rand -hex 32`） | 自動產生臨時 key，重啟後 token 失效（本地開發可接受） |
+| `JWT_SECRET` | 任意隨機字串 | 自動產生臨時 key，重啟後 token 失效（本地開發可接受） |
 | `ADMIN_SECRET` | 管理員 API secret | 預設 `dev-admin-secret`（本地開發可接受，部署前必改） |
+| `CORS_ORIGINS` | 允許的前端來源（逗號分隔） | 允許所有來源，本地開發可不設 |
 
 ### 5. 啟動服務
 
@@ -420,15 +421,11 @@ moveend + 600ms debounce
 | 變數 | 說明 | 本地未設定時的行為 |
 |------|------|-------------------|
 | `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` | 必填，無預設 |
-| `JWT_SECRET` | `openssl rand -hex 32` 產生的隨機字串 | **自動產生臨時 key，重啟後所有用戶 token 失效** |
-| `ADMIN_SECRET` | 自訂管理員 API secret | **預設為 `dev-admin-secret`，生產環境必須改掉** |
+| `JWT_SECRET` | 長隨機字串，例如 `python -c "import secrets; print(secrets.token_hex(32))"` 的輸出 | **自動產生臨時 key，重啟後所有用戶 token 失效** |
+| `ADMIN_SECRET` | 自訂管理員 API secret，例如 `solar-admin-2026-xxx` | **預設為 `dev-admin-secret`，生產環境必須改掉** |
+| `CORS_ORIGINS` | 允許的前端來源，逗號分隔，例如 `https://your-app.vercel.app,http://localhost:3000` | 未設定時允許所有來源（`*`） |
 
 > **注意：** `JWT_SECRET` 和 `ADMIN_SECRET` 本地開發可不設，但部署前務必填入。前者未設定每次重啟都會讓用戶登出；後者預設值是公開資訊，任何人都能呼叫管理員 API。
-
-4. CORS：後端目前 `allow_origins=['*']`，正式上線建議改為只允許 Vercel domain：
-   ```python
-   allow_origins=['https://your-app.vercel.app', 'http://localhost:3000']
-   ```
 
 ### 注意事項
 

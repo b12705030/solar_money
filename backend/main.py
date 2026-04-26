@@ -46,9 +46,16 @@ _ADMIN_SECRET = os.environ.get('ADMIN_SECRET', 'dev-admin-secret')
 if _ADMIN_SECRET == 'dev-admin-secret':
     print('[Admin] 警告：ADMIN_SECRET 未設定，使用開發預設值 dev-admin-secret')
 
+_CORS_ORIGINS_ENV = os.environ.get('CORS_ORIGINS', '')
+_CORS_ORIGINS = (
+    [o.strip() for o in _CORS_ORIGINS_ENV.split(',') if o.strip()]
+    if _CORS_ORIGINS_ENV
+    else ['*']
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=['*'],
     allow_headers=['*'],
