@@ -5,31 +5,34 @@ import Footer from '@/components/Footer';
 import ProgressBar from '@/components/ProgressBar';
 import TweaksPanel from '@/components/TweaksPanel';
 import WizardFooter from '@/components/WizardFooter';
+import AuthModal from '@/components/AuthModal';
+import HistoryDrawer from '@/components/HistoryDrawer';
 import Landing from '@/screens/Landing';
 import StepAddress from '@/screens/StepAddress';
 import StepUsage from '@/screens/StepUsage';
 import StepGoal from '@/screens/StepGoal';
 import StepParams from '@/screens/StepParams';
 import Results from '@/screens/Results';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { applyTheme, applyDensity } from '@/lib/theme';
 import { STEPS, TWEAKS_DEFAULTS } from '@/lib/constants';
 import type { SolarState, TweaksState } from '@/lib/types';
 
 const DEFAULT_STATE: SolarState = { monthlyKwh: 350 };
 
-export default function App() {
-  const [step, setStep] = useState(-1); // -1 = landing
+function AppInner() {
+  const { user, logout } = useAuth();
+  const [step, setStep] = useState(-1);
   const [state, setState] = useState<SolarState>(DEFAULT_STATE);
   const [exiting, setExiting] = useState<number | null>(null);
   const [tweaks, setTweaks] = useState<TweaksState>(TWEAKS_DEFAULTS);
   const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
-
-  // Apply theme/density CSS variables
   useEffect(() => { applyTheme(tweaks.theme); }, [tweaks.theme]);
   useEffect(() => { applyDensity(tweaks.density); }, [tweaks.density]);
 
-  // Tweaks edit-mode bridge
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (!e.data) return;
@@ -42,7 +45,6 @@ export default function App() {
   }, []);
 
   const update = (patch: Partial<SolarState>) => setState(s => ({ ...s, ...patch }));
-
   const updateTweak = (key: keyof TweaksState, value: string) => {
     const next = { ...tweaks, [key]: value } as TweaksState;
     setTweaks(next);
@@ -61,47 +63,51 @@ export default function App() {
     return true;
   };
 
-  const reset = () => {
-    setState(DEFAULT_STATE);
-    setStep(-1);
-  };
-
+  const reset = () => { setState(DEFAULT_STATE); setStep(-1); };
   const start = () => { setState(DEFAULT_STATE); go(0); };
 
-  // Landing
+  const topBarProps = {
+    user,
+    onLoginClick:   () => setAuthOpen(true),
+    onHistoryClick: () => setHistoryOpen(true),
+    onLogout:       logout,
+  };
+
   if (step === -1) {
     return (
       <div className="app">
-        <TopBar />
+        <TopBar {...topBarProps} />
         <main style={{ maxWidth: 1200, width: '100%', margin: '0 auto', padding: '0 40px', flex: 1 }}>
           <Landing onStart={start} />
         </main>
         <Footer />
         {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+        {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
+        {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
       </div>
     );
   }
 
-  // Results
   if (step === 4) {
     return (
       <div className="app">
-        <TopBar onHome={reset} />
+        <TopBar {...topBarProps} onHome={reset} />
         <ProgressBar step={4} steps={STEPS} />
         <main style={{ maxWidth: 1200, width: '100%', margin: '0 auto', padding: '0 40px', flex: 1 }}>
           <div style={{ padding: '24px 0' }}>
-            <Results state={state} onRestart={reset} />
+            <Results state={state} onRestart={reset} onLoginClick={() => setAuthOpen(true)} />
           </div>
         </main>
         {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+        {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
+        {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
       </div>
     );
   }
 
-  // Wizard steps 0–3
   return (
     <div className="app">
-      <TopBar onHome={reset} />
+      <TopBar {...topBarProps} onHome={reset} />
       <ProgressBar step={step} steps={STEPS} />
       <main style={{
         maxWidth: 1200, width: '100%', margin: '0 auto',
@@ -126,16 +132,22 @@ export default function App() {
           ))}
         </div>
       </main>
-
       <WizardFooter
-        step={step}
-        steps={STEPS}
-        canAdvance={canAdvance()}
+        step={step} steps={STEPS} canAdvance={canAdvance()}
         onBack={() => (step === 0 ? go(-1) : go(step - 1))}
         onNext={() => go(step + 1)}
       />
-
       {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+      {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
+      {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   );
 }

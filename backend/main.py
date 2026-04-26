@@ -8,12 +8,16 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / '.env')
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from .db import (close_pool, get_shadow_cache, get_user_assessments, init_db,
-                 save_assessment, set_shadow_cache, shadow_cache_key)
+from .auth import create_token, decode_token, hash_password, verify_password
+from .db import (claim_anonymous_assessments, close_pool, create_account,
+                 get_account_assessments, get_account_by_email, get_shadow_cache,
+                 get_user_assessments, init_db, save_assessment, set_shadow_cache,
+                 shadow_cache_key)
 from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
                      get_buildings, precompute_shadows_all_hours, project_shadow)
 
@@ -174,6 +178,66 @@ async def list_assessments(
 ):
     rows = await get_user_assessments(user_id, limit)
     return rows
+
+
+# ─── 帳號 & Auth ─────────────────────────────────────────────────────────────
+
+_bearer = HTTPBearer()
+
+
+def current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+    try:
+        return decode_token(creds.credentials)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+
+class AuthRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    token: str
+    user_id: str
+    email: str
+
+
+@app.post('/api/auth/register', response_model=AuthResponse)
+async def register(req: AuthRequest):
+    existing = await get_account_by_email(req.email)
+    if existing:
+        raise HTTPException(status_code=409, detail='此 Email 已被註冊')
+    if len(req.password) < 8:
+        raise HTTPException(status_code=422, detail='密碼至少需要 8 個字元')
+    account_id = await create_account(req.email, hash_password(req.password))
+    return AuthResponse(token=create_token(account_id), user_id=account_id, email=req.email)
+
+
+@app.post('/api/auth/login', response_model=AuthResponse)
+async def login(req: AuthRequest):
+    account = await get_account_by_email(req.email)
+    if not account or not verify_password(req.password, account['password_hash']):
+        raise HTTPException(status_code=401, detail='Email 或密碼錯誤')
+    return AuthResponse(token=create_token(account['id']), user_id=account['id'], email=account['email'])
+
+
+@app.get('/api/me/assessments')
+async def me_assessments(
+    account_id: str = Depends(current_user_id),
+    limit: int = Query(20, le=50),
+):
+    return await get_account_assessments(account_id, limit)
+
+
+@app.post('/api/me/claim')
+async def claim_assessments(
+    user_id: str = Query(..., description='匿名 localStorage UUID'),
+    account_id: str = Depends(current_user_id),
+):
+    """登入後將匿名評估綁定到帳號。"""
+    await claim_anonymous_assessments(user_id, account_id)
+    return {'ok': True}
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
