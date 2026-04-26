@@ -4,6 +4,7 @@ import { Info } from '@/components/ui';
 import { computeResults } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
+import InquiryModal from '@/components/InquiryModal';
 import type { SolarState, ComputedResults, VendorDetail, VendorRecommendation } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -294,8 +295,12 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [vendorDetail, setVendorDetail] = useState<VendorDetail | null>(null);
   const [vendorDetailLoading, setVendorDetailLoading] = useState(false);
   const [vendorDetailError, setVendorDetailError] = useState(false);
+  const [inquiryVendor, setInquiryVendor] = useState<VendorRecommendation | null>(null);
+  const [inquirySent, setInquirySent] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState(false);
   const loginTimerRef = useRef<number | null>(null);
   const vendorSectionRef = useRef<HTMLDivElement | null>(null);
+  const pendingContactVendorRef = useRef<VendorRecommendation | null>(null);
 
   useEffect(() => {
     const userId = getUserId();
@@ -361,17 +366,28 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       method: 'POST',
       headers: { Authorization: `Bearer ${user.token}` },
     })
-      .then(() => setClaimedAccountId(user.id))
-      .catch(() => {});
+      .then(res => {
+        if (res.ok) setClaimedAccountId(user.id);
+        else setClaimError(true);
+      })
+      .catch(() => setClaimError(true));
   }, [anonymousUserId, assessmentStored, claimedAccountId, user]);
 
+  // 登入後：清除 toast/timer，並自動重試 pending 的廠商聯絡動作
   useEffect(() => {
-    if (authToastMessage && user) setAuthToastMessage('');
-    if (user && loginTimerRef.current) {
+    if (!user) return;
+    if (authToastMessage) setAuthToastMessage('');
+    if (loginTimerRef.current) {
       window.clearTimeout(loginTimerRef.current);
       loginTimerRef.current = null;
     }
-  }, [authToastMessage, user]);
+    const pending = pendingContactVendorRef.current;
+    if (pending) {
+      pendingContactVendorRef.current = null;
+      setInquiryVendor(pending);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   useEffect(() => () => {
     if (loginTimerRef.current) window.clearTimeout(loginTimerRef.current);
@@ -394,20 +410,11 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
   const handleVendorContact = (vendor: VendorRecommendation) => {
     if (!user) {
+      pendingContactVendorRef.current = vendor;
       promptLogin('需要登入才能聯絡廠商，正在開啟登入視窗⋯');
       return;
     }
-    const subject = encodeURIComponent(`屋頂太陽能評估詢價 - ${state.county ?? '台灣'}`);
-    const body = encodeURIComponent([
-      `廠商您好，我想詢問 ${vendor.name} 的太陽能安裝服務。`,
-      '',
-      `地址：${state.address?.label ?? '尚未填寫'}`,
-      `縣市：${state.county ?? '尚未填寫'}`,
-      `預估容量：${state.capacity ?? '-'} kWp`,
-      `預估年發電量：${r.annualKwh.toLocaleString()} kWh`,
-      `預估回本年限：${r.paybackYears} 年`,
-    ].join('\n'));
-    window.location.href = `mailto:${vendor.email}?subject=${subject}&body=${body}`;
+    setInquiryVendor(vendor);
   };
 
   const handleFindVendors = () => {
@@ -730,7 +737,13 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         </div>
       )}
 
-      <div className="no-print" style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
+      {claimError && (
+        <div className="no-print" style={{ marginTop: 16, textAlign: 'center', fontSize: 12, color: 'var(--danger)' }}>
+          評估結果儲存至帳號失敗，請重新整理後再試。
+        </div>
+      )}
+
+      <div className="no-print" style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
         <button className="btn-ghost" onClick={onRestart} style={{ fontSize: 13 }}>
           ← 重新評估其他地址
         </button>
@@ -744,6 +757,24 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           onClose={() => setVendorDetailOpen(false)}
           onContact={handleVendorContact}
         />
+      )}
+      {inquiryVendor && user && (
+        <InquiryModal
+          vendor={inquiryVendor}
+          state={state}
+          results={r}
+          token={user.token}
+          onClose={() => setInquiryVendor(null)}
+          onSent={() => {
+            setInquirySent(inquiryVendor.name);
+            setInquiryVendor(null);
+          }}
+        />
+      )}
+      {inquirySent && (
+        <div className="results-save-toast" role="status" aria-live="polite">
+          詢價已送出給 {inquirySent}，廠商將盡快回覆！
+        </div>
       )}
     </div>
   );

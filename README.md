@@ -18,9 +18,12 @@
 | 評估結果 | 年發電量、能源自給率、回本年限、20 年累計淨收益、月發電量圖表 |
 | PDF 報告 | 一鍵下載一頁式 A4 評估報告（`window.print()`，無額外依賴） |
 | 推薦廠商 | Results 頁依縣市從 API 顯示最多 3 家廠商；含 loading / empty / error 狀態 |
-| 廠商入駐 | TopBar 提供廠商申請表單，送出後進入待審核狀態 |
+| 廠商入駐 | TopBar 提供廠商申請表單，送出後進入待審核狀態；若已登入則自動綁定帳號 |
+| 廠商儀表板 | 廠商登入後可於「廠商後台」編輯資料、管理作品集 |
+| 廠商詢價紀錄 | 民眾聯絡廠商時自動儲存詢價紀錄，廠商可於後台查看 |
+| Admin 管理面板 | Admin 帳號可於「管理後台」審核廠商申請（核准／駁回）、查詢帳號與變更角色 |
 | 歷史紀錄 | 每次評估自動儲存至 PostgreSQL，支援匿名模式與登入帳號 |
-| 會員系統 | Email 註冊 / 登入（JWT），登入後可查看歷史紀錄、並排比較兩筆評估 |
+| 會員系統 | Email 註冊 / 登入（JWT + role），登入後可查看歷史紀錄、並排比較兩筆評估 |
 
 ---
 
@@ -49,10 +52,11 @@
 PostgreSQL（Neon serverless）
   ├─ osm_cache            OSM 建物資料（7 天 TTL）
   ├─ shadow_cache         陰影預計算結果（月份粒度）
-  ├─ accounts             會員帳號
+  ├─ accounts             會員帳號與角色（user / vendor / admin）
   ├─ assessments          使用者評估紀錄（匿名 or 帳號綁定）
   ├─ vendors              廠商基本資料、服務縣市、評分
-  └─ vendor_portfolios    廠商作品集案例
+  ├─ vendor_portfolios    廠商作品集案例
+  └─ inquiries            民眾詢價紀錄（vendor_id + 評估摘要 + 詢問者帳號）
 ```
 
 詳細資料庫架構見 [backend/DATABASE.md](backend/DATABASE.md)。
@@ -69,8 +73,11 @@ solar_money/
 ├─ src/                          前端（Next.js App Router）
 │   ├─ app/
 │   │   ├─ page.tsx              主入口，管理 wizard 步驟 + auth modal/drawer 狀態
-│   │   ├─ layout.tsx            HTML head、字體載入
-│   │   └─ globals.css           全域樣式、CSS 變數、元件 class
+│   │   ├─ layout.tsx            HTML head、字體載入、全域 Providers 包層
+│   │   ├─ providers.tsx         client-side 全域 providers（AuthProvider）
+│   │   ├─ globals.css           全域樣式、CSS 變數、元件 class
+│   │   ├─ vendor/page.tsx       廠商後台頁面 /vendor（role=vendor 限定）
+│   │   └─ admin/page.tsx        管理後台頁面 /admin（role=admin 限定）
 │   ├─ contexts/
 │   │   └─ AuthContext.tsx       React Context：login / register / logout + localStorage JWT
 │   ├─ screens/
@@ -85,8 +92,10 @@ solar_money/
 │   │   ├─ PrintReport.tsx       PDF 列印版面（僅 @media print 顯示，獨立於網頁 UI）
 │   │   ├─ AuthModal.tsx         登入 / 註冊 Modal
 │   │   ├─ HistoryDrawer.tsx     歷史評估 Drawer，含並排比較
+│   │   ├─ VendorApplyModal.tsx  廠商入駐申請 Modal（已登入者自動帶入 email，未登入者引導登入）
+│   │   ├─ DashLayout.tsx        廠商/管理後台共用佈局（可收折側欄 + monochrome SVG icon）
 │   │   ├─ Slider.tsx            可重用滑桿元件
-│   │   ├─ TopBar.tsx            頂部導覽列（含登入狀態顯示）
+│   │   ├─ TopBar.tsx            頂部導覽列（登入狀態、角色對應按鈕）
 │   │   ├─ Footer.tsx            頁腳
 │   │   ├─ ProgressBar.tsx       步驟進度條
 │   │   ├─ WizardFooter.tsx      上一步 / 下一步按鈕
@@ -176,6 +185,7 @@ cp backend/.env.example backend/.env
 |------|------|
 | `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` |
 | `JWT_SECRET` | 任意隨機字串（建議 `openssl rand -hex 32`）；未設定時後端自動產生臨時 key（重啟後 token 失效） |
+| `ADMIN_SECRET` | 管理員 API 可使用的開發測試 secret；未設定時開發預設為 `dev-admin-secret` |
 
 ### 5. 啟動服務
 
@@ -219,6 +229,27 @@ uvicorn backend.main:app --reload
 | `GET` | `/api/vendors?county=<縣市>&limit=3` | 依服務縣市取得推薦廠商；未帶 county 時回傳預設推薦 |
 | `GET` | `/api/vendors/{id}` | 取得單一廠商詳細資料與作品集 |
 | `POST` | `/api/vendors/apply` | 廠商入駐申請，預設為待審核且不公開 |
+| `POST` | `/api/vendors/{id}/inquire` | 民眾聯絡廠商時儲存詢價紀錄（可選 Bearer JWT） |
+
+### 廠商儀表板（Bearer JWT，role = vendor）
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/me/vendor` | 取得自己的廠商資料與作品集 |
+| `PATCH` | `/api/me/vendor` | 更新廠商資料（名稱、電話、email、縣市、標籤） |
+| `POST` | `/api/me/vendor/portfolios` | 新增作品集項目 |
+| `DELETE` | `/api/me/vendor/portfolios/{id}` | 刪除作品集項目 |
+| `GET` | `/api/me/vendor/inquiries` | 取得收到的詢價紀錄 |
+
+### 管理員（Bearer JWT，role = admin 或 X-Admin-Secret header）
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/admin/vendors/pending` | 取得待審核廠商申請 |
+| `POST` | `/api/admin/vendors/{id}/approve` | 核准廠商，公開顯示於推薦列表；自動升級廠商帳號 role 為 vendor |
+| `POST` | `/api/admin/vendors/{id}/reject` | 退回廠商申請，可附退回原因 |
+| `GET` | `/api/admin/accounts/search?email=` | 依 Email 查詢帳號（id + 目前角色） |
+| `POST` | `/api/admin/accounts/{id}/role` | 調整帳號角色（`user` / `vendor` / `admin`） |
 
 ### 會員 Auth
 
@@ -290,8 +321,9 @@ moveend + 600ms debounce
 ## 使用者識別
 
 - **匿名模式**：前端 `localStorage` 存 `crypto.randomUUID()` 作為 `user_id`，評估完成自動送後端儲存
-- **登入模式**：`POST /api/auth/login` 取得 JWT，儲存在 `localStorage('solar_auth')`；`AuthContext` 全域管理登入狀態
+- **登入模式**：`POST /api/auth/login` 取得 JWT 與角色，儲存在 `localStorage('solar_auth')`；`AuthContext` 全域管理登入狀態
 - **帳號綁定**：登入後呼叫 `POST /api/me/claim?user_id=<uuid>` 可將過去的匿名評估綁定至帳號
+- **角色區分**：帳號角色目前支援 `user`、`vendor`、`admin`。TopBar 會顯示目前角色，方便本地測試。
 
 ---
 
@@ -315,7 +347,7 @@ moveend + 600ms debounce
 
 | 區段 | 主要 class |
 |------|-----------|
-| Design Tokens | CSS 變數（`--green-*`, `--ink-*`, `--shadow-*`, `--amber`, `--ease-out`） |
+| Design Tokens | CSS 變數（`--green-*`, `--ink-*`, `--shadow-*`, `--amber`, `--ease-out`）；語義別名 `--text`, `--surface`, `--border`, `--accent`, `--bg` |
 | App Shell | `.app`, `.topbar`, `.brand` |
 | Typography | `.eyebrow`, `.h-title`, `.body`, `.caption`, `.body-sm`, `.num` |
 | Buttons | `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-outline`, `.btn-outline-sm` |
@@ -330,6 +362,10 @@ moveend + 600ms debounce
 | Results 標籤 | `.results-tab-nav`, `.results-tab-btn`, `.results-tab-btn--active` |
 | Results 廠商推薦 | `.vendor-section`, `.vendor-grid`, `.vendor-card`, `.vendor-contact-btn`, `.vendor-detail-modal`, `.vendor-portfolio-list` |
 | Results CTA | `.results-cta`, `.results-cta-decoration`, `.results-cta-title`, `.results-cta-actions`, `.results-save-btn`, `.results-download-btn`, `.results-save-toast` |
+| Dashboard 共用佈局 | `.dash-page`, `.dash-topbar`, `.dash-topbar-wordmark`, `.dash-topbar-sep`, `.dash-topbar-section`, `.dash-back-btn`, `.dash-body`, `.dash-sidebar`, `.dash-sidebar--collapsed`, `.dash-collapse-btn`, `.dash-nav-list`, `.dash-nav-btn`, `.dash-nav-btn--active`, `.dash-nav-btn-icon`, `.dash-nav-btn-label`, `.dash-nav-badge`, `.dash-nav-badge--dot`, `.dash-content` |
+| Dashboard 內容 | `.dash-content-header`, `.dash-stats`, `.dash-stat`, `.dash-vendor-hero`, `.dash-portfolio-grid`, `.dash-portfolio-card`, `.dash-inquiry-table`, `.dash-application-card`, `.dash-account-search`, `.dash-account-result`, `.dash-save-row`, `.dash-hint`, `.dash-empty`, `.dash-loading` |
+| 廠商入駐 | `.vendor-apply-modal`, `.vendor-apply-login-required`, `.vendor-apply-email-display` |
+| 廠商狀態標籤 | `.vd-status-badge`, `.vd-status-badge--pending`, `.vd-status-badge--approved`, `.vd-status-badge--rejected` |
 | Print | `@media print`（隱藏 `.no-print` / `.screen-only`，顯示 `.print-report`） |
 
 ---

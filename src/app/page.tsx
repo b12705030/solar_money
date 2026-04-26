@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import TopBar from '@/components/TopBar';
 import Footer from '@/components/Footer';
 import ProgressBar from '@/components/ProgressBar';
@@ -14,15 +15,16 @@ import StepUsage from '@/screens/StepUsage';
 import StepGoal from '@/screens/StepGoal';
 import StepParams from '@/screens/StepParams';
 import Results from '@/screens/Results';
-import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { applyTheme, applyDensity } from '@/lib/theme';
 import { STEPS, TWEAKS_DEFAULTS } from '@/lib/constants';
 import type { SolarState, TweaksState } from '@/lib/types';
 
 const DEFAULT_STATE: SolarState = { monthlyKwh: 350 };
 
-function AppInner() {
+export default function App() {
   const { user, logout } = useAuth();
+  const router = useRouter();
   const [step, setStep] = useState(-1);
   const [state, setState] = useState<SolarState>(DEFAULT_STATE);
   const [exiting, setExiting] = useState<number | null>(null);
@@ -70,11 +72,22 @@ function AppInner() {
 
   const topBarProps = {
     user,
-    onLoginClick:   () => setAuthOpen(true),
-    onHistoryClick: () => setHistoryOpen(true),
+    onLoginClick:       () => setAuthOpen(true),
+    onHistoryClick:     () => setHistoryOpen(true),
     onVendorApplyClick: () => setVendorApplyOpen(true),
-    onLogout:       logout,
+    onVendorDashClick:  () => router.push('/vendor'),
+    onAdminPanelClick:  () => router.push('/admin'),
+    onLogout:           logout,
   };
+
+  const modals = (
+    <>
+      {tweaksOpen      && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+      {authOpen        && <AuthModal onClose={() => setAuthOpen(false)} />}
+      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} onLoginClick={() => { setVendorApplyOpen(false); setAuthOpen(true); }} />}
+      {historyOpen     && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
+    </>
+  );
 
   if (step === -1) {
     return (
@@ -84,10 +97,7 @@ function AppInner() {
           <Landing onStart={start} />
         </main>
         <Footer />
-        {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
-        {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
-        {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} />}
-        {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
+        {modals}
       </div>
     );
   }
@@ -102,10 +112,7 @@ function AppInner() {
             <Results state={state} onRestart={reset} onLoginClick={() => setAuthOpen(true)} />
           </div>
         </main>
-        {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
-        {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
-        {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} />}
-        {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
+        {modals}
       </div>
     );
   }
@@ -142,18 +149,7 @@ function AppInner() {
         onBack={() => (step === 0 ? go(-1) : go(step - 1))}
         onNext={() => go(step + 1)}
       />
-      {tweaksOpen && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
-      {authOpen    && <AuthModal onClose={() => setAuthOpen(false)} />}
-      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} />}
-      {historyOpen && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
+      {modals}
     </div>
-  );
-}
-
-export default function App() {
-  return (
-    <AuthProvider>
-      <AppInner />
-    </AuthProvider>
   );
 }

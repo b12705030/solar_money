@@ -1,7 +1,7 @@
 'use client';
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { AuthUser } from '@/lib/auth';
-import { clearStoredAuth, getStoredAuth, setStoredAuth } from '@/lib/auth';
+import { clearStoredAuth, getStoredAuth, normalizeRole, setStoredAuth } from '@/lib/auth';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -36,8 +36,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const err = await res.json().catch(() => ({ detail: '未知錯誤' }));
       throw new Error(err.detail ?? '請求失敗');
     }
-    const data = await res.json() as { token: string; user_id: string; email: string };
-    const authUser: AuthUser = { id: data.user_id, email: data.email, token: data.token };
+    const data = await res.json() as { token: string; user_id: string; email: string; role?: string };
+    const authUser: AuthUser = {
+      id: data.user_id,
+      email: data.email,
+      token: data.token,
+      role: normalizeRole(data.role),
+    };
     setStoredAuth(authUser);
     setUser(authUser);
     return authUser;

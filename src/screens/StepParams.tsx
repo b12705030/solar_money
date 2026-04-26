@@ -142,6 +142,10 @@ export default function StepParams({
             <div className="num cost-highlight-amount">NT$ {Math.round(outOfPocket).toLocaleString()}</div>
             <div className="cost-highlight-note">
               {subsidy.source} · {subsidy.amount.toLocaleString()} 元/kW · 資料更新：{subsidy.updatedAt}
+              {' '}·{' '}
+              <a href={subsidy.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--green-700)', textDecoration: 'underline' }}>
+                查看補助公告
+              </a>
             </div>
           </div>
         </div>

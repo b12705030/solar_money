@@ -49,6 +49,7 @@
 | `id` | UUID PK | auto gen |
 | `email` | TEXT UNIQUE | 不區分大小寫（資料庫層級保持原始大小寫） |
 | `password_hash` | TEXT | bcrypt hash，不儲存明文 |
+| `role` | TEXT | 帳號角色：`user` / `vendor` / `admin`，預設 `user` |
 | `created_at` | TIMESTAMPTZ | 建立時間 |
 
 ---
@@ -88,6 +89,7 @@
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `id` | TEXT PK | 穩定識別碼 |
+| `account_id` | UUID FK UNIQUE | 對應廠商登入帳號（nullable；目前申請 MVP 尚未綁定） |
 | `name` | TEXT | 廠商名稱 |
 | `company_tax_id` | TEXT | 統一編號 |
 | `contact_name` | TEXT | 聯絡人 |
@@ -101,12 +103,13 @@
 | `subscription_status` | TEXT | 方案狀態；目前 seed 資料為 `mock` |
 | `application_status` | TEXT | 申請狀態（`pending` / `approved` 等） |
 | `license_note` | TEXT | 相關執照或備註 |
+| `rejection_reason` | TEXT | 退回原因 |
 | `created_at` | TIMESTAMPTZ | 建立時間 |
 
 ---
 
 ### `vendor_portfolios`
-廠商作品集案例。Results 頁目前取每家廠商一筆 featured case 顯示。
+廠商作品集案例。Results 頁目前取每家廠商一筆 featured case 顯示。廠商可於後台新增或刪除。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
@@ -118,6 +121,23 @@
 | `completed_year` | INT | 完工年份 |
 | `is_featured` | BOOLEAN | 是否為推薦顯示案例 |
 | `created_at` | TIMESTAMPTZ | 建立時間 |
+
+---
+
+### `inquiries`
+民眾從 Results 頁點擊「聯絡廠商」時自動寫入一筆詢價紀錄，廠商可於後台儀表板查看。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | UUID PK | auto gen |
+| `vendor_id` | TEXT NOT NULL FK | 對應 `vendors.id` |
+| `account_id` | UUID FK | 詢問者帳號（nullable；未登入為 NULL） |
+| `address` | TEXT | 評估地址 |
+| `county` | TEXT | 縣市 |
+| `capacity_kw` | DOUBLE | 預估裝機容量 (kWp) |
+| `annual_kwh` | DOUBLE | 預估年發電量 |
+| `payback_years` | DOUBLE | 預估回本年限 |
+| `created_at` | TIMESTAMPTZ | 詢價時間 |
 
 ---
 
@@ -144,7 +164,7 @@ Email + 密碼 → 建立帳號 → 回傳 JWT token。
 
 **Request body**：`{ email: string, password: string }`（密碼至少 8 字元）
 
-**Response**：`{ token, user_id, email }`
+**Response**：`{ token, user_id, email, role }`
 
 **錯誤**：`409` Email 已存在、`422` 密碼太短
 
@@ -155,7 +175,7 @@ Email + 密碼驗證 → 回傳 JWT token。
 
 **Request body**：`{ email: string, password: string }`
 
-**Response**：`{ token, user_id, email }`
+**Response**：`{ token, user_id, email, role }`
 
 **錯誤**：`401` Email 或密碼錯誤
 
@@ -246,6 +266,54 @@ Email + 密碼驗證 → 回傳 JWT token。
 ```
 
 **Response**：`{ "id": "vendor-...", "status": "pending" }`
+
+---
+
+### 廠商儀表板（Bearer JWT，廠商本人）
+
+#### `GET /api/me/vendor`
+取得自己的廠商資料與作品集。帳號未綁定廠商時回傳 `404`。
+
+#### `PATCH /api/me/vendor`
+更新廠商資料（名稱、電話、email、服務縣市、標籤）。
+
+#### `POST /api/me/vendor/portfolios`
+新增作品集項目。request body：`{ title, meta, capacityKw?, completedYear? }`
+
+#### `DELETE /api/me/vendor/portfolios/{portfolio_id}`
+刪除作品集項目（含 vendor_id 安全檢查，只能刪自己的）。
+
+#### `GET /api/me/vendor/inquiries?limit=50`
+取得收到的詢價紀錄，LEFT JOIN accounts 取得詢問者 email。
+
+#### `POST /api/vendors/{id}/inquire`
+民眾聯絡廠商時呼叫，fire-and-forget 儲存詢價紀錄。可選 Bearer JWT（登入時附帶 account_id）。
+
+---
+
+### Admin（Bearer JWT role=admin，或 `X-Admin-Secret` header）
+
+開發測試預設 `ADMIN_SECRET = dev-admin-secret`。
+
+#### `GET /api/admin/vendors/pending`
+取得待審核廠商申請列表（`application_status = pending`）。
+
+#### `POST /api/admin/vendors/{id}/approve`
+核准廠商：`approved = true`、`application_status = approved`。
+若廠商已綁定帳號，**同一 transaction** 自動將帳號 role 升為 `vendor`。
+
+#### `POST /api/admin/vendors/{id}/reject`
+退回廠商申請，可附退回原因：`{ "reason": "資料不完整" }`
+
+#### `GET /api/admin/accounts/search?email=`
+依 Email 查詢帳號，回傳 `{ id, email, role }`。用於管理後台帳號管理。
+
+#### `POST /api/admin/accounts/{id}/role`
+調整帳號角色。可設 `user`、`vendor`、`admin`；帳號需重新登入才會生效。
+
+```json
+{ "role": "admin" }
+```
 
 ---
 

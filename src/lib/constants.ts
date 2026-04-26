@@ -60,33 +60,33 @@ export const PANEL_GRADES = [
   { id: 'premium',  label: '高效款', costPerKw: 70000, efficiency: '22–23%', desc: '高效模組，同樣屋頂裝更多電' },
 ] as const;
 
-export const SUBSIDIES: Record<string, { amount: number; per: string; source: string; updatedAt: string }> = {
+export const SUBSIDIES: Record<string, { amount: number; per: string; source: string; updatedAt: string; url: string }> = {
   // 六都
-  '台北市': { amount: 15000, per: 'kW', source: '台北市政府產業發展局', updatedAt: '2025-01' },
-  '新北市': { amount: 12000, per: 'kW', source: '新北市政府環境保護局', updatedAt: '2025-01' },
-  '桃園市': { amount: 10000, per: 'kW', source: '桃園市政府環境保護局', updatedAt: '2025-01' },
-  '台中市': { amount: 10000, per: 'kW', source: '台中市政府環境保護局', updatedAt: '2025-01' },
-  '台南市': { amount: 15000, per: 'kW', source: '台南市政府經濟發展局', updatedAt: '2025-01' },
-  '高雄市': { amount: 18000, per: 'kW', source: '高雄市政府經濟發展局', updatedAt: '2025-01' },
+  '台北市': { amount: 15000, per: 'kW', source: '台北市政府產業發展局', updatedAt: '2025-01', url: 'https://www.doed.gov.taipei/' },
+  '新北市': { amount: 12000, per: 'kW', source: '新北市政府環境保護局', updatedAt: '2025-01', url: 'https://www.epd.ntpc.gov.tw/' },
+  '桃園市': { amount: 10000, per: 'kW', source: '桃園市政府環境保護局', updatedAt: '2025-01', url: 'https://epb.tycg.gov.tw/' },
+  '台中市': { amount: 10000, per: 'kW', source: '台中市政府環境保護局', updatedAt: '2025-01', url: 'https://epb.taichung.gov.tw/' },
+  '台南市': { amount: 15000, per: 'kW', source: '台南市政府經濟發展局', updatedAt: '2025-01', url: 'https://ecodev.tainan.gov.tw/' },
+  '高雄市': { amount: 18000, per: 'kW', source: '高雄市政府經濟發展局', updatedAt: '2025-01', url: 'https://eda.kcg.gov.tw/' },
   // 省轄市
-  '基隆市': { amount: 10000, per: 'kW', source: '基隆市政府產業發展處', updatedAt: '2025-01' },
-  '新竹市': { amount: 10000, per: 'kW', source: '新竹市政府環境保護處', updatedAt: '2025-01' },
-  '嘉義市': { amount: 12000, per: 'kW', source: '嘉義市政府環境保護局', updatedAt: '2025-01' },
+  '基隆市': { amount: 10000, per: 'kW', source: '基隆市政府產業發展處', updatedAt: '2025-01', url: 'https://did.klcg.gov.tw/' },
+  '新竹市': { amount: 10000, per: 'kW', source: '新竹市政府環境保護處', updatedAt: '2025-01', url: 'https://www.hcepb.gov.tw/' },
+  '嘉義市': { amount: 12000, per: 'kW', source: '嘉義市政府環境保護局', updatedAt: '2025-01', url: 'https://epb.chiayi.gov.tw/' },
   // 縣
-  '新竹縣': { amount: 8000,  per: 'kW', source: '新竹縣政府環境保護局',   updatedAt: '2025-01' },
-  '苗栗縣': { amount: 8000,  per: 'kW', source: '苗栗縣政府建設及工程處', updatedAt: '2025-01' },
-  '彰化縣': { amount: 10000, per: 'kW', source: '彰化縣政府環境保護局',   updatedAt: '2025-01' },
-  '南投縣': { amount: 8000,  per: 'kW', source: '南投縣政府建設處',       updatedAt: '2025-01' },
-  '雲林縣': { amount: 10000, per: 'kW', source: '雲林縣政府工務處',       updatedAt: '2025-01' },
-  '嘉義縣': { amount: 10000, per: 'kW', source: '嘉義縣政府環境保護局',   updatedAt: '2025-01' },
-  '屏東縣': { amount: 12000, per: 'kW', source: '屏東縣政府環境保護局',   updatedAt: '2025-01' },
-  '宜蘭縣': { amount: 8000,  per: 'kW', source: '宜蘭縣政府建設處',       updatedAt: '2025-01' },
-  '花蓮縣': { amount: 8000,  per: 'kW', source: '花蓮縣政府建設處',       updatedAt: '2025-01' },
-  '台東縣': { amount: 8000,  per: 'kW', source: '台東縣政府建設處',       updatedAt: '2025-01' },
+  '新竹縣': { amount: 8000,  per: 'kW', source: '新竹縣政府環境保護局',   updatedAt: '2025-01', url: 'https://epb.hsinchu.gov.tw/' },
+  '苗栗縣': { amount: 8000,  per: 'kW', source: '苗栗縣政府建設及工程處', updatedAt: '2025-01', url: 'https://www.miaoli.gov.tw/' },
+  '彰化縣': { amount: 10000, per: 'kW', source: '彰化縣政府環境保護局',   updatedAt: '2025-01', url: 'https://epb.chcg.gov.tw/' },
+  '南投縣': { amount: 8000,  per: 'kW', source: '南投縣政府建設處',       updatedAt: '2025-01', url: 'https://www.nantou.gov.tw/' },
+  '雲林縣': { amount: 10000, per: 'kW', source: '雲林縣政府工務處',       updatedAt: '2025-01', url: 'https://www.yunlin.gov.tw/' },
+  '嘉義縣': { amount: 10000, per: 'kW', source: '嘉義縣政府環境保護局',   updatedAt: '2025-01', url: 'https://epb.cyhg.gov.tw/' },
+  '屏東縣': { amount: 12000, per: 'kW', source: '屏東縣政府環境保護局',   updatedAt: '2025-01', url: 'https://epb.pthg.gov.tw/' },
+  '宜蘭縣': { amount: 8000,  per: 'kW', source: '宜蘭縣政府建設處',       updatedAt: '2025-01', url: 'https://www.e-land.gov.tw/' },
+  '花蓮縣': { amount: 8000,  per: 'kW', source: '花蓮縣政府建設處',       updatedAt: '2025-01', url: 'https://www.hl.gov.tw/' },
+  '台東縣': { amount: 8000,  per: 'kW', source: '台東縣政府建設處',       updatedAt: '2025-01', url: 'https://www.taitung.gov.tw/' },
   // 離島
-  '澎湖縣': { amount: 15000, per: 'kW', source: '澎湖縣政府建設處', updatedAt: '2025-01' },
-  '金門縣': { amount: 15000, per: 'kW', source: '金門縣政府建設局', updatedAt: '2025-01' },
-  '連江縣': { amount: 15000, per: 'kW', source: '連江縣政府建設局', updatedAt: '2025-01' },
+  '澎湖縣': { amount: 15000, per: 'kW', source: '澎湖縣政府建設處', updatedAt: '2025-01', url: 'https://www.penghu.gov.tw/' },
+  '金門縣': { amount: 15000, per: 'kW', source: '金門縣政府建設局', updatedAt: '2025-01', url: 'https://www.kinmen.gov.tw/' },
+  '連江縣': { amount: 15000, per: 'kW', source: '連江縣政府建設局', updatedAt: '2025-01', url: 'https://www.matsu.gov.tw/' },
 };
 
 export const SUGGESTIONS: AddressOption[] = [

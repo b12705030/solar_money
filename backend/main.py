@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from pathlib import Path
@@ -8,17 +9,22 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / '.env')
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from .auth import create_token, decode_token, hash_password, verify_password
-from .db import (claim_anonymous_assessments, close_pool, create_account,
-                 create_vendor_application,
-                 get_account_assessments, get_account_by_email, get_shadow_cache,
-                 get_user_assessments, get_vendor_detail, init_db, list_vendors,
-                 save_assessment, set_shadow_cache, shadow_cache_key)
+from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
+                 claim_anonymous_assessments, close_pool, create_account,
+                 create_vendor_application, delete_portfolio, get_account_assessments,
+                 get_account_by_email, get_account_by_id, get_application_status,
+                 get_my_vendor, get_potential_leads, get_shadow_cache, get_user_assessments,
+                 get_user_inquiries, get_vendor_detail, get_vendor_inquiries, init_db,
+                 list_pending_vendor_applications, list_vendors, reject_vendor_application,
+                 reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
+                 set_shadow_cache, shadow_cache_key, update_inquiry_status,
+                 update_vendor_logo, update_vendor_profile)
 from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
                      get_buildings, precompute_shadows_all_hours, project_shadow)
 
@@ -35,6 +41,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title='Solar Money API', version='0.1.0', lifespan=lifespan)
+
+_ADMIN_SECRET = os.environ.get('ADMIN_SECRET', 'dev-admin-secret')
+if _ADMIN_SECRET == 'dev-admin-secret':
+    print('[Admin] 警告：ADMIN_SECRET 未設定，使用開發預設值 dev-admin-secret')
 
 app.add_middleware(
     CORSMiddleware,
@@ -220,6 +230,57 @@ class VendorApplyRequest(BaseModel):
     phone: str
     counties: List[str]
     license_note: Optional[str] = None
+    logo_url: Optional[str] = None
+
+
+class VendorApplicationResponse(BaseModel):
+    id: str
+    name: str
+    companyTaxId: Optional[str] = None
+    contactName: Optional[str] = None
+    counties: List[str]
+    phone: str
+    email: str
+    licenseNote: Optional[str] = None
+    applicationStatus: str
+    createdAt: str
+
+
+class VendorRejectRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class AccountRoleRequest(BaseModel):
+    role: str
+
+
+_bearer = HTTPBearer()
+_optional_bearer = HTTPBearer(auto_error=False)
+_VALID_ROLES = {'user', 'vendor', 'admin'}
+
+
+def current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+    try:
+        return decode_token(creds.credentials)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+
+async def require_admin(
+    x_admin_secret: Optional[str] = Header(None),
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+) -> None:
+    if x_admin_secret == _ADMIN_SECRET:
+        return
+    if creds:
+        try:
+            account_id = decode_token(creds.credentials)
+            account = await get_account_by_id(account_id)
+            if account and account.get('role') == 'admin':
+                return
+        except ValueError:
+            pass
+    raise HTTPException(status_code=401, detail='admin credentials required')
 
 
 @app.get('/api/vendors', response_model=List[VendorResponse])
@@ -231,7 +292,10 @@ async def vendors(
 
 
 @app.post('/api/vendors/apply', status_code=201)
-async def apply_vendor(req: VendorApplyRequest):
+async def apply_vendor(
+    req: VendorApplyRequest,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+):
     if not req.company_name.strip():
         raise HTTPException(status_code=422, detail='請填寫公司名稱')
     if not req.contact_name.strip():
@@ -242,7 +306,20 @@ async def apply_vendor(req: VendorApplyRequest):
         raise HTTPException(status_code=422, detail='請填寫電話')
     if len(req.counties) == 0:
         raise HTTPException(status_code=422, detail='請至少選擇一個服務縣市')
-    vendor_id = await create_vendor_application(req.model_dump())
+    account_id: Optional[str] = None
+    if creds:
+        try:
+            account_id = decode_token(creds.credentials)
+        except ValueError:
+            pass
+    try:
+        vendor_id = await create_vendor_application(req.model_dump(), account_id)
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith('already_applied:'):
+            status = msg.split(':')[1]
+            raise HTTPException(status_code=409, detail=f'already_applied:{status}')
+        raise HTTPException(status_code=422, detail=msg)
     return {'id': vendor_id, 'status': 'pending'}
 
 
@@ -254,17 +331,40 @@ async def vendor_detail(vendor_id: str):
     return vendor
 
 
+# ─── Admin：廠商審核 MVP ─────────────────────────────────────────────────────
+
+@app.get('/api/admin/vendors/pending', response_model=List[VendorApplicationResponse])
+async def admin_pending_vendors(
+    _: None = Depends(require_admin),
+    limit: int = Query(50, le=100),
+):
+    return await list_pending_vendor_applications(limit)
+
+
+@app.post('/api/admin/vendors/{vendor_id}/approve')
+async def admin_approve_vendor(
+    vendor_id: str,
+    _: None = Depends(require_admin),
+):
+    ok = await approve_vendor_application(vendor_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到待審核廠商')
+    return {'ok': True, 'status': 'approved'}
+
+
+@app.post('/api/admin/vendors/{vendor_id}/reject')
+async def admin_reject_vendor(
+    vendor_id: str,
+    req: VendorRejectRequest,
+    _: None = Depends(require_admin),
+):
+    ok = await reject_vendor_application(vendor_id, req.reason)
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到待審核廠商')
+    return {'ok': True, 'status': 'rejected'}
+
+
 # ─── 帳號 & Auth ─────────────────────────────────────────────────────────────
-
-_bearer = HTTPBearer()
-
-
-def current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
-    try:
-        return decode_token(creds.credentials)
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
 
 class AuthRequest(BaseModel):
     email: str
@@ -275,6 +375,7 @@ class AuthResponse(BaseModel):
     token: str
     user_id: str
     email: str
+    role: str
 
 
 @app.post('/api/auth/register', response_model=AuthResponse)
@@ -285,7 +386,7 @@ async def register(req: AuthRequest):
     if len(req.password) < 8:
         raise HTTPException(status_code=422, detail='密碼至少需要 8 個字元')
     account_id = await create_account(req.email, hash_password(req.password))
-    return AuthResponse(token=create_token(account_id), user_id=account_id, email=req.email)
+    return AuthResponse(token=create_token(account_id), user_id=account_id, email=req.email, role='user')
 
 
 @app.post('/api/auth/login', response_model=AuthResponse)
@@ -293,7 +394,32 @@ async def login(req: AuthRequest):
     account = await get_account_by_email(req.email)
     if not account or not verify_password(req.password, account['password_hash']):
         raise HTTPException(status_code=401, detail='Email 或密碼錯誤')
-    return AuthResponse(token=create_token(account['id']), user_id=account['id'], email=account['email'])
+    return AuthResponse(token=create_token(account['id']), user_id=account['id'], email=account['email'], role=account.get('role', 'user'))
+
+
+@app.get('/api/admin/accounts/search')
+async def admin_search_account(
+    email: str = Query(...),
+    _: None = Depends(require_admin),
+):
+    account = await get_account_by_email(email)
+    if not account:
+        raise HTTPException(status_code=404, detail='找不到帳號')
+    return {'id': account['id'], 'email': account['email'], 'role': account.get('role', 'user')}
+
+
+@app.post('/api/admin/accounts/{account_id}/role')
+async def admin_set_account_role(
+    account_id: str,
+    req: AccountRoleRequest,
+    _: None = Depends(require_admin),
+):
+    if req.role not in _VALID_ROLES:
+        raise HTTPException(status_code=422, detail='role must be user, vendor, or admin')
+    ok = await set_account_role(account_id, req.role)
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到帳號')
+    return {'ok': True, 'account_id': account_id, 'role': req.role}
 
 
 @app.get('/api/me/assessments')
@@ -311,6 +437,223 @@ async def claim_assessments(
 ):
     """登入後將匿名評估綁定到帳號。"""
     await claim_anonymous_assessments(user_id, account_id)
+    return {'ok': True}
+
+
+# ─── 廠商儀表板（廠商本人） ────────────────────────────────────────────────────
+
+class VendorUpdateRequest(BaseModel):
+    name: str
+    phone: str
+    email: str
+    counties: List[str]
+    tags: List[str]
+
+
+class PortfolioCreateRequest(BaseModel):
+    title: str
+    meta: str
+    capacityKw: Optional[float] = None
+    completedYear: Optional[int] = None
+    photoUrl: Optional[str] = None
+    description: Optional[str] = None
+
+
+class InquiryStatusRequest(BaseModel):
+    status: str  # new | contacted | quoted | closed
+
+
+class InquireRequest(BaseModel):
+    address: Optional[str] = None
+    county: Optional[str] = None
+    capacity_kw: Optional[float] = None
+    annual_kwh: Optional[float] = None
+    payback_years: Optional[float] = None
+    message: Optional[str] = None
+
+
+class VendorReplyRequest(BaseModel):
+    reply: str
+
+
+class ReviewRequest(BaseModel):
+    vendor_id: str
+    rating: int
+    comment: Optional[str] = None
+
+
+class LogoUploadRequest(BaseModel):
+    logo_url: str  # base64 data URL
+
+
+@app.get('/api/me/vendor')
+async def me_vendor(account_id: str = Depends(current_user_id)):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    return vendor
+
+
+@app.patch('/api/me/vendor')
+async def me_update_vendor(
+    req: VendorUpdateRequest,
+    account_id: str = Depends(current_user_id),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    ok = await update_vendor_profile(vendor['id'], req.model_dump())
+    if not ok:
+        raise HTTPException(status_code=500, detail='更新失敗')
+    return {'ok': True}
+
+
+@app.post('/api/me/vendor/portfolios', status_code=201)
+async def me_add_portfolio(
+    req: PortfolioCreateRequest,
+    account_id: str = Depends(current_user_id),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    portfolio_id = await add_portfolio(
+        vendor['id'], req.title, req.meta, req.capacityKw, req.completedYear,
+        req.photoUrl, req.description,
+    )
+    return {'id': portfolio_id}
+
+
+@app.delete('/api/me/vendor/portfolios/{portfolio_id}', status_code=204)
+async def me_delete_portfolio(
+    portfolio_id: str,
+    account_id: str = Depends(current_user_id),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    ok = await delete_portfolio(portfolio_id, vendor['id'])
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到作品集項目')
+
+
+@app.get('/api/me/vendor/inquiries')
+async def me_vendor_inquiries(
+    account_id: str = Depends(current_user_id),
+    limit: int = Query(50, le=100),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    return await get_vendor_inquiries(vendor['id'], limit)
+
+
+@app.post('/api/vendors/{vendor_id}/inquire', status_code=201)
+async def vendor_inquire(
+    vendor_id: str,
+    req: InquireRequest,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+):
+    account_id: Optional[str] = None
+    if creds:
+        try:
+            account_id = decode_token(creds.credentials)
+        except ValueError:
+            pass
+    inquiry_id = await save_inquiry(vendor_id, account_id, req.model_dump())
+    return {'id': inquiry_id}
+
+
+@app.get('/api/me/application/status')
+async def me_application_status(account_id: str = Depends(current_user_id)):
+    """用戶查詢自己的廠商入駐申請狀態。"""
+    status = await get_application_status(account_id)
+    if not status:
+        return {'status': 'none'}
+    return status
+
+
+@app.post('/api/me/vendor/logo')
+async def me_upload_logo(
+    req: LogoUploadRequest,
+    account_id: str = Depends(current_user_id),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    ok = await update_vendor_logo(vendor['id'], req.logo_url)
+    if not ok:
+        raise HTTPException(status_code=500, detail='上傳失敗')
+    return {'ok': True}
+
+
+@app.patch('/api/me/vendor/inquiries/{inquiry_id}/status')
+async def me_vendor_inquiry_status(
+    inquiry_id: str,
+    req: InquiryStatusRequest,
+    account_id: str = Depends(current_user_id),
+):
+    _VALID_STATUSES = {'new', 'contacted', 'quoted', 'closed'}
+    if req.status not in _VALID_STATUSES:
+        raise HTTPException(status_code=422, detail='無效的狀態值')
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    ok = await update_inquiry_status(inquiry_id, vendor['id'], req.status)
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到詢價記錄')
+    return {'ok': True, 'status': req.status}
+
+
+@app.get('/api/me/vendor/leads')
+async def me_vendor_leads(
+    account_id: str = Depends(current_user_id),
+    limit: int = Query(30, le=50),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    if not vendor.get('counties'):
+        return []
+    return await get_potential_leads(vendor['id'], vendor['counties'], limit)
+
+
+@app.post('/api/me/vendor/inquiries/{inquiry_id}/reply')
+async def me_vendor_reply(
+    inquiry_id: str,
+    req: VendorReplyRequest,
+    account_id: str = Depends(current_user_id),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    if not req.reply.strip():
+        raise HTTPException(status_code=422, detail='回覆內容不可空白')
+    ok = await reply_to_inquiry(inquiry_id, vendor['id'], req.reply.strip())
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到詢價記錄')
+    return {'ok': True}
+
+
+@app.get('/api/me/inquiries')
+async def me_inquiries(
+    account_id: str = Depends(current_user_id),
+    limit: int = Query(30, le=50),
+):
+    """用戶查看自己送出的詢價（含廠商回覆與評價狀態）。"""
+    return await get_user_inquiries(account_id, limit)
+
+
+@app.post('/api/me/inquiries/{inquiry_id}/review', status_code=201)
+async def me_add_review(
+    inquiry_id: str,
+    req: ReviewRequest,
+    account_id: str = Depends(current_user_id),
+):
+    if not (1 <= req.rating <= 5):
+        raise HTTPException(status_code=422, detail='評分需介於 1 到 5 之間')
+    ok = await add_vendor_review(inquiry_id, account_id, req.vendor_id, req.rating, req.comment)
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到詢價記錄，或已評價過')
     return {'ok': True}
 
 
