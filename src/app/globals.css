@@ -640,6 +640,20 @@ input[type="range"]::-moz-range-thumb {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
+.vendor-state {
+  padding: 22px;
+  color: var(--ink-500);
+  background: var(--white);
+  border: 1px dashed var(--ink-200);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  text-align: center;
+}
+.vendor-state--error {
+  color: var(--danger);
+  background: #FFF7F5;
+  border-color: rgba(196, 77, 55, 0.22);
+}
 .vendor-card {
   display: flex;
   flex-direction: column;

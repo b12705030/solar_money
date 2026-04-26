@@ -16,8 +16,8 @@ from pydantic import BaseModel
 from .auth import create_token, decode_token, hash_password, verify_password
 from .db import (claim_anonymous_assessments, close_pool, create_account,
                  get_account_assessments, get_account_by_email, get_shadow_cache,
-                 get_user_assessments, init_db, save_assessment, set_shadow_cache,
-                 shadow_cache_key)
+                 get_user_assessments, init_db, list_vendors, save_assessment,
+                 set_shadow_cache, shadow_cache_key)
 from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
                      get_buildings, precompute_shadows_all_hours, project_shadow)
 
@@ -178,6 +178,30 @@ async def list_assessments(
 ):
     rows = await get_user_assessments(user_id, limit)
     return rows
+
+
+# ─── 廠商推薦 ────────────────────────────────────────────────────────────────
+
+class VendorResponse(BaseModel):
+    id: str
+    name: str
+    counties: List[str]
+    portfolioTitle: str
+    portfolioMeta: str
+    capacityKw: float
+    rating: float
+    reviewCount: int
+    phone: str
+    email: str
+    tags: List[str]
+
+
+@app.get('/api/vendors', response_model=List[VendorResponse])
+async def vendors(
+    county: Optional[str] = Query(None),
+    limit: int = Query(3, le=10),
+):
+    return await list_vendors(county, limit)
 
 
 # ─── 帳號 & Auth ─────────────────────────────────────────────────────────────

@@ -17,7 +17,7 @@
 | 補助快查 | 自動對應 22 縣市政府補助金額（含來源與資料更新日期） |
 | 評估結果 | 年發電量、能源自給率、回本年限、20 年累計淨收益、月發電量圖表 |
 | PDF 報告 | 一鍵下載一頁式 A4 評估報告（`window.print()`，無額外依賴） |
-| 推薦廠商 | Results 頁依縣市顯示最多 3 家 mock 廠商，未登入聯絡會觸發註冊流程 |
+| 推薦廠商 | Results 頁依縣市從 API 顯示最多 3 家廠商；含 loading / empty / error 狀態 |
 | 歷史紀錄 | 每次評估自動儲存至 PostgreSQL，支援匿名模式與登入帳號 |
 | 會員系統 | Email 註冊 / 登入（JWT），登入後可查看歷史紀錄、並排比較兩筆評估 |
 
@@ -49,7 +49,9 @@ PostgreSQL（Neon serverless）
   ├─ osm_cache            OSM 建物資料（7 天 TTL）
   ├─ shadow_cache         陰影預計算結果（月份粒度）
   ├─ accounts             會員帳號
-  └─ assessments          使用者評估紀錄（匿名 or 帳號綁定）
+  ├─ assessments          使用者評估紀錄（匿名 or 帳號綁定）
+  ├─ vendors              廠商基本資料、服務縣市、評分
+  └─ vendor_portfolios    廠商作品集案例
 ```
 
 詳細資料庫架構見 [backend/DATABASE.md](backend/DATABASE.md)。
@@ -208,6 +210,12 @@ uvicorn backend.main:app --reload
 |--------|----------|------|
 | `POST` | `/api/assessments` | 儲存一筆匿名評估紀錄 |
 | `GET` | `/api/assessments?user_id=<uuid>` | 查詢匿名 user 的歷史評估 |
+
+### 廠商推薦
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/vendors?county=<縣市>&limit=3` | 依服務縣市取得推薦廠商；未帶 county 時回傳預設推薦 |
 
 ### 會員 Auth
 

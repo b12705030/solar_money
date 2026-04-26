@@ -9,6 +9,65 @@ import asyncpg
 
 _pool: asyncpg.Pool | None = None
 
+_VENDOR_SEED = [
+    {
+        'id': 'north-grid',
+        'name': '北曜能源工程',
+        'counties': ['台北市', '新北市', '基隆市', '桃園市', '宜蘭縣'],
+        'portfolio_title': '信義區集合住宅屋頂型案場',
+        'portfolio_meta': '住宅大樓 · 22.4 kWp · 2025 完工',
+        'capacity_kw': 22.4,
+        'completed_year': 2025,
+        'rating': 4.8,
+        'review_count': 36,
+        'phone': '02-2758-6108',
+        'email': 'hello@northgrid.example',
+        'tags': ['集合住宅', '結構評估', '台電併聯'],
+    },
+    {
+        'id': 'central-sun',
+        'name': '中域日光設計',
+        'counties': ['台中市', '彰化縣', '南投縣', '苗栗縣', '雲林縣', '新竹市', '新竹縣'],
+        'portfolio_title': '西屯透天高效模組自用案',
+        'portfolio_meta': '透天住宅 · 8.6 kWp · 2024 完工',
+        'capacity_kw': 8.6,
+        'completed_year': 2024,
+        'rating': 4.7,
+        'review_count': 28,
+        'phone': '04-2252-3890',
+        'email': 'service@centralsun.example',
+        'tags': ['透天厝', '自用優化', '補助代辦'],
+    },
+    {
+        'id': 'south-volt',
+        'name': '南方伏特綠能',
+        'counties': ['台南市', '高雄市', '屏東縣', '嘉義市', '嘉義縣', '台東縣', '澎湖縣'],
+        'portfolio_title': '高雄前鎮屋頂售電型系統',
+        'portfolio_meta': '透天住宅 · 12.1 kWp · 2025 完工',
+        'capacity_kw': 12.1,
+        'completed_year': 2025,
+        'rating': 4.9,
+        'review_count': 42,
+        'phone': '07-335-9021',
+        'email': 'contact@southvolt.example',
+        'tags': ['售電型', '高日照區', '維運合約'],
+    },
+    {
+        'id': 'east-island',
+        'name': '東岸島嶼能源',
+        'counties': ['花蓮縣', '台東縣', '金門縣', '連江縣', '澎湖縣'],
+        'portfolio_title': '花蓮低樓層住宅抗風支架案',
+        'portfolio_meta': '透天住宅 · 7.2 kWp · 2024 完工',
+        'capacity_kw': 7.2,
+        'completed_year': 2024,
+        'rating': 4.6,
+        'review_count': 19,
+        'phone': '03-822-5170',
+        'email': 'team@eastisland.example',
+        'tags': ['離島服務', '抗風支架', '維運巡檢'],
+    },
+]
+
 
 async def get_pool() -> asyncpg.Pool:
     global _pool
@@ -71,6 +130,29 @@ async def init_db() -> None:
                 result           JSONB,
                 created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS vendors (
+                id                  TEXT        PRIMARY KEY,
+                name                TEXT        NOT NULL,
+                counties            TEXT[]      NOT NULL DEFAULT '{}',
+                rating              DOUBLE PRECISION NOT NULL DEFAULT 0,
+                review_count        INT         NOT NULL DEFAULT 0,
+                phone               TEXT,
+                email               TEXT,
+                tags                TEXT[]      NOT NULL DEFAULT '{}',
+                approved            BOOLEAN     NOT NULL DEFAULT TRUE,
+                subscription_status TEXT        NOT NULL DEFAULT 'mock',
+                created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS vendor_portfolios (
+                id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                vendor_id      TEXT        NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+                title          TEXT        NOT NULL,
+                meta           TEXT        NOT NULL,
+                capacity_kw    DOUBLE PRECISION,
+                completed_year INT,
+                is_featured    BOOLEAN     NOT NULL DEFAULT TRUE,
+                created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
         ''')
         # 相容舊版 schema（補齊新欄位）
         for col, definition in [
@@ -94,6 +176,58 @@ async def init_db() -> None:
             await conn.execute(
                 f"ALTER TABLE assessments ADD COLUMN IF NOT EXISTS {col} {definition}"
             )
+        for col, definition in [
+            ('counties',            "TEXT[] NOT NULL DEFAULT '{}'"),
+            ('rating',              'DOUBLE PRECISION NOT NULL DEFAULT 0'),
+            ('review_count',        'INT NOT NULL DEFAULT 0'),
+            ('phone',               'TEXT'),
+            ('email',               'TEXT'),
+            ('tags',                "TEXT[] NOT NULL DEFAULT '{}'"),
+            ('approved',            'BOOLEAN NOT NULL DEFAULT TRUE'),
+            ('subscription_status', "TEXT NOT NULL DEFAULT 'mock'"),
+        ]:
+            await conn.execute(
+                f"ALTER TABLE vendors ADD COLUMN IF NOT EXISTS {col} {definition}"
+            )
+        await seed_vendors(conn)
+
+
+async def seed_vendors(conn: asyncpg.Connection) -> None:
+    for vendor in _VENDOR_SEED:
+        await conn.execute(
+            '''INSERT INTO vendors
+               (id, name, counties, rating, review_count, phone, email, tags, approved, subscription_status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,'mock')
+               ON CONFLICT (id) DO UPDATE SET
+                 name = EXCLUDED.name,
+                 counties = EXCLUDED.counties,
+                 rating = EXCLUDED.rating,
+                 review_count = EXCLUDED.review_count,
+                 phone = EXCLUDED.phone,
+                 email = EXCLUDED.email,
+                 tags = EXCLUDED.tags''',
+            vendor['id'],
+            vendor['name'],
+            vendor['counties'],
+            vendor['rating'],
+            vendor['review_count'],
+            vendor['phone'],
+            vendor['email'],
+            vendor['tags'],
+        )
+        await conn.execute(
+            '''INSERT INTO vendor_portfolios
+               (vendor_id, title, meta, capacity_kw, completed_year, is_featured)
+               SELECT $1,$2,$3,$4,$5,TRUE
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM vendor_portfolios WHERE vendor_id = $1 AND is_featured = TRUE
+               )''',
+            vendor['id'],
+            vendor['portfolio_title'],
+            vendor['portfolio_meta'],
+            vendor['capacity_kw'],
+            vendor['completed_year'],
+        )
 
 
 # ─── OSM 建物 cache（取代 in-memory dict，TTL = 7 天）────────────────────────
@@ -270,6 +404,73 @@ async def get_user_assessments(user_id: str, limit: int = 10) -> list[dict]:
             )
             return [
                 {**dict(r), 'id': str(r['id']), 'created_at': r['created_at'].isoformat()}
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+# ─── 廠商推薦 ────────────────────────────────────────────────────────────────
+
+async def list_vendors(county: str | None = None, limit: int = 3) -> list[dict]:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if county:
+                rows = await conn.fetch(
+                    '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
+                              v.phone, v.email, v.tags,
+                              p.title AS portfolio_title,
+                              p.meta AS portfolio_meta,
+                              p.capacity_kw
+                       FROM vendors v
+                       LEFT JOIN LATERAL (
+                           SELECT title, meta, capacity_kw
+                           FROM vendor_portfolios
+                           WHERE vendor_id = v.id
+                           ORDER BY is_featured DESC, created_at DESC
+                           LIMIT 1
+                       ) p ON TRUE
+                       WHERE v.approved = TRUE AND $1 = ANY(v.counties)
+                       ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
+                       LIMIT $2''',
+                    county,
+                    limit,
+                )
+            else:
+                rows = await conn.fetch(
+                    '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
+                              v.phone, v.email, v.tags,
+                              p.title AS portfolio_title,
+                              p.meta AS portfolio_meta,
+                              p.capacity_kw
+                       FROM vendors v
+                       LEFT JOIN LATERAL (
+                           SELECT title, meta, capacity_kw
+                           FROM vendor_portfolios
+                           WHERE vendor_id = v.id
+                           ORDER BY is_featured DESC, created_at DESC
+                           LIMIT 1
+                       ) p ON TRUE
+                       WHERE v.approved = TRUE
+                       ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
+                       LIMIT $1''',
+                    limit,
+                )
+            return [
+                {
+                    'id': str(r['id']),
+                    'name': r['name'],
+                    'counties': list(r['counties'] or []),
+                    'portfolioTitle': r['portfolio_title'] or '精選太陽能案場',
+                    'portfolioMeta': r['portfolio_meta'] or '作品集準備中',
+                    'capacityKw': float(r['capacity_kw'] or 0),
+                    'rating': float(r['rating'] or 0),
+                    'reviewCount': int(r['review_count'] or 0),
+                    'phone': r['phone'] or '',
+                    'email': r['email'] or '',
+                    'tags': list(r['tags'] or []),
+                }
                 for r in rows
             ]
     except Exception:

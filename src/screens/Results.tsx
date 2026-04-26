@@ -4,7 +4,6 @@ import { Info } from '@/components/ui';
 import { computeResults } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
-import { VENDOR_RECOMMENDATIONS } from '@/lib/constants';
 import type { SolarState, ComputedResults, VendorRecommendation } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -188,15 +187,11 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [claimedAccountId, setClaimedAccountId] = useState<string | null>(null);
   const [authToastMessage, setAuthToastMessage] = useState('');
   const [vendorsVisible, setVendorsVisible] = useState(false);
+  const [recommendedVendors, setRecommendedVendors] = useState<VendorRecommendation[]>([]);
+  const [vendorsLoading, setVendorsLoading] = useState(false);
+  const [vendorsError, setVendorsError] = useState(false);
   const loginTimerRef = useRef<number | null>(null);
   const vendorSectionRef = useRef<HTMLDivElement | null>(null);
-  const recommendedVendors = useMemo(() => {
-    const county = state.county;
-    const matched = county
-      ? VENDOR_RECOMMENDATIONS.filter(vendor => vendor.counties.includes(county))
-      : [];
-    return (matched.length > 0 ? matched : VENDOR_RECOMMENDATIONS).slice(0, 3);
-  }, [state.county]);
 
   useEffect(() => {
     const userId = getUserId();
@@ -233,6 +228,28 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = state.county ? `?county=${encodeURIComponent(state.county)}&limit=3` : '?limit=3';
+    setVendorsLoading(true);
+    setVendorsError(false);
+    fetch(`${API_URL}/api/vendors${params}`, { signal: controller.signal })
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error('vendors request failed'))))
+      .then((vendors: VendorRecommendation[]) => {
+        setRecommendedVendors(Array.isArray(vendors) ? vendors : []);
+      })
+      .catch(err => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setRecommendedVendors([]);
+        setVendorsError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setVendorsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [state.county]);
 
   useEffect(() => {
     if (!user || !anonymousUserId || !assessmentStored || claimedAccountId === user.id) return;
@@ -567,11 +584,22 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </div>
             <div className="vendor-section-sub">依服務地區與相似案場初步排序，實際報價仍需現場勘查。</div>
           </div>
-          <div className="vendor-grid">
-            {recommendedVendors.map(vendor => (
-              <VendorCard key={vendor.id} vendor={vendor} onContact={handleVendorContact} />
-            ))}
-          </div>
+          {vendorsLoading && (
+            <div className="vendor-state">載入推薦廠商中⋯</div>
+          )}
+          {!vendorsLoading && vendorsError && (
+            <div className="vendor-state vendor-state--error">暫時無法載入推薦廠商，請稍後再試。</div>
+          )}
+          {!vendorsLoading && !vendorsError && recommendedVendors.length === 0 && (
+            <div className="vendor-state">目前尚無服務 {state.county ?? '你所在地區'} 的廠商。</div>
+          )}
+          {!vendorsLoading && !vendorsError && recommendedVendors.length > 0 && (
+            <div className="vendor-grid">
+              {recommendedVendors.map(vendor => (
+                <VendorCard key={vendor.id} vendor={vendor} onContact={handleVendorContact} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 

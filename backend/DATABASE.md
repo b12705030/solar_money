@@ -82,6 +82,41 @@
 
 ---
 
+### `vendors`
+廠商推薦基礎資料。現階段啟動時會 seed 一批 mock 廠商，之後可接廠商註冊與後台審核流程。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | TEXT PK | 穩定識別碼 |
+| `name` | TEXT | 廠商名稱 |
+| `counties` | TEXT[] | 服務縣市 |
+| `rating` | DOUBLE | 平均評分 |
+| `review_count` | INT | 評價數 |
+| `phone` | TEXT | 聯絡電話 |
+| `email` | TEXT | 聯絡 Email |
+| `tags` | TEXT[] | 標籤 |
+| `approved` | BOOLEAN | 是否公開顯示 |
+| `subscription_status` | TEXT | 方案狀態；目前 seed 資料為 `mock` |
+| `created_at` | TIMESTAMPTZ | 建立時間 |
+
+---
+
+### `vendor_portfolios`
+廠商作品集案例。Results 頁目前取每家廠商一筆 featured case 顯示。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | UUID PK | auto gen |
+| `vendor_id` | TEXT FK | 對應 `vendors.id` |
+| `title` | TEXT | 案例標題 |
+| `meta` | TEXT | 案例摘要 |
+| `capacity_kw` | DOUBLE | 案例系統容量 |
+| `completed_year` | INT | 完工年份 |
+| `is_featured` | BOOLEAN | 是否為推薦顯示案例 |
+| `created_at` | TIMESTAMPTZ | 建立時間 |
+
+---
+
 ## API Endpoints
 
 ### `POST /api/assessments`
@@ -140,6 +175,31 @@ Email + 密碼驗證 → 回傳 JWT token。
 
 ---
 
+### `GET /api/vendors?county=<縣市>&limit=3`
+依服務縣市取得推薦廠商。未帶 `county` 時回傳預設推薦；Results 頁會依 API 狀態顯示 loading / empty / error。
+
+**Response**：
+
+```json
+[
+  {
+    "id": "north-grid",
+    "name": "北曜能源工程",
+    "counties": ["台北市", "新北市"],
+    "portfolioTitle": "信義區集合住宅屋頂型案場",
+    "portfolioMeta": "住宅大樓 · 22.4 kWp · 2025 完工",
+    "capacityKw": 22.4,
+    "rating": 4.8,
+    "reviewCount": 36,
+    "phone": "02-2758-6108",
+    "email": "hello@northgrid.example",
+    "tags": ["集合住宅", "結構評估", "台電併聯"]
+  }
+]
+```
+
+---
+
 ## 陰影載入流程（兩階段）
 
 移動地圖後，前端用兩個並行 fetch 分擔等待時間：
@@ -177,5 +237,6 @@ DATABASE_URL=postgresql://<user>:<password>@<host>/neondb?sslmode=require&channe
 後端啟動時 `lifespan` 自動執行 `init_db()`：
 - `CREATE TABLE IF NOT EXISTS` — 首次啟動建表
 - `ALTER TABLE ADD COLUMN IF NOT EXISTS` — 相容舊版 schema，補齊新欄位
+- seed mock 廠商資料至 `vendors` / `vendor_portfolios`
 
 不需要手動執行 migration。

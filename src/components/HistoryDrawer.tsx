@@ -25,7 +25,7 @@ const COMPARE_ROWS: { key: keyof Assessment; label: string; fmt: (v: unknown) =>
 ];
 
 export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [list, setList] = useState<Assessment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string[]>([]);
@@ -36,11 +36,17 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
     fetch(`${API}/api/me/assessments`, {
       headers: { Authorization: `Bearer ${user.token}` },
     })
-      .then(r => r.json())
-      .then((data: Assessment[]) => setList(data))
+      .then(r => {
+        if (r.status === 401) {
+          logout();
+          return [];
+        }
+        return r.json();
+      })
+      .then((data: unknown) => setList(Array.isArray(data) ? data as Assessment[] : []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [user]);
+  }, [logout, user]);
 
   const toggleSelect = (id: string) =>
     setSelected(prev =>
