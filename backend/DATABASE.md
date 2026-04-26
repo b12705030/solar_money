@@ -41,6 +41,18 @@
 
 ---
 
+### `accounts`
+會員帳號，Email + bcrypt 密碼雜湊。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | UUID PK | auto gen |
+| `email` | TEXT UNIQUE | 不區分大小寫（資料庫層級保持原始大小寫） |
+| `password_hash` | TEXT | bcrypt hash，不儲存明文 |
+| `created_at` | TIMESTAMPTZ | 建立時間 |
+
+---
+
 ### `assessments`
 每次使用者完成評估流程後，自動儲存一筆紀錄。使用 `localStorage` 匿名 UUID 作為 `user_id`，不需要登入。
 
@@ -64,6 +76,7 @@
 | `total_20yr` | BIGINT | 20 年累計淨收益 (NT$) |
 | `annual_revenue` | BIGINT | 年均收益 (NT$) |
 | `best_angle` | INT | 最佳安裝角度 (°) |
+| `account_id` | UUID FK | 登入後綁定的帳號（nullable，匿名評估為 NULL） |
 | `result` | JSONB | 完整月發電量陣列等彈性資料 |
 | `created_at` | TIMESTAMPTZ | 評估時間 |
 
@@ -84,6 +97,46 @@
 查詢同一 `user_id` 的歷史評估紀錄（最新 10 筆）。
 
 **Response**：`[{ id, address, county, annual_kwh, payback_years, out_of_pocket, capacity_kw, created_at }, ...]`
+
+---
+
+### `POST /api/auth/register`
+Email + 密碼 → 建立帳號 → 回傳 JWT token。
+
+**Request body**：`{ email: string, password: string }`（密碼至少 8 字元）
+
+**Response**：`{ token, user_id, email }`
+
+**錯誤**：`409` Email 已存在、`422` 密碼太短
+
+---
+
+### `POST /api/auth/login`
+Email + 密碼驗證 → 回傳 JWT token。
+
+**Request body**：`{ email: string, password: string }`
+
+**Response**：`{ token, user_id, email }`
+
+**錯誤**：`401` Email 或密碼錯誤
+
+---
+
+### `GET /api/me/assessments`
+取得登入帳號的歷史評估紀錄（最新 20 筆）。
+
+**Header**：`Authorization: Bearer <token>`
+
+**Response**：同 `GET /api/assessments` 格式
+
+---
+
+### `POST /api/me/claim?user_id=<uuid>`
+將匿名 UUID 的評估紀錄綁定至登入帳號（`account_id` 填入）。
+
+**Header**：`Authorization: Bearer <token>`
+
+**Response**：`{ ok: true }`
 
 ---
 
