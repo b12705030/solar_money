@@ -639,7 +639,50 @@ input[type="range"]::-moz-range-thumb {
 }
 .results-cta-title  { font-size: 22px; font-weight: 600; }
 .results-cta-sub    { font-size: 13px; opacity: 0.8; margin-top: 4px; }
-.results-cta-actions { display: flex; gap: 10px; position: relative; }
+.results-cta-actions {
+  --results-cta-button-width: 168px;
+  display: flex; flex-wrap: wrap; justify-content: flex-end;
+  align-items: flex-start; gap: 10px; position: relative;
+}
+.results-save-btn {
+  width: var(--results-cta-button-width);
+  background: rgba(255,255,255,0.08);
+  color: var(--white);
+  border: 1px solid rgba(255,255,255,0.38);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+}
+.results-save-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.58);
+}
+.results-save-btn:disabled {
+  cursor: not-allowed;
+  color: rgba(255,255,255,0.82);
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.24);
+  box-shadow: none;
+}
+.results-download-btn {
+  width: var(--results-cta-button-width);
+  background: var(--amber);
+  color: var(--green-900);
+  box-shadow: 0 4px 0 #8B5A10;
+}
+.results-save-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 80;
+  max-width: min(320px, calc(100vw - 48px));
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--green-900);
+  color: var(--white);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 16px 36px rgba(15, 46, 31, 0.28);
+  font-size: 13px;
+  line-height: 1.45;
+}
 
 /* ========== Keyframe Animations ========== */
 @keyframes spin {

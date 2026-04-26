@@ -1,8 +1,9 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Info } from '@/components/ui';
 import { computeResults } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
+import { useAuth } from '@/contexts/AuthContext';
 import type { SolarState, ComputedResults } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -138,12 +139,20 @@ function BreakdownRow({ label, value, color, max }: { label: string; value: numb
 }
 
 export default function Results({ state, onRestart, onLoginClick }: { state: SolarState; onRestart: () => void; onLoginClick?: () => void }) {
+  const { user } = useAuth();
   const r: ComputedResults = useMemo(() => computeResults(state), [state]);
   const [tab, setTab] = useState<'generation' | 'investment'>('generation');
+  const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
+  const [assessmentStored, setAssessmentStored] = useState(false);
+  const [claimedAccountId, setClaimedAccountId] = useState<string | null>(null);
+  const [saveToastVisible, setSaveToastVisible] = useState(false);
+  const loginTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const userId = getUserId();
+    setAnonymousUserId(userId);
     const payload = {
-      user_id: getUserId(),
+      user_id: userId,
       address: state.address?.label ?? null,
       lat: state.address?.lat ?? null,
       lng: state.address?.lng ?? null,
@@ -167,9 +176,46 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }).catch(() => {});
+    })
+      .then(res => {
+        if (res.ok) setAssessmentStored(true);
+      })
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!user || !anonymousUserId || !assessmentStored || claimedAccountId === user.id) return;
+    fetch(`${API_URL}/api/me/claim?user_id=${encodeURIComponent(anonymousUserId)}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${user.token}` },
+    })
+      .then(() => setClaimedAccountId(user.id))
+      .catch(() => {});
+  }, [anonymousUserId, assessmentStored, claimedAccountId, user]);
+
+  useEffect(() => {
+    if (saveToastVisible && user) setSaveToastVisible(false);
+    if (user && loginTimerRef.current) {
+      window.clearTimeout(loginTimerRef.current);
+      loginTimerRef.current = null;
+    }
+  }, [saveToastVisible, user]);
+
+  useEffect(() => () => {
+    if (loginTimerRef.current) window.clearTimeout(loginTimerRef.current);
+  }, []);
+
+  const handleSaveClick = () => {
+    if (user || !onLoginClick) return;
+    setSaveToastVisible(true);
+    if (loginTimerRef.current) window.clearTimeout(loginTimerRef.current);
+    loginTimerRef.current = window.setTimeout(() => {
+      setSaveToastVisible(false);
+      onLoginClick();
+      loginTimerRef.current = null;
+    }, 2000);
+  };
 
   const goalLabel = state.goal === 'summer' ? '夏季發電量最高' : state.goal === 'winter' ? '冬季發電量最高' : '全年總發電量最高';
 
@@ -409,9 +455,17 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           <button className="btn btn-secondary" style={{ background: 'transparent', color: 'var(--white)', borderColor: 'rgba(255,255,255,0.3)' }}>
             尋找廠商
           </button>
+          {onLoginClick && (
+            <button
+              className="btn results-save-btn"
+              disabled={!!user}
+              onClick={handleSaveClick}
+            >
+              {user ? '已儲存 ✓' : '儲存評估結果'}
+            </button>
+          )}
           <button
-            className="btn"
-            style={{ background: 'var(--amber)', color: 'var(--green-900)', boxShadow: '0 4px 0 #8B5A10' }}
+            className="btn results-download-btn"
             onClick={() => window.print()}
           >
             下載評估報告
@@ -422,16 +476,9 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         </div>
       </div>
 
-      {/* 登入提示 banner */}
-      {onLoginClick && (
-        <div className="login-banner">
-          <div>
-            <div className="login-banner-text">儲存這份評估結果</div>
-            <div className="login-banner-sub">登入後可隨時查看歷史紀錄、並排比較不同方案</div>
-          </div>
-          <button className="btn btn-primary" style={{ padding: '7px 18px', flexShrink: 0 }} onClick={onLoginClick}>
-            登入 / 註冊
-          </button>
+      {saveToastVisible && !user && (
+        <div className="results-save-toast" role="status" aria-live="polite">
+          需要登入才能儲存，正在開啟登入視窗⋯
         </div>
       )}
 

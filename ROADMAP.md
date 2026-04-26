@@ -13,9 +13,10 @@
 | P2 | 預算流程調整 | `feature/budget-flow` | ✅ 待 commit |
 | P2 | 地區自動建議目標 | `feature/budget-flow` | ✅ 已完成 |
 | P2 | 補助資訊來源 + 更新日期 | `feature/budget-flow` | ✅ 待 commit |
-| P3 | 會員系統（登入/註冊） | `feature/auth` | ⬜ 未開始 |
-| P3 | 歷史評估 UI + 帳號綁定 | `feature/auth` | ⬜ 未開始 |
-| P3 | 並排比較 | `feature/auth` | ⬜ 未開始 |
+| P3 | 會員系統（登入/註冊） | `feature/auth` | ✅ 已完成 |
+| P3 | 歷史評估 UI + 帳號綁定 | `feature/auth` | ✅ 已完成 |
+| P3 | 並排比較 | `feature/auth` | ✅ 已完成 |
+| P3 | 分享連結 | `feature/auth` | ⬜ 未開始 |
 | P4 | 廠商系統基礎版 | `feature/vendor-system` | ⬜ 未開始 |
 | P4 | 廠商訂閱方案 | `feature/vendor-system` | ⬜ 未開始 |
 | P4 | 評估結果廠商推薦 | `feature/vendor-system` | ⬜ 未開始 |
@@ -48,24 +49,29 @@
 
 ---
 
-## P3 · feature/auth　⬜ 未開始
+## P3 · feature/auth　✅ 部分完成
 
 **目標：** 會員系統是後續廠商媒合、歷史紀錄的基礎
 
 ### 會員系統（登入/註冊）
-- [ ] 登入 / 註冊 Modal（Email + 密碼，或 Google OAuth）
-- [ ] TopBar 顯示登入狀態（頭像 / 登出）
-- [ ] 後端：`POST /api/auth/register`、`POST /api/auth/login`（JWT）
-- [ ] 資料庫：`accounts` 表（id, email, password_hash, created_at）
+- [x] 登入 / 註冊 Modal（Email + 密碼）
+- [x] TopBar 顯示登入狀態（頭像 / 登出）
+- [x] 後端：`POST /api/auth/register`、`POST /api/auth/login`（JWT）
+- [x] 資料庫：`accounts` 表（id, email, password_hash, created_at）
+- [ ] Google OAuth（可選，尚未排入）
 
 ### 歷史評估 UI + 帳號綁定
-- [ ] 歷史評估列表頁（日期 / 地址 / 回本年限 / 容量）
-- [ ] 完成評估後彈出「登入以儲存此次評估」提示
-- [ ] 匿名 UUID 評估綁定至帳號（assessments 加 `account_id` FK，nullable）
-- [ ] 後端：`GET /api/me/assessments`
+- [x] 歷史評估列表 Drawer（日期 / 地址 / 回本年限 / 容量）
+- [x] Results CTA：「儲存評估結果」未登入時顯示右下角提示並開啟登入 Modal
+- [x] 匿名 UUID 評估綁定至帳號（assessments 加 `account_id` FK，nullable）
+- [x] 登入後自動 claim 匿名評估：`POST /api/me/claim?user_id=<uuid>`
+- [x] 後端：`GET /api/me/assessments`
 
 ### 並排比較
-- [ ] 最多選 2 筆評估，左右欄對照關鍵指標（容量 / 費用 / 回本 / 20 年收益）
+- [x] 最多選 2 筆評估，左右欄對照關鍵指標（地址 / 縣市 / 容量 / 年發電量 / 回本 / 自付）
+
+### 分享連結
+- [ ] 產生可分享連結，方便傳給家人討論
 
 ---
 

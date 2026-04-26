@@ -53,6 +53,8 @@ PostgreSQL（Neon serverless）
 
 詳細資料庫架構見 [backend/DATABASE.md](backend/DATABASE.md)。
 
+產品功能規格見 [SPEC.md](SPEC.md)，開發排程與優先順序見 [ROADMAP.md](ROADMAP.md)。
+
 ---
 
 ## 專案結構
@@ -295,12 +297,12 @@ moveend + 600ms debounce
 | Form | `.form-field`, `.form-label`, `.form-input`, `.form-error` |
 | Modal | `.modal-backdrop`, `.modal`, `.tab-switcher`, `.tab-btn` |
 | Drawer | `.drawer`, `.drawer-header`, `.assessment-card`, `.assessment-card--selected`, `.compare-table` |
-| Auth / TopBar | `.login-banner`, `.avatar` |
+| Auth / TopBar | `.avatar`, `.modal-*`, `.tab-switcher` |
 | StepParams | `.budget-card`, `.grade-grid`, `.grade-card`, `.grade-card--active`, `.grade-badges`, `.grade-badge`, `.grade-badge--rec`, `.grade-badge--full` |
 | StepParams 摘要 | `.param-summary-grid`, `.card-section-heading`, `.summary-row`, `.summary-row__label`, `.summary-row__value--green`, `.cost-highlight` |
 | Results KPI | `.results-kpi-grid`, `.results-kpi-item--divided`, `.results-kpi-progress` |
 | Results 標籤 | `.results-tab-nav`, `.results-tab-btn`, `.results-tab-btn--active` |
-| Results CTA | `.results-cta`, `.results-cta-decoration`, `.results-cta-title`, `.results-cta-actions` |
+| Results CTA | `.results-cta`, `.results-cta-decoration`, `.results-cta-title`, `.results-cta-actions`, `.results-save-btn`, `.results-download-btn`, `.results-save-toast` |
 | Print | `@media print`（隱藏 `.no-print` / `.screen-only`，顯示 `.print-report`） |
 
 ---
