@@ -3,87 +3,6 @@ import { useState, useRef } from 'react';
 import { ChevronIcon, CheckIcon, XIcon } from '@/components/ui';
 import { MISCONCEPTIONS } from '@/lib/constants';
 
-function HeroVisual() {
-  return (
-    <div style={{ position: 'absolute', inset: 0 }}>
-      {/* Sun */}
-      <div style={{
-        position: 'absolute', top: '14%', right: '14%',
-        width: 90, height: 90, borderRadius: '50%',
-        background: 'radial-gradient(circle at 30% 30%, #FFD48A, #E8A53C 70%)',
-        boxShadow: '0 0 80px rgba(232,165,60,0.4)',
-      }} />
-      {/* Sun rays */}
-      <svg suppressHydrationWarning style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} viewBox="0 0 400 500">
-        {Array.from({ length: 12 }).map((_, i) => {
-          const angle = (i * 30) * Math.PI / 180;
-          const cx = 320, cy = 140;
-          return (
-            <line suppressHydrationWarning key={i}
-              x1={cx + Math.cos(angle) * 60} y1={cy + Math.sin(angle) * 60}
-              x2={cx + Math.cos(angle) * 80} y2={cy + Math.sin(angle) * 80}
-              stroke="#E8A53C" strokeWidth="2" strokeLinecap="round" opacity="0.5"
-            />
-          );
-        })}
-      </svg>
-
-      {/* House isometric illustration */}
-      <svg viewBox="0 0 400 500" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-        <ellipse cx="200" cy="440" rx="150" ry="18" fill="rgba(27,67,50,0.15)" />
-        <polygon points="90,340 200,400 310,340 310,240 200,180 90,240" fill="#FAFBF9" stroke="#2D6A4F" strokeWidth="1.5" />
-        <polygon points="90,240 200,300 310,240 200,180" fill="#EEF2EF" stroke="#2D6A4F" strokeWidth="1.5" />
-        <polygon points="90,340 200,400 200,300 90,240" fill="#FFFFFF" stroke="#2D6A4F" strokeWidth="1.5" />
-
-        {/* Solar panels — left slope */}
-        {[0, 1, 2].map(row =>
-          [0, 1, 2, 3].map(col => {
-            const x1 = 100 + col * 25 - row * 3;
-            const y1 = 250 + col * 12 + row * 20;
-            return (
-              <polygon key={`L${row}-${col}`}
-                points={`${x1},${y1} ${x1+22},${y1+10} ${x1+19},${y1+25} ${x1-3},${y1+15}`}
-                fill="#1B4332" stroke="#2D6A4F" strokeWidth="0.8"
-              />
-            );
-          })
-        )}
-        {/* Solar panels — right slope */}
-        {[0, 1, 2].map(row =>
-          [0, 1, 2, 3].map(col => {
-            const x1 = 210 + col * 25 + row * 3;
-            const y1 = 300 - col * 12 + row * 20;
-            return (
-              <polygon key={`R${row}-${col}`}
-                points={`${x1},${y1} ${x1+22},${y1-10} ${x1+25},${y1+5} ${x1+3},${y1+15}`}
-                fill="#2D6A4F" stroke="#40916C" strokeWidth="0.8"
-              />
-            );
-          })
-        )}
-
-        <rect x="160" y="350" width="32" height="38" fill="#B7E4C7" stroke="#2D6A4F" strokeWidth="1.2" />
-        <line x1="176" y1="350" x2="176" y2="388" stroke="#2D6A4F" strokeWidth="0.8" />
-        <line x1="160" y1="369" x2="192" y2="369" stroke="#2D6A4F" strokeWidth="0.8" />
-      </svg>
-
-      {/* Floating data chip */}
-      <div style={{
-        position: 'absolute', bottom: 40, left: 24,
-        background: 'var(--white)', padding: '12px 16px',
-        borderRadius: 14, boxShadow: 'var(--shadow-md)',
-        display: 'flex', alignItems: 'center', gap: 12,
-        border: '1px solid var(--green-100)',
-      }}>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--green-500)', boxShadow: '0 0 0 3px var(--green-100)' }} />
-        <div>
-          <div style={{ fontSize: 10, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>即時估算</div>
-          <div className="num" style={{ fontSize: 16, fontWeight: 700, color: 'var(--green-900)' }}>5.8 kW · 7.2 年回本</div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function MythCard({ item, idx }: { item: typeof MISCONCEPTIONS[number]; idx: number }) {
   return (
@@ -164,7 +83,7 @@ export default function Landing({ onStart }: { onStart: () => void }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 80 }}>
       {/* HERO */}
       <section style={{ paddingTop: 40, position: 'relative' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 60, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.85fr', gap: 60, alignItems: 'center' }}>
           <div>
             <div className="eyebrow" style={{ marginBottom: 24 }}>屋頂太陽能 · 自助可行性評估</div>
             <h1 className="h-display" style={{ margin: 0 }}>
@@ -199,12 +118,18 @@ export default function Landing({ onStart }: { onStart: () => void }) {
 
           {/* Hero visual */}
           <div style={{
-            position: 'relative', aspectRatio: '4/5',
-            borderRadius: 'var(--radius-xl)', overflow: 'hidden',
-            background: 'linear-gradient(155deg, #D8F3DC 0%, #B7E4C7 50%, #95D5B2 100%)',
-            border: '1px solid var(--green-200)', boxShadow: 'var(--shadow-lg)',
+            borderRadius: 'var(--radius-sm)', overflow: 'hidden',
+            boxShadow: '0 32px 80px rgba(27,67,50,0.14), 0 2px 8px rgba(27,67,50,0.08)',
+            border: '1px solid var(--ink-100)',
+            marginLeft: -30,
+            marginTop: 40,
+            maxWidth: '100%',
           }}>
-            <HeroVisual />
+            <img
+              src="/report.png"
+              alt="評估報告預覽"
+              style={{ width: '100%', display: 'block' }}
+            />
           </div>
         </div>
       </section>
