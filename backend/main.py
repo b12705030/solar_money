@@ -19,14 +19,15 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  claim_anonymous_assessments, close_pool, create_account,
                  create_vendor_application, delete_portfolio, get_account_assessments,
                  get_account_by_email, get_account_by_id, get_application_status,
-                 get_my_vendor, get_potential_leads, get_shadow_cache, get_user_assessments,
-                 get_user_inquiries, get_vendor_detail, get_vendor_inquiries, init_db,
+                 get_climate, get_climate_monthly, get_my_vendor, get_potential_leads,
+                 get_shadow_cache, get_user_assessments, get_user_inquiries,
+                 get_vendor_detail, get_vendor_inquiries, init_db,
                  list_pending_vendor_applications, list_vendors, reject_vendor_application,
                  reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
                  update_vendor_logo, update_vendor_profile)
 from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
-                     get_buildings, precompute_shadows_all_hours, project_shadow)
+                     get_buildings, load_dem, precompute_shadows_all_hours, project_shadow)
 
 
 @asynccontextmanager
@@ -36,6 +37,10 @@ async def lifespan(app: FastAPI):
         print('[DB] 連線成功，資料表已就緒')
     except Exception as e:
         print(f'[DB] 警告：{e}，繼續以無 DB 模式運行')
+    try:
+        await load_dem()
+    except Exception as e:
+        print(f'[DEM] 警告：{e}，地形高程功能停用')
     yield
     await close_pool()
 
@@ -196,6 +201,26 @@ async def list_assessments(
 ):
     rows = await get_user_assessments(user_id, limit)
     return rows
+
+
+# ─── 氣候資料 (TMY) ───────────────────────────────────────────────────────────
+
+@app.get('/api/climate/{township_code}')
+async def get_climate_data(township_code: str):
+    """
+    回傳指定鄉鎮市的氣候資料：
+    - annual：年均統計（GHI、氣溫、風速、濕度、地理中心）
+    - monthly：12 個月典型 GHI/溫度/風速/濕度
+
+    township_code 為內政部 7 碼鄉鎮市代碼，例如 6300100（台北市中正區）。
+    若資料庫尚未匯入（需先執行 scripts/import_climate.py），回傳 404。
+    """
+    annual = await get_climate(township_code)
+    if annual is None:
+        raise HTTPException(status_code=404,
+                            detail=f'找不到 {township_code} 的氣候資料，請確認已執行 import_climate.py')
+    monthly = await get_climate_monthly(township_code)
+    return {'annual': annual, 'monthly': monthly}
 
 
 # ─── 廠商推薦 ────────────────────────────────────────────────────────────────

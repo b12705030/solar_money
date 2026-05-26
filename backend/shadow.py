@@ -1,7 +1,9 @@
 """Shadow computation using pvlib + shapely, ported from ntu-cool."""
 from __future__ import annotations
 
+import sys
 from datetime import date
+from pathlib import Path
 
 import httpx
 import numpy as np
@@ -12,13 +14,75 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
-from .db import get_osm_cache, set_osm_cache
+from .db import get_dem_bytes, get_lod1_cache, get_osm_cache, set_lod1_cache, set_osm_cache
 
 OVERPASS_ENDPOINTS = [
     'https://overpass-api.de/api/interpreter',
     'https://lz4.overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
 ]
+
+# ─── DEM numpy array（啟動時由 load_dem() 載入）────────────────────────────────
+
+_DEM: np.ndarray | None = None
+_DEM_META: tuple[float, float, float, float] | None = None  # (origin_x, origin_y, px_x, px_y)
+
+_DEM_NPY  = Path(__file__).parent.parent / 'data' / 'taiwan_dem_100m.npy'
+_META_NPY = Path(__file__).parent.parent / 'data' / 'taiwan_dem_meta.npy'
+
+
+async def load_dem() -> None:
+    """
+    後端啟動時呼叫一次，將 100m DEM 載入 RAM。
+    優先序：本機 .npy → DB bytea。兩者皆無時印警告並停用地形高程功能。
+    """
+    import io
+    global _DEM, _DEM_META
+
+    def _apply(dem_bytes: bytes, meta_bytes: bytes) -> None:
+        global _DEM, _DEM_META
+        _DEM = np.load(io.BytesIO(dem_bytes))
+        m = np.load(io.BytesIO(meta_bytes))
+        _DEM_META = (float(m[0]), float(m[1]), float(m[2]), float(m[3]))
+
+    # 1. 本機 .npy（最快，repo 內的備用檔）
+    if _DEM_NPY.exists() and _META_NPY.exists():
+        _apply(_DEM_NPY.read_bytes(), _META_NPY.read_bytes())
+        print(f'[shadow] DEM 載入完成（本機）shape={_DEM.shape}，'
+              f'origin=({_DEM_META[0]:.0f}, {_DEM_META[1]:.0f})')
+        return
+
+    # 2. DB bytea fallback
+    print('[shadow] 本機 .npy 不存在，嘗試從 DB 載入 DEM...')
+    result = await get_dem_bytes()
+    if result:
+        dem_bytes, meta_bytes = result
+        _apply(dem_bytes, meta_bytes)
+        # 同步寫回本機，下次啟動直接用本機
+        _DEM_NPY.parent.mkdir(parents=True, exist_ok=True)
+        _DEM_NPY.write_bytes(dem_bytes)
+        _META_NPY.write_bytes(meta_bytes)
+        print(f'[shadow] DEM 載入完成（DB）shape={_DEM.shape}，已寫回本機快取')
+        return
+
+    print('[shadow] 警告：DEM 資料不存在（本機與 DB 皆無），地形高程功能停用。'
+          '請執行 scripts/build_dem_cache.py 後再執行 scripts/upload_dem.py',
+          file=sys.stderr)
+
+
+def get_elevation(lat: float, lng: float) -> float:
+    """查詢 lat/lng (WGS84) 對應的地形海拔（公尺）。DEM 未載入時回傳 0。"""
+    if _DEM is None or _DEM_META is None:
+        return 0.0
+    to_twd97 = Transformer.from_crs('EPSG:4326', 'EPSG:3826', always_xy=True)
+    e, n = to_twd97.transform(lng, lat)
+    ox, oy, px, py = _DEM_META
+    col = int((e - ox) / px)
+    row = int((n - oy) / py)   # py 為負值
+    if 0 <= row < _DEM.shape[0] and 0 <= col < _DEM.shape[1]:
+        val = _DEM[row, col]
+        return float(val) if not np.isnan(val) else 0.0
+    return 0.0
 
 
 def _bbox_key(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> str:
@@ -209,35 +273,6 @@ def precompute_shadows_all_hours(
 
 # ─── All-buildings shadow (used by /api/shadows) ──────────────────────────────
 
-async def get_buildings(
-    min_lon: float, min_lat: float, max_lon: float, max_lat: float,
-) -> list[dict]:
-    """Return OSM building ways for the bbox. DB cache (7 days) → Overpass fallback."""
-    key = _bbox_key(min_lon, min_lat, max_lon, max_lat)
-
-    cached = await get_osm_cache(key)
-    if cached is not None:
-        return cached
-
-    query = (
-        f'[out:json][timeout:25];'
-        f'way["building"]({min_lat},{min_lon},{max_lat},{max_lon});'
-        f'out geom tags;'
-    )
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        for endpoint in OVERPASS_ENDPOINTS:
-            try:
-                res = await client.post(endpoint, data={'data': query})
-                if res.status_code == 200:
-                    elements = res.json().get('elements', [])
-                    if elements:
-                        await set_osm_cache(key, elements)
-                    return elements
-            except Exception:
-                continue
-    return []
-
-
 def _way_height(tags: dict) -> float:
     if tags.get('height'):
         try:
@@ -252,17 +287,142 @@ def _way_height(tags: dict) -> float:
     return 10.0
 
 
+def _osm_to_lod1(elements: list[dict]) -> list[dict]:
+    """將 OSM Overpass way 元素轉換為 LoD1 格式（與 NLSC 相容）。"""
+    buildings = []
+    for el in elements:
+        if el.get('type') != 'way' or not el.get('geometry'):
+            continue
+        footprint = [[n['lon'], n['lat']] for n in el['geometry']]
+        if len(footprint) < 3:
+            continue
+        buildings.append({
+            'footprint': footprint,
+            'height': _way_height(el.get('tags', {})),
+            'build_id': f'osm_{el.get("id", "?")}',
+        })
+    return buildings
+
+
+async def _get_township_info(lat: float, lng: float) -> tuple[str, str] | None:
+    """
+    查 climate_annual 找最近鄉鎮市，回傳 (township_code, county_name)。
+    用 centroid 距離最小化（小範圍查詢，無需精確 polygon 判斷）。
+    """
+    from .db import get_pool
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                '''SELECT township_code, county_name,
+                          (centroid_lat - $1)^2 + (centroid_lon - $2)^2 AS dist2
+                   FROM climate_annual
+                   ORDER BY dist2 ASC
+                   LIMIT 1''',
+                lat, lng,
+            )
+            if row:
+                return str(row['township_code']), str(row['county_name'])
+    except Exception:
+        pass
+    return None
+
+
+async def get_buildings(
+    min_lon: float, min_lat: float, max_lon: float, max_lat: float,
+) -> list[dict]:
+    """
+    取得 bbox 內建物，回傳 LoD1 格式：
+      [{"footprint": [[lng, lat], ...], "height": float, "build_id": str}, ...]
+
+    優先順序：NLSC LoD1 cache → NLSC I3S API → OSM Overpass fallback。
+    """
+    center_lat = (min_lat + max_lat) / 2
+    center_lon = (min_lon + max_lon) / 2
+
+    # ── 嘗試 NLSC LoD1 ────────────────────────────────────────────────────────
+    try:
+        township_info = await _get_township_info(center_lat, center_lon)
+        if township_info:
+            township_code, county_name = township_info
+
+            # 1. 檢查 DB cache
+            cached = await get_lod1_cache(township_code)
+            if cached is not None:
+                return _filter_bbox(cached, min_lon, min_lat, max_lon, max_lat)
+
+            # 2. cache miss → 從 NLSC 取 bbox 範圍
+            # scripts/ 在 backend 的上層目錄，動態加入 sys.path
+            import importlib, sys as _sys
+            scripts_dir = str(Path(__file__).parent.parent / 'scripts')
+            if scripts_dir not in _sys.path:
+                _sys.path.insert(0, scripts_dir)
+            nlsc = importlib.import_module('fetch_nlsc_lod1')
+
+            buildings = await nlsc.fetch_nlsc_buildings(
+                county_name, min_lon, min_lat, max_lon, max_lat
+            )
+            if buildings:
+                # 將整個 bbox 結果寫入 cache（以 township 為 key）
+                await set_lod1_cache(township_code, buildings)
+                return buildings
+    except Exception:
+        pass  # NLSC 失敗 → fallback to OSM
+
+    # ── OSM Overpass fallback ─────────────────────────────────────────────────
+    osm_key = _bbox_key(min_lon, min_lat, max_lon, max_lat)
+    cached_osm = await get_osm_cache(osm_key)
+    if cached_osm is not None:
+        return _osm_to_lod1(cached_osm)
+
+    query = (
+        f'[out:json][timeout:25];'
+        f'way["building"]({min_lat},{min_lon},{max_lat},{max_lon});'
+        f'out geom tags;'
+    )
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for endpoint in OVERPASS_ENDPOINTS:
+            try:
+                res = await client.post(endpoint, data={'data': query})
+                if res.status_code == 200:
+                    elements = res.json().get('elements', [])
+                    if elements:
+                        await set_osm_cache(osm_key, elements)
+                    return _osm_to_lod1(elements)
+            except Exception:
+                continue
+    return []
+
+
+def _filter_bbox(
+    buildings: list[dict],
+    min_lon: float, min_lat: float,
+    max_lon: float, max_lat: float,
+) -> list[dict]:
+    """以 footprint centroid 過濾出落在 bbox 內的建物。"""
+    result = []
+    for b in buildings:
+        fp = b.get('footprint', [])
+        if not fp:
+            continue
+        cx = sum(p[0] for p in fp) / len(fp)
+        cy = sum(p[1] for p in fp) / len(fp)
+        if min_lon <= cx <= max_lon and min_lat <= cy <= max_lat:
+            result.append(b)
+    return result
+
+
 def compute_bbox_shadows(
-    elements: list[dict],
+    buildings: list[dict],
     center_lat: float,
     center_lon: float,
     local_hour: int,
 ) -> dict:
     """
-    Compute shadow polygons for all OSM building elements in the bbox.
+    Compute shadow polygons for LoD1 buildings in the bbox.
     Returns a GeoJSON FeatureCollection.
     """
-    if not elements:
+    if not buildings:
         return {'type': 'FeatureCollection', 'features': []}
 
     azimuth, altitude = compute_solar_position(center_lat, center_lon, _make_timestamp(local_hour))
@@ -276,18 +436,16 @@ def compute_bbox_shadows(
     max_shadow_len = 500.0 * (altitude / 10.0) * 0.5 if altitude < 10 else 500.0
 
     features = []
-    for el in elements:
-        if el.get('type') != 'way' or not el.get('geometry'):
+    for b in buildings:
+        fp = b.get('footprint', [])
+        if len(fp) < 3:
             continue
         try:
-            height = _way_height(el.get('tags', {}))
+            height = float(b.get('height') or 10)
             shadow_len = min(height / np.tan(np.radians(altitude)), max_shadow_len)
             dx, dy = shadow_len * np.sin(angle), shadow_len * np.cos(angle)
 
-            coords_3857 = [to_3857.transform(n['lon'], n['lat']) for n in el['geometry']]
-            if len(coords_3857) < 3:
-                continue
-
+            coords_3857 = [to_3857.transform(lng, lat) for lng, lat in fp]
             building = Polygon(coords_3857)
             if not building.is_valid:
                 building = building.buffer(0)

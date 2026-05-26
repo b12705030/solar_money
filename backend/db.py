@@ -188,6 +188,37 @@ async def init_db() -> None:
                 comment    TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS nlsc_lod1_cache (
+                township_code TEXT        PRIMARY KEY,
+                buildings     JSONB       NOT NULL,
+                cached_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS climate_monthly (
+                township_code TEXT             NOT NULL,
+                month         INT              NOT NULL,
+                ghi           DOUBLE PRECISION,
+                temperature   DOUBLE PRECISION,
+                wind_speed    DOUBLE PRECISION,
+                humidity      DOUBLE PRECISION,
+                PRIMARY KEY (township_code, month)
+            );
+            CREATE TABLE IF NOT EXISTS climate_annual (
+                township_code         TEXT             PRIMARY KEY,
+                county_name           TEXT             NOT NULL,
+                township_name         TEXT             NOT NULL,
+                centroid_lat          DOUBLE PRECISION NOT NULL,
+                centroid_lon          DOUBLE PRECISION NOT NULL,
+                daily_solar_radiation DOUBLE PRECISION,
+                air_temperature       DOUBLE PRECISION,
+                wind_speed            DOUBLE PRECISION,
+                relative_humidity     DOUBLE PRECISION
+            );
+            CREATE TABLE IF NOT EXISTS dem_cache (
+                id         TEXT        PRIMARY KEY,
+                data       BYTEA       NOT NULL,
+                meta       BYTEA       NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
         ''')
         # 相容舊版 schema（補齊新欄位）
         for col, definition in [
@@ -1129,3 +1160,100 @@ async def get_potential_leads(
             ]
     except Exception:
         return []
+
+
+# ─── NLSC LoD1 建物 cache（鄉鎮市級別，永不過期）───────────────────────────
+
+async def get_lod1_cache(township_code: str) -> list[dict] | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT buildings FROM nlsc_lod1_cache WHERE township_code = $1',
+                township_code,
+            )
+            return json.loads(row['buildings']) if row else None
+    except Exception:
+        return None
+
+
+async def set_lod1_cache(township_code: str, buildings: list[dict]) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO nlsc_lod1_cache (township_code, buildings)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (township_code) DO UPDATE
+                   SET buildings = EXCLUDED.buildings, cached_at = NOW()''',
+                township_code, json.dumps(buildings),
+            )
+    except Exception:
+        pass
+
+
+# ─── 氣候資料查詢 ─────────────────────────────────────────────────────────────
+
+async def get_climate(township_code: str) -> dict | None:
+    """回傳年均統計；若找不到則回傳 None（呼叫端可選最近縣市 fallback）。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                '''SELECT township_code, county_name, township_name,
+                          centroid_lat, centroid_lon,
+                          daily_solar_radiation, air_temperature,
+                          wind_speed, relative_humidity
+                   FROM climate_annual WHERE township_code = $1''',
+                township_code,
+            )
+            return dict(row) if row else None
+    except Exception:
+        return None
+
+
+async def get_climate_monthly(township_code: str) -> list[dict]:
+    """回傳 12 個月典型 GHI/溫度/風速，供 pvlib 月度計算。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT month, ghi, temperature, wind_speed, humidity
+                   FROM climate_monthly
+                   WHERE township_code = $1
+                   ORDER BY month''',
+                township_code,
+            )
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+# ─── DEM bytea 儲存 ───────────────────────────────────────────────────────────
+
+async def get_dem_bytes() -> tuple[bytes, bytes] | None:
+    """從 DB 取得 DEM numpy bytes。回傳 (dem_bytes, meta_bytes) 或 None。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT data, meta FROM dem_cache WHERE id = 'taiwan_100m'"
+            )
+            if row:
+                return bytes(row['data']), bytes(row['meta'])
+    except Exception:
+        pass
+    return None
+
+
+async def set_dem_bytes(dem_bytes: bytes, meta_bytes: bytes) -> None:
+    """上傳 DEM numpy bytes 至 DB。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            '''INSERT INTO dem_cache (id, data, meta)
+               VALUES ('taiwan_100m', $1, $2)
+               ON CONFLICT (id) DO UPDATE
+               SET data = EXCLUDED.data, meta = EXCLUDED.meta, created_at = NOW()''',
+            dem_bytes, meta_bytes,
+        )

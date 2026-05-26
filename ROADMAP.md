@@ -1,6 +1,6 @@
 # Solar Money — 功能路線圖
 
-> 更新：2026-04-27  
+> 更新：2026-05-27  
 > 新 branch 一律從 `main` 建立：`git checkout main && git pull && git checkout -b feature/X`
 
 ---
@@ -34,6 +34,10 @@
 | P6 | 平台後台 — 廠商審核 UI | `feature/admin` | ✅ 核准/拒絕 API 完成 |
 | P6 | 平台後台 — 數據儀表板 | — | ⬜ 未開始 |
 | P6 | 補助資料後台管理 | — | ⬜ 未開始 |
+| P7 | NLSC LoD1 官方建物資料整合 | `feature/lod1-tmy-dem` | ✅ 已完成 |
+| P7 | DEM 數值地形模型（100m，RAM 常駐） | `feature/lod1-tmy-dem` | ✅ 已完成 |
+| P7 | NASA POWER 13 年氣候月典型值（TMY） | `feature/lod1-tmy-dem` | ✅ 已完成（匯入 DB） |
+| P7 | 前端整合月均 GHI 取代靜態 TW_IRRADIANCE | `feature/lod1-tmy-dem` | ⬜ 未開始 |
 
 ---
 
@@ -187,6 +191,39 @@
 - [ ] 補助資料管理（各縣市金額從 DB 讀取，可線上編輯，取代 hardcode）
 - [ ] 數據儀表板：日/週/月評估次數、縣市分布、廠商詢價轉換率、MRR
 - [ ] 後端：`GET /api/admin/stats`、`GET/PUT /api/admin/subsidies`
+
+---
+
+---
+
+## P7 · feature/lod1-tmy-dem　✅ 後端已完成，前端待整合
+
+**目標：** 以官方資料取代估算值，提升太陽能預測精度（教授建議項目）
+
+### NLSC LoD1 官方建物資料
+- [x] `scripts/fetch_nlsc_lod1.py` — NLSC I3S v1.8 REST API 擷取模組
+  - nodepages 遍歷找 leaf node（OBB 與 bbox 相交篩選）
+  - binary geometry 解碼（footprint = 地板面 convex hull）
+  - attribute f_9 解碼（BUILD_H = 官方建物高度）
+- [x] `backend/shadow.py` — `get_buildings()` 改為 NLSC I3S 優先，OSM 備援
+  - `_get_township_info()` 查 `climate_annual` centroid 找最近鄉鎮市
+  - NLSC cache miss → 呼叫 I3S API → 寫入 `nlsc_lod1_cache`
+  - NLSC 連線失敗 → fallback to OSM Overpass
+- [x] `backend/db.py` — `nlsc_lod1_cache` 表（township 為單元，永不過期）
+
+### DEM 數值地形模型
+- [x] `scripts/build_dem_cache.py` — 20m GeoTIFF rasterio average 降采樣至 100m `.npy`
+- [x] `scripts/upload_dem.py` — 上傳 `.npy` 至 Neon `dem_cache`（bytea 28.9 MB）
+- [x] `backend/shadow.py` — `load_dem()` 非同步載入（本機 .npy → DB fallback，自動寫回）
+- [x] `backend/shadow.py` — `get_elevation(lat, lng)` TWD97 索引查詢，O(1) numpy
+- [x] `data/taiwan_dem_100m.npy` 進 repo（28.9 MB，clone 即用）
+
+### TMY 長期氣象年資料（NASA POWER 13 年月均值）
+- [x] `scripts/import_climate.py` — 匯入 `taiwan_climate_annual.csv`（368 筆）+ `nasa_power_monthly_raw.csv`（groupby 13 年月均）
+- [x] `backend/db.py` — `climate_annual`（368 筆）、`climate_monthly`（4,416 筆）
+- [x] `backend/main.py` — `GET /api/climate/{township_code}` 提供年均 + 12 月典型值
+- [ ] `src/lib/compute.ts` — 改用 API 鄉鎮月均 GHI 取代靜態 `TW_IRRADIANCE` 常數
+- [ ] 前端快取 `/api/climate` 回應，避免每次 Step 3 重複請求
 
 ---
 

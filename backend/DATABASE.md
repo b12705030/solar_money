@@ -13,6 +13,80 @@
 
 ## 資料表
 
+### `nlsc_lod1_cache`
+內政部國土測繪局 LoD1 建物資料快取，以鄉鎮市為單元，永不過期（地籍資料異動頻率極低）。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `township_code` | TEXT PK | 內政部 7 碼鄉鎮市代碼（對應 `climate_annual.township_code`） |
+| `buildings` | JSONB | `[{"footprint":[[lng,lat],...], "height": float, "build_id": str}, ...]` |
+| `cached_at` | TIMESTAMPTZ | 最後更新時間 |
+
+**資料來源**：NLSC I3S v1.8 REST API（`https://i3s.nlsc.gov.tw/building/i3s/SceneServer`）  
+**Neon 佔用**：~210 MB（30 熱門鄉鎮市全快取後）  
+**查詢邏輯**：以 footprint centroid 落在 bbox 內為過濾條件，cache miss 時即時從 NLSC 擷取。
+
+---
+
+### `climate_monthly`
+NASA POWER API 月均氣候典型值，368 鄉鎮市 × 12 月 = 4,416 筆（13 年月均值）。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `township_code` | TEXT | 鄉鎮市代碼（複合 PK 1/2） |
+| `month` | INT | 月份 1–12（複合 PK 2/2） |
+| `ghi` | DOUBLE | 月均日射量 kWh/m²/day（`ALLSKY_SFC_SW_DWN` 欄位 13 年平均） |
+| `temperature` | DOUBLE | 月均氣溫 °C（`T2M`） |
+| `wind_speed` | DOUBLE | 月均風速 m/s（`WS10M`） |
+| `humidity` | DOUBLE | 月均相對濕度 %（`RH2M`） |
+
+**資料來源**：`data/climate/nasa_power_monthly_raw.csv`（本機既有，4.6 MB，368 × 13 年 × 12 月）  
+**匯入方式**：執行 `python scripts/import_climate.py`  
+**Neon 佔用**：~300 KB
+
+---
+
+### `climate_annual`
+368 鄉鎮市年均統計，含 centroid 座標，供附近鄉鎮市查詢與 fallback 使用。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `township_code` | TEXT PK | 內政部 7 碼鄉鎮市代碼 |
+| `county_name` | TEXT | 縣市名稱 |
+| `township_name` | TEXT | 鄉鎮市名稱 |
+| `centroid_lat` | DOUBLE | 鄉鎮市幾何中心緯度 |
+| `centroid_lon` | DOUBLE | 鄉鎮市幾何中心經度 |
+| `daily_solar_radiation` | DOUBLE | 年均日輻射量 kWh/m²/day |
+| `air_temperature` | DOUBLE | 年均氣溫 °C |
+| `wind_speed` | DOUBLE | 年均風速 m/s |
+| `relative_humidity` | DOUBLE | 年均相對濕度 % |
+
+**資料來源**：`data/climate/taiwan_climate_annual.csv`（本機既有，~50 KB）  
+**匯入方式**：執行 `python scripts/import_climate.py`  
+**Neon 佔用**：~50 KB
+
+---
+
+### `dem_cache`
+全台 100m DEM numpy array，以 `bytea` 存入 DB（28.9 MB），後端啟動時載入 RAM。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | TEXT PK | 固定為 `taiwan_100m` |
+| `data` | BYTEA | `taiwan_dem_100m.npy` 的原始位元組（float32 2D array，shape 3770×2007） |
+| `meta` | BYTEA | `taiwan_dem_meta.npy` 的原始位元組（`[origin_x, origin_y, px_x, px_y]` float64） |
+| `created_at` | TIMESTAMPTZ | 最後上傳時間 |
+
+**載入邏輯**（`shadow.py load_dem()`）：
+1. 本機 `data/taiwan_dem_100m.npy` 存在 → 直接從本機載入（最快）
+2. 否則 → 從 DB 下載 → 寫回本機快取 → 載入
+3. 兩者皆無 → 警告停用，提示執行 `scripts/build_dem_cache.py`
+
+**上傳方式**：執行 `python scripts/upload_dem.py`  
+**Neon 佔用**：~28.9 MB
+
+---
+
 ### `osm_cache`
 存 Overpass API 抓到的 OSM 建物原始資料（GeoJSON elements），避免重複打 Overpass。
 
@@ -199,6 +273,37 @@ Email + 密碼驗證 → 回傳 JWT token。
 
 ---
 
+### `GET /api/climate/{township_code}`
+取得指定鄉鎮市的氣候資料。需先執行 `scripts/import_climate.py` 匯入資料。
+
+**路徑參數**：`township_code` — 內政部 7 碼鄉鎮市代碼（例如 `6300100`）
+
+**Response**：
+```json
+{
+  "annual": {
+    "township_code": "6300100",
+    "county_name": "臺北市",
+    "township_name": "中正區",
+    "centroid_lat": 25.033,
+    "centroid_lon": 121.514,
+    "daily_solar_radiation": 3.8,
+    "air_temperature": 23.2,
+    "wind_speed": 2.1,
+    "relative_humidity": 77.5
+  },
+  "monthly": [
+    { "month": 1, "ghi": 2.1, "temperature": 16.5, "wind_speed": 2.3, "humidity": 80.1 },
+    ...
+    { "month": 12, "ghi": 2.4, "temperature": 17.8, "wind_speed": 2.2, "humidity": 79.5 }
+  ]
+}
+```
+
+**錯誤**：`404` 資料庫無此鄉鎮市資料（未匯入或代碼錯誤）
+
+---
+
 ### `GET /api/vendors?county=<縣市>&limit=3`
 依服務縣市取得推薦廠商。未帶 `county` 時回傳預設推薦；Results 頁會依 API 狀態顯示 loading / empty / error。
 
@@ -352,8 +457,38 @@ DATABASE_URL=postgresql://<user>:<password>@<host>/neondb?sslmode=require&channe
 ## 初始化
 
 後端啟動時 `lifespan` 自動執行 `init_db()`：
-- `CREATE TABLE IF NOT EXISTS` — 首次啟動建表
+- `CREATE TABLE IF NOT EXISTS` — 首次啟動建表（含 3 張新表）
 - `ALTER TABLE ADD COLUMN IF NOT EXISTS` — 相容舊版 schema，補齊新欄位
 - seed mock 廠商資料至 `vendors` / `vendor_portfolios`
 
 不需要手動執行 migration。
+
+---
+
+## 一次性前置作業（本機執行）
+
+### 1. DEM 降采樣
+```bash
+cd solar_money
+python scripts/build_dem_cache.py
+```
+輸入：`data/不分幅_全台20MDEM(2025)/DEM_tawiwan_V2025.tif`（721.8 MB GeoTIFF）  
+輸出：`data/taiwan_dem_100m.npy`（~14–34 MB）+ `data/taiwan_dem_meta.npy`  
+後端啟動時自動 `load_dem()` 載入 RAM，不存 DB。  
+依賴：`pip install rasterio`
+
+### 2. 氣候資料匯入
+```bash
+cd solar_money
+python scripts/import_climate.py
+```
+輸入：既有兩份 CSV（`data/climate/`）  
+輸出：寫入 `climate_annual`（368 筆）+ `climate_monthly`（4,416 筆）至 Neon  
+依賴：`DATABASE_URL` 環境變數
+
+### 3. NLSC LoD1（自動 on-demand）
+`shadow.py` 的 `get_buildings()` 會在 bbox 查詢時自動：
+1. 查 `climate_annual` 找最近鄉鎮市（centroid 最短距離）
+2. 查 `nlsc_lod1_cache`（cache hit → 直接返回）
+3. cache miss → 呼叫 NLSC I3S API → 寫入 cache
+4. NLSC 連線失敗 → fallback to OSM Overpass API

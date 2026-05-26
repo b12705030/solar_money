@@ -19,3 +19,7 @@ backend/.env
 *.log
 .DS_Store
 solar-app.zip
+
+# DEM 原始資料（721 MB，太大不進 repo）
+data/不分幅_全台20MDEM*/
+# 降采樣後的 .npy（28.9 MB）則刻意不排除，讓其他人 clone 即用

@@ -10,3 +10,4 @@ httpx
 asyncpg
 bcrypt
 python-jose[cryptography]
+rasterio
