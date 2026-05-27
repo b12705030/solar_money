@@ -25,6 +25,7 @@ export interface SolarState {
   subsidyAmount?: number;
   outOfPocket?: number;
   county?: string;
+  usableFraction?: number;
 }
 
 export type Theme = 'forest' | 'ocean' | 'earth';

@@ -26,7 +26,7 @@ export default function StepAddress({
   const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [buildingInfo, setBuildingInfo] = useState<{ height: number; areaPing: number } | null>(null);
+  const [buildingInfo, setBuildingInfo] = useState<{ height: number; areaPing: number; usableFraction?: number } | null>(null);
   const [sunHour, setSunHour] = useState<number>(() => {
     const h = new Date().getHours(); // local hour
     return h >= 6 && h <= 18 ? h : 12;
@@ -100,10 +100,9 @@ export default function StepAddress({
     }
   };
 
-  const handleBuildingFound = (info: { height: number; areaPing: number }) => {
+  const handleBuildingFound = (info: { height: number; areaPing: number; usableFraction?: number }) => {
     setBuildingInfo(info);
-    // Update roofArea with real polygon footprint (only if user hasn't manually adjusted)
-    update({ roofArea: info.areaPing });
+    update({ roofArea: info.areaPing, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
   };
 
   const a = state.address;

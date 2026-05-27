@@ -27,7 +27,8 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
                  update_vendor_logo, update_vendor_profile)
 from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
-                     get_buildings, load_dem, precompute_shadows_all_hours, project_shadow)
+                     compute_usable_roof_fraction, get_buildings, load_dem,
+                     precompute_shadows_all_hours, project_shadow)
 
 
 @asynccontextmanager
@@ -150,6 +151,28 @@ async def precompute(req: ShadowFromFeaturesRequest):
 
     await set_shadow_cache(key, result)
     print(f'[Shadow cache] MISS → computed + stored {key}')
+    return result
+
+
+class UsableFractionRequest(BaseModel):
+    target_footprint: List[List[float]]  # [[lng, lat], ...] EPSG:4326
+    buildings: List[BuildingFeature]     # viewport buildings including neighbours
+    lat: float
+    lng: float
+
+
+@app.post('/api/usable-fraction')
+async def usable_fraction_endpoint(req: UsableFractionRequest):
+    """
+    Calculate usable roof fraction for the target building.
+    Returns usable_fraction (0–1) and setback_area_m2.
+    """
+    buildings = [{'footprint': b.footprint, 'height': b.height} for b in req.buildings]
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: compute_usable_roof_fraction(req.target_footprint, buildings, req.lat, req.lng),
+    )
     return result
 
 
