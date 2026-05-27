@@ -63,11 +63,13 @@ export default function StepUsage({
               { value: 1200, label: '1,200+', sub: '大用電戶', align: 'right'  },
             ] as const).map(({ value, label, sub, align }) => {
               const pct = (value - 100) / (1200 - 100) * 100;
+              // Correct for 22px thumb: center at 11px from edges, not 0%/100%
+              const left = `calc(${pct}% + ${(11 - pct * 0.22).toFixed(1)}px)`;
               const transform = align === 'left' ? 'none' : align === 'right' ? 'translateX(-100%)' : 'translateX(-50%)';
               return (
                 <div key={value} style={{
-                  position: 'absolute', left: `${pct}%`, transform,
-                  textAlign: align,
+                  position: 'absolute', left, transform,
+                  textAlign: align, whiteSpace: 'nowrap',
                   opacity: value === 350 ? (kwh >= 300 && kwh <= 400 ? 1 : 0.4) : 1,
                 }}>
                   <div className="num" style={{ fontSize: 13, fontWeight: 600, color: value === 350 ? 'var(--green-700)' : undefined }}>{label}</div>
