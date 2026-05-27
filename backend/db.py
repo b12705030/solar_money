@@ -1,10 +1,13 @@
 """PostgreSQL 連線池 + cache 工具函式（相容 Neon serverless）"""
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import uuid
 from datetime import date
+from pathlib import Path
+from typing import Optional
 
 import asyncpg
 
@@ -193,6 +196,23 @@ async def init_db() -> None:
                 buildings     JSONB       NOT NULL,
                 cached_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS gba_cache (
+                bbox_key   TEXT        PRIMARY KEY,
+                buildings  JSONB       NOT NULL,
+                cached_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS gba_buildings (
+                id        TEXT   PRIMARY KEY,
+                footprint JSONB  NOT NULL,
+                height    REAL,
+                source    TEXT,
+                min_lon   REAL,
+                max_lon   REAL,
+                min_lat   REAL,
+                max_lat   REAL
+            );
+            CREATE INDEX IF NOT EXISTS gba_buildings_bbox
+                ON gba_buildings (min_lon, max_lon, min_lat, max_lat);
             CREATE TABLE IF NOT EXISTS climate_monthly (
                 township_code TEXT             NOT NULL,
                 month         INT              NOT NULL,
@@ -351,6 +371,37 @@ async def set_osm_cache(key: str, elements: list[dict]) -> None:
                    ON CONFLICT (bbox_key) DO UPDATE
                    SET elements = EXCLUDED.elements, fetched_at = NOW()''',
                 key, json.dumps(elements),
+            )
+    except Exception:
+        pass
+
+
+# ─── GBA 建物 cache（bbox_key，TTL = 30 天）─────────────────────────────────
+
+async def get_gba_cache(bbox_key: str) -> list[dict] | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT buildings FROM gba_cache "
+                "WHERE bbox_key = $1 AND cached_at > NOW() - INTERVAL '30 days'",
+                bbox_key,
+            )
+            return json.loads(row['buildings']) if row else None
+    except Exception:
+        return None
+
+
+async def set_gba_cache(bbox_key: str, buildings: list[dict]) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO gba_cache (bbox_key, buildings)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (bbox_key) DO UPDATE
+                   SET buildings = EXCLUDED.buildings, cached_at = NOW()''',
+                bbox_key, json.dumps(buildings),
             )
     except Exception:
         pass
@@ -1190,6 +1241,156 @@ async def set_lod1_cache(township_code: str, buildings: list[dict]) -> None:
             )
     except Exception:
         pass
+
+
+async def delete_lod1_cache(township_code: str | None = None) -> int:
+    """
+    清除 NLSC LoD1 快取。
+    - township_code=None → 清除全部（DELETE FROM nlsc_lod1_cache）
+    - township_code 有值 → 只清除該鄉鎮市
+    回傳刪除筆數。
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if township_code:
+                result = await conn.execute(
+                    'DELETE FROM nlsc_lod1_cache WHERE township_code = $1',
+                    township_code,
+                )
+            else:
+                result = await conn.execute('DELETE FROM nlsc_lod1_cache')
+            # asyncpg 回傳 "DELETE N" 字串
+            return int(result.split()[-1])
+    except Exception as e:
+        print(f'[DB] delete_lod1_cache error: {e}')
+        return 0
+
+
+async def delete_gba_cache(bbox_key: str | None = None) -> int:
+    """清除 GBA WFS 快取。bbox_key=None → 全部清除。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if bbox_key:
+                result = await conn.execute(
+                    'DELETE FROM gba_cache WHERE bbox_key = $1', bbox_key
+                )
+            else:
+                result = await conn.execute('DELETE FROM gba_cache')
+            return int(result.split()[-1])
+    except Exception as e:
+        print(f'[DB] delete_gba_cache error: {e}')
+        return 0
+
+
+# ─── GBA 永久建物資料庫（gba_buildings）────────────────────────────────────────
+
+async def get_gba_buildings_from_db(
+    min_lon: float, min_lat: float,
+    max_lon: float, max_lat: float,
+) -> list[dict]:
+    """
+    從 gba_buildings 表以 bbox 查詢建物。
+    回傳格式與 fetch_gba_wfs / fetch_nlsc 相容：
+      [{"footprint": [[lng, lat], ...], "height": float, "build_id": str}, ...]
+
+    索引條件：min_lon < $max_lon AND max_lon > $min_lon
+              AND min_lat < $max_lat AND max_lat > $min_lat
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT id, footprint, height FROM gba_buildings
+                   WHERE min_lon < $3 AND max_lon > $1
+                     AND min_lat < $4 AND max_lat > $2''',
+                min_lon, min_lat, max_lon, max_lat,
+            )
+        return [
+            {
+                'build_id': r['id'],
+                'footprint': json.loads(r['footprint']),
+                'height': float(r['height']) if r['height'] is not None else 10.0,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f'[DB] get_gba_buildings_from_db error: {type(e).__name__}: {e}')
+        return []
+
+
+# ─── GBA Polygon fallback（本地 NDJSON.gz 檔，DB miss 時使用）──────────────────
+
+# 位於 solar_money/data/taiwan_polygon_fallback.ndjson.gz
+_FALLBACK_PATH = Path(__file__).parent.parent / "data" / "taiwan_polygon_fallback.ndjson.gz"
+
+# 模組級單例快取：None = 未載入；[] = 檔案不存在/為空
+_fallback_buildings: Optional[list] = None
+
+
+def _load_polygon_fallback() -> list:
+    """
+    首次呼叫時讀入 taiwan_polygon_fallback.ndjson.gz 至記憶體。
+    後續呼叫直接回傳快取（module-level singleton）。
+    若檔案不存在則靜默回傳空 list。
+    """
+    global _fallback_buildings
+    if _fallback_buildings is not None:
+        return _fallback_buildings
+
+    if not _FALLBACK_PATH.exists():
+        print(f'[DB] Polygon fallback not found: {_FALLBACK_PATH}', flush=True)
+        _fallback_buildings = []
+        return _fallback_buildings
+
+    size_mb = _FALLBACK_PATH.stat().st_size // 1024 // 1024
+    print(f'[DB] Loading Polygon fallback ({size_mb} MB gz)...', flush=True)
+
+    buildings = []
+    try:
+        with gzip.open(_FALLBACK_PATH, 'rt', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                buildings.append(obj)
+    except Exception as e:
+        print(f'[DB] Polygon fallback load error: {e}', flush=True)
+        _fallback_buildings = []
+        return _fallback_buildings
+
+    _fallback_buildings = buildings
+    print(f'[DB] Polygon fallback loaded: {len(buildings):,} buildings', flush=True)
+    return _fallback_buildings
+
+
+def get_gba_buildings_from_fallback(
+    min_lon: float, min_lat: float,
+    max_lon: float, max_lat: float,
+) -> list[dict]:
+    """
+    從本地 NDJSON.gz fallback 以 bbox 查詢 Polygon 建物。
+    同步函式（已預載入記憶體，無 I/O）。
+    回傳格式與 get_gba_buildings_from_db 相同。
+    """
+    all_buildings = _load_polygon_fallback()
+    if not all_buildings:
+        return []
+
+    results = []
+    for b in all_buildings:
+        # bbox overlap test: b.min_lon < max_lon AND b.max_lon > min_lon
+        #                    b.min_lat < max_lat AND b.max_lat > min_lat
+        if (b['min_lon'] < max_lon and b['max_lon'] > min_lon and
+                b['min_lat'] < max_lat and b['max_lat'] > min_lat):
+            results.append({
+                'build_id': b['id'],
+                'footprint': b['footprint'],
+                'height': float(b.get('height') or 10.0),
+            })
+    return results
 
 
 # ─── 氣候資料查詢 ─────────────────────────────────────────────────────────────
