@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+import sys
 import asyncio
 import os
 from contextlib import asynccontextmanager
+
+# Windows CP950 terminal may reject CJK/special Unicode in print() → force UTF-8
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -17,7 +27,8 @@ from pydantic import BaseModel
 from .auth import create_token, decode_token, hash_password, verify_password
 from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  claim_anonymous_assessments, close_pool, create_account,
-                 create_vendor_application, delete_portfolio, get_account_assessments,
+                 create_vendor_application, delete_gba_cache, delete_lod1_cache,
+                 delete_portfolio, get_account_assessments,
                  get_account_by_email, get_account_by_id, get_application_status,
                  get_climate, get_climate_monthly, get_my_vendor, get_potential_leads,
                  get_shadow_cache, get_user_assessments, get_user_inquiries,
@@ -26,8 +37,8 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
                  update_vendor_logo, update_vendor_profile)
-from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
-                     get_buildings, load_dem, precompute_shadows_all_hours, project_shadow)
+from .shadow import (compute_bbox_shadows, compute_shadows_from_features, get_buildings,
+                     load_dem, precompute_shadows_all_hours, project_shadow)
 
 
 @asynccontextmanager
@@ -204,6 +215,83 @@ async def list_assessments(
 
 
 # ─── 氣候資料 (TMY) ───────────────────────────────────────────────────────────
+
+@app.get('/api/buildings')
+async def api_get_buildings(
+    min_lon: Optional[float] = Query(None),
+    min_lat: Optional[float] = Query(None),
+    max_lon: Optional[float] = Query(None),
+    max_lat: Optional[float] = Query(None),
+    lat: Optional[float] = Query(None),
+    lng: Optional[float] = Query(None),
+    radius_m: float = Query(300, le=2000),
+):
+    """
+    回傳指定範圍內的 NLSC LoD1 建物清單。
+    接受兩種形式：
+    - 地圖視口 bbox：?min_lon=...&min_lat=...&max_lon=...&max_lat=...
+    - 點+半徑：?lat=...&lng=...&radius_m=...（預設 300m）
+    cache miss 時自動呼叫 NLSC I3S API；失敗時 fallback OSM Overpass。
+    """
+    if min_lon is not None and min_lat is not None and max_lon is not None and max_lat is not None:
+        bbox = (min_lon, min_lat, max_lon, max_lat)
+    elif lat is not None and lng is not None:
+        pad = radius_m / 111_320
+        bbox = (lng - pad, lat - pad, lng + pad, lat + pad)
+    else:
+        raise HTTPException(status_code=400, detail='需提供 (min_lon/min_lat/max_lon/max_lat) 或 (lat/lng[/radius_m])')
+    buildings = await get_buildings(*bbox)
+    print(f'[Buildings] bbox={bbox[0]:.5f},{bbox[1]:.5f},{bbox[2]:.5f},{bbox[3]:.5f} → {len(buildings)} bldgs returned to client')
+    return {'buildings': [{'footprint': b['footprint'], 'height': b['height']} for b in buildings]}
+
+
+@app.delete('/api/buildings/cache')
+async def clear_buildings_cache(
+    nlsc: bool = Query(True,  description='清除 nlsc_lod1_cache'),
+    gba:  bool = Query(False, description='清除 gba_cache'),
+    township_code: Optional[str] = Query(None, description='只清除指定鄉鎮市（nlsc）'),
+    admin_secret: str = Header(..., alias='X-Admin-Secret'),
+):
+    """
+    清除建物快取，強制下次請求重新從 NLSC 3D Tiles 或 GBA 抓取。
+    需要 X-Admin-Secret header（與 ADMIN_SECRET 環境變數一致）。
+
+    常用：POST 地圖點選後看到 [NLSC] cache hit 但建物位置錯誤 →
+         DELETE /api/buildings/cache?nlsc=true  →  重整地圖 → 等待背景重抓
+    """
+    if admin_secret != _ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail='Invalid admin secret')
+    deleted: dict[str, int] = {}
+    if nlsc:
+        n = await delete_lod1_cache(township_code)
+        deleted['nlsc_lod1_cache'] = n
+        print(f'[Cache] cleared nlsc_lod1_cache: {n} rows (township_code={township_code!r})')
+    if gba:
+        n = await delete_gba_cache()
+        deleted['gba_cache'] = n
+        print(f'[Cache] cleared gba_cache: {n} rows')
+    return {'deleted': deleted, 'message': '快取已清除，下次請求將重新抓取'}
+
+
+@app.get('/api/township')
+async def get_township_climate(lat: float = Query(...), lng: float = Query(...)):
+    """
+    依座標查詢最近鄉鎮市的 12 個月 NASA POWER GHI。
+    前端 Results.tsx 用此取代靜態 TW_IRRADIANCE 三區常數。
+    回傳：{ township_code, county_name, monthly_ghi: [12 floats, kWh/m²/day] }
+    """
+    from .shadow import _get_township_info
+    info = await _get_township_info(lat, lng)
+    if not info:
+        raise HTTPException(status_code=404, detail='找不到鄉鎮市資料，請確認 climate_annual 已匯入')
+    township_code, county_name = info
+    monthly = await get_climate_monthly(township_code)
+    if len(monthly) != 12:
+        raise HTTPException(status_code=404,
+                            detail=f'鄉鎮市 {township_code} 氣候資料不完整，請重新執行 import_climate.py')
+    monthly_ghi = [row['ghi'] for row in sorted(monthly, key=lambda r: r['month'])]
+    return {'township_code': township_code, 'county_name': county_name, 'monthly_ghi': monthly_ghi}
+
 
 @app.get('/api/climate/{township_code}')
 async def get_climate_data(township_code: str):

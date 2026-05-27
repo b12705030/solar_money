@@ -14,13 +14,18 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
-from .db import get_dem_bytes, get_lod1_cache, get_osm_cache, set_lod1_cache, set_osm_cache
+from .db import (get_dem_bytes, get_gba_buildings_from_db, get_gba_cache,
+                 get_gba_buildings_from_fallback,
+                 get_lod1_cache, get_osm_cache,
+                 set_gba_cache, set_lod1_cache, set_osm_cache)
 
 OVERPASS_ENDPOINTS = [
     'https://overpass-api.de/api/interpreter',
     'https://lz4.overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
 ]
+_OVERPASS_TIMEOUT = 8.0   # 每個 endpoint 的 timeout（秒），合計最多 ~32s
 
 # ─── DEM numpy array（啟動時由 load_dem() 載入）────────────────────────────────
 
@@ -91,9 +96,11 @@ def _bbox_key(min_lon: float, min_lat: float, max_lon: float, max_lat: float) ->
 
 # ─── Solar position ────────────────────────────────────────────────────────────
 
-def compute_solar_position(lat: float, lon: float, timestamp: pd.Timestamp) -> tuple[float, float]:
+def compute_solar_position(
+    lat: float, lon: float, timestamp: pd.Timestamp, altitude_m: float = 0.0,
+) -> tuple[float, float]:
     """Return (azimuth_deg, apparent_elevation_deg) via pvlib NREL SPA."""
-    loc = pvlib.location.Location(lat, lon, tz='Asia/Taipei')
+    loc = pvlib.location.Location(lat, lon, tz='Asia/Taipei', altitude=altitude_m)
     if timestamp.tzinfo is None:
         timestamp = timestamp.tz_localize('Asia/Taipei')
     solpos = loc.get_solarposition(timestamp)
@@ -238,7 +245,8 @@ def compute_shadows_from_features(
 ) -> dict:
     if not buildings:
         return {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
-    azimuth, altitude = compute_solar_position(center_lat, center_lon, _make_timestamp(local_hour))
+    terrain_elev = get_elevation(center_lat, center_lon)
+    azimuth, altitude = compute_solar_position(center_lat, center_lon, _make_timestamp(local_hour), altitude_m=terrain_elev)
     if altitude <= 0:
         return {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
     to_3857 = Transformer.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True)
@@ -259,10 +267,11 @@ def precompute_shadows_all_hours(
     empty = {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
     if not buildings:
         return {str(h): empty for h in range(6, 20)}
+    terrain_elev = get_elevation(center_lat, center_lon)
     bldg_polys = _project_buildings(buildings, to_3857)
     result = {}
     for hour in range(6, 20):
-        az, alt = compute_solar_position(center_lat, center_lon, _make_timestamp(hour))
+        az, alt = compute_solar_position(center_lat, center_lon, _make_timestamp(hour), altitude_m=terrain_elev)
         if alt <= 0:
             result[str(hour)] = empty
             continue
@@ -328,6 +337,71 @@ async def _get_township_info(lat: float, lng: float) -> tuple[str, str] | None:
     return None
 
 
+_nlsc_bg_in_progress: set[str] = set()
+_gba_bg_in_progress: set[str] = set()
+
+
+async def _bg_fetch_gba(
+    gba,
+    cache_key: str,
+    min_lon: float, min_lat: float, max_lon: float, max_lat: float,
+) -> None:
+    """後台非同步抓取 GBA WFS 建物並存入 DB cache。"""
+    try:
+        buildings = await gba.fetch_gba_buildings(min_lon, min_lat, max_lon, max_lat)
+        if buildings:
+            await set_gba_cache(cache_key, buildings)
+            print(f'[GBA-BG] done: {len(buildings)} bldgs cached for {cache_key}')
+        else:
+            print(f'[GBA-BG] returned 0 buildings for {cache_key}')
+    except Exception as e:
+        print(f'[GBA-BG] error: {type(e).__name__}: {e}')
+    finally:
+        _gba_bg_in_progress.discard(cache_key)
+
+
+async def _bg_fetch_nlsc(
+    nlsc, township_code: str, county_name: str,
+    min_lon: float, min_lat: float, max_lon: float, max_lat: float,
+) -> None:
+    """
+    後台非同步抓取 NLSC I3S 建物並存入 DB cache。
+    第一次請求觸發（cache miss），下次查詢直接命中 cache。
+    """
+    try:
+        buildings = await nlsc.fetch_nlsc_buildings(
+            county_name, min_lon, min_lat, max_lon, max_lat
+        )
+        if buildings:
+            await set_lod1_cache(township_code, buildings)
+            print(f'[NLSC-BG] done: {len(buildings)} bldgs cached for {township_code}')
+        else:
+            print(f'[NLSC-BG] returned 0 buildings for {township_code} ({county_name})')
+    except Exception as e:
+        print(f'[NLSC-BG] error: {type(e).__name__}: {e}')
+    finally:
+        _nlsc_bg_in_progress.discard(township_code)
+
+
+def _log_bldg_sample(source: str, buildings: list[dict], n: int = 3) -> None:
+    """每次 get_buildings() 回傳時印出來源 + 前 n 棟的 centroid/height，方便 debug 坐標偏移。"""
+    if not buildings:
+        print(f'  -> [{source}] 0 buildings returned')
+        return
+    lines = [f'  -> [{source}] {len(buildings)} buildings returned, samples:']
+    for b in buildings[:n]:
+        fp = b.get('footprint', [])
+        h  = b.get('height', 0)
+        bid = b.get('build_id', '?')
+        if fp:
+            cx = round(sum(p[0] for p in fp) / len(fp), 6)
+            cy = round(sum(p[1] for p in fp) / len(fp), 6)
+            lines.append(f'      {bid}  centroid=({cx}, {cy})  h={h}m  pts={len(fp)}')
+        else:
+            lines.append(f'      {bid}  NO footprint')
+    print('\n'.join(lines))
+
+
 async def get_buildings(
     min_lon: float, min_lat: float, max_lon: float, max_lat: float,
 ) -> list[dict]:
@@ -335,62 +409,110 @@ async def get_buildings(
     取得 bbox 內建物，回傳 LoD1 格式：
       [{"footprint": [[lng, lat], ...], "height": float, "build_id": str}, ...]
 
-    優先順序：NLSC LoD1 cache → NLSC I3S API → OSM Overpass fallback。
+    優先順序：GBA DB（直接查詢）→ NLSC cache → 背景預取 NLSC → OSM Overpass fallback。
+    GBA 原本透過 WFS API 慢取（需 cache + background task），現在改為直接查 Neon DB（<1ms）。
     """
+    import asyncio, importlib, sys as _sys
+
     center_lat = (min_lat + max_lat) / 2
     center_lon = (min_lon + max_lon) / 2
 
-    # ── 嘗試 NLSC LoD1 ────────────────────────────────────────────────────────
+    scripts_dir = str(Path(__file__).parent.parent / 'scripts')
+    if scripts_dir not in _sys.path:
+        _sys.path.insert(0, scripts_dir)
+
+    # ── 1. GBA DB 直接查詢（取代舊 WFS cache 機制）────────────────────────────
+    try:
+        gba_result = await get_gba_buildings_from_db(min_lon, min_lat, max_lon, max_lat)
+        if not gba_result:
+            # DB miss → 嘗試本地 Polygon fallback（NDJSON.gz）
+            gba_result = get_gba_buildings_from_fallback(min_lon, min_lat, max_lon, max_lat)
+        if gba_result:
+            print(f'[GBA] DB returned {len(gba_result)} buildings for bbox '
+                  f'({min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f})')
+            _log_bldg_sample('GBA', gba_result)
+            return gba_result
+        print(f'[GBA] DB + fallback: 0 buildings, falling through to NLSC/OSM')
+    except Exception as e:
+        print(f'[GBA] DB query error: {type(e).__name__}: {e}')
+
+    # ── 2. NLSC cache ─────────────────────────────────────────────────────────
+    township_info = None
+    nlsc = None
+    township_code = county_name = ''
     try:
         township_info = await _get_township_info(center_lat, center_lon)
         if township_info:
             township_code, county_name = township_info
+            nlsc = importlib.import_module('fetch_nlsc_3dtiles')
+            corrected = nlsc._county_from_township(township_code)
+            if corrected and corrected != county_name:
+                print(f'[NLSC] county corrected: {county_name} → {corrected} ({township_code})')
+                county_name = corrected
+            nlsc_cached = await get_lod1_cache(township_code)
+            if nlsc_cached is not None:
+                result = _filter_bbox(nlsc_cached, min_lon, min_lat, max_lon, max_lat)
+                print(f'[NLSC] cache hit: {len(nlsc_cached)} stored → {len(result)} in bbox  (township={township_code})')
+                _log_bldg_sample('NLSC', result)
+                return result
+        else:
+            print(f'[NLSC] no township for ({center_lat:.4f}, {center_lon:.4f})')
+    except Exception as e:
+        print(f'[NLSC] cache lookup error: {type(e).__name__}: {e}')
+        township_info = None
 
-            # 1. 檢查 DB cache
-            cached = await get_lod1_cache(township_code)
-            if cached is not None:
-                return _filter_bbox(cached, min_lon, min_lat, max_lon, max_lat)
+    # ── 3. NLSC cache miss → 背景預取 NLSC ──────────────────────────────────────
+    # 注意：GBA 背景任務已移除，GBA 現在直接同步查 DB（step 1）
+    pad = 0.018  # ~2 km，用於背景預取 bbox
+    bg_bbox = (center_lon - pad, center_lat - pad, center_lon + pad, center_lat + pad)
 
-            # 2. cache miss → 從 NLSC 取 bbox 範圍
-            # scripts/ 在 backend 的上層目錄，動態加入 sys.path
-            import importlib, sys as _sys
-            scripts_dir = str(Path(__file__).parent.parent / 'scripts')
-            if scripts_dir not in _sys.path:
-                _sys.path.insert(0, scripts_dir)
-            nlsc = importlib.import_module('fetch_nlsc_lod1')
+    if township_info and nlsc and township_code not in _nlsc_bg_in_progress:
+        _nlsc_bg_in_progress.add(township_code)
+        print(f'[NLSC] cache miss, starting background fetch for {township_code}')
+        asyncio.create_task(_bg_fetch_nlsc(nlsc, township_code, county_name, *bg_bbox))
+    elif township_info and township_code in _nlsc_bg_in_progress:
+        print(f'[NLSC] background fetch already running for {township_code}')
 
-            buildings = await nlsc.fetch_nlsc_buildings(
-                county_name, min_lon, min_lat, max_lon, max_lat
-            )
-            if buildings:
-                # 將整個 bbox 結果寫入 cache（以 township 為 key）
-                await set_lod1_cache(township_code, buildings)
-                return buildings
-    except Exception:
-        pass  # NLSC 失敗 → fallback to OSM
-
-    # ── OSM Overpass fallback ─────────────────────────────────────────────────
+    # ── 4. OSM Overpass 立即 fallback ─────────────────────────────────────────
+    print(f'[OSM] falling back to Overpass for bbox={min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f}')
     osm_key = _bbox_key(min_lon, min_lat, max_lon, max_lat)
     cached_osm = await get_osm_cache(osm_key)
     if cached_osm is not None:
-        return _osm_to_lod1(cached_osm)
+        result = _osm_to_lod1(cached_osm)
+        print(f'[OSM] cache hit: {len(result)} buildings')
+        _log_bldg_sample('OSM-cache', result)
+        return result
 
     query = (
         f'[out:json][timeout:25];'
         f'way["building"]({min_lat},{min_lon},{max_lat},{max_lon});'
         f'out geom tags;'
     )
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    _headers = {'User-Agent': 'solar-money/1.0 (rooftop solar assessment; contact: admin@example.com)'}
+    async with httpx.AsyncClient(timeout=_OVERPASS_TIMEOUT, headers=_headers) as client:
         for endpoint in OVERPASS_ENDPOINTS:
             try:
-                res = await client.post(endpoint, data={'data': query})
+                print(f'[OSM] trying {endpoint}...')
+                # 使用 POST + form body（比 GET params 相容性更好）
+                res = await client.post(
+                    endpoint,
+                    data={'data': query},
+                    headers={**_headers, 'Content-Type': 'application/x-www-form-urlencoded'},
+                )
                 if res.status_code == 200:
                     elements = res.json().get('elements', [])
+                    print(f'[OSM] {endpoint} → {len(elements)} elements')
                     if elements:
                         await set_osm_cache(osm_key, elements)
-                    return _osm_to_lod1(elements)
-            except Exception:
+                    result = _osm_to_lod1(elements)
+                    _log_bldg_sample('OSM-live', result)
+                    return result
+                else:
+                    print(f'[OSM] {endpoint} HTTP {res.status_code}')
+            except Exception as e:
+                print(f'[OSM] {endpoint} error: {type(e).__name__}: {e}')
                 continue
+    print('[OSM] all endpoints failed, returning []')
     return []
 
 
