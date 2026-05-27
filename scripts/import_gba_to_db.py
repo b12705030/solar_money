@@ -252,7 +252,13 @@ async def main(args: argparse.Namespace) -> None:
             polygon_path = polygon_dir / f"{tile}.geojson"
             json_path    = lod1_dir    / f"{tile}.json"
 
-            for p in (odbl_path, polygon_path, json_path):
+            # Only check files that are actually needed for the chosen source
+            required = [json_path]
+            if args.source in ("odbl", "both"):
+                required.append(odbl_path)
+            if args.source in ("polygon", "both"):
+                required.append(polygon_path)
+            for p in required:
                 if not p.exists():
                     print(f"[ERROR] Missing: {p}")
                     sys.exit(1)
