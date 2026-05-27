@@ -25,6 +25,9 @@ export interface SolarState {
   subsidyAmount?: number;
   outOfPocket?: number;
   county?: string;
+  /** 內政部 8 碼鄉鎮市代碼（例如 06300100），由 /api/address-township 查詢取得 */
+  townshipCode?: string;
+  townshipName?: string;
 }
 
 export type Theme = 'forest' | 'ocean' | 'earth';
@@ -113,6 +116,16 @@ export interface Inquiry {
   caseStatus: CaseStatus;
   inquirerEmail: string | null;
   createdAt: string;
+}
+
+export interface RegionPotential {
+  towncode: string;
+  countyname: string;
+  townname: string;
+  rank: number;
+  total: number;
+  tier: '高潛力' | '中潛力' | '一般';
+  topsis_score: number;
 }
 
 export interface PotentialLead {
