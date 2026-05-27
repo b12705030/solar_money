@@ -412,6 +412,95 @@ def _filter_bbox(
     return result
 
 
+def compute_usable_roof_fraction(
+    target_footprint: list[list[float]],
+    buildings: list[dict],
+    lat: float,
+    lng: float,
+    setback_m: float = 1.0,
+) -> dict:
+    """
+    Calculate usable roof fraction for a target building.
+
+    Steps:
+      1. Apply parapet setback (buffer -1 m in EPSG:3857) to target footprint.
+      2. For each sample hour (8, 10, 12, 14, 16), compute shadow polygons cast
+         by neighbouring buildings only (target building excluded).
+      3. Compute unshaded fraction of the setback polygon for each hour.
+      4. Return the average fraction clamped to [0.1, 0.95].
+    """
+    to_3857 = Transformer.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True)
+
+    # ── Target polygon + parapet setback ─────────────────────────────────────
+    target_3857 = Polygon([to_3857.transform(p[0], p[1]) for p in target_footprint])
+    if not target_3857.is_valid:
+        target_3857 = target_3857.buffer(0)
+
+    usable_poly = target_3857.buffer(-setback_m)
+    if usable_poly.is_empty or usable_poly.area < 1:
+        usable_poly = target_3857  # building too small for setback
+    usable_area = usable_poly.area
+
+    # ── Neighbour polygons (skip the target building itself) ──────────────────
+    neighbour_polys: list[tuple] = []
+    for b in buildings:
+        try:
+            poly = Polygon([to_3857.transform(p[0], p[1]) for p in b['footprint']])
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            if poly.area < 1:
+                continue
+            # Skip if this polygon overlaps the target by > 50% (= it IS the target)
+            if target_3857.area > 0 and poly.intersection(target_3857).area / target_3857.area > 0.5:
+                continue
+            neighbour_polys.append((poly, float(b.get('height') or 10)))
+        except Exception:
+            continue
+
+    # ── Sample hours ──────────────────────────────────────────────────────────
+    fractions: list[float] = []
+    for hour in [8, 10, 12, 14, 16]:
+        az, alt = compute_solar_position(lat, lng, _make_timestamp(hour))
+        if alt <= 2:
+            continue  # sun too low / below horizon
+
+        angle = np.radians(az + 180)
+        max_shadow = 500.0 * (alt / 10.0) * 0.5 if alt < 10 else 500.0
+
+        shadow_polys = []
+        for poly, height in neighbour_polys:
+            try:
+                shadow_len = min(height / np.tan(np.radians(alt)), max_shadow)
+                dx = shadow_len * np.sin(angle)
+                dy = shadow_len * np.cos(angle)
+                tip = Polygon([(x + dx, y + dy) for x, y in poly.exterior.coords])
+                sp = unary_union([poly, tip]).convex_hull
+                if not sp.is_empty:
+                    shadow_polys.append(sp)
+            except Exception:
+                continue
+
+        if not shadow_polys:
+            fractions.append(1.0)
+            continue
+
+        all_shadows = unary_union(shadow_polys)
+        try:
+            shaded_area = usable_poly.intersection(all_shadows).area
+        except Exception:
+            shaded_area = 0.0
+
+        frac = max(0.0, (usable_area - shaded_area) / usable_area) if usable_area > 0 else 0.0
+        fractions.append(frac)
+
+    if not fractions:
+        return {'usable_fraction': 0.6, 'setback_area_m2': round(usable_area, 1)}
+
+    avg = sum(fractions) / len(fractions)
+    avg = max(0.1, min(0.95, round(avg, 3)))
+    return {'usable_fraction': avg, 'setback_area_m2': round(usable_area, 1)}
+
+
 def compute_bbox_shadows(
     buildings: list[dict],
     center_lat: float,

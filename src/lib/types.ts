@@ -28,6 +28,7 @@ export interface SolarState {
   /** 內政部 8 碼鄉鎮市代碼（例如 06300100），由 /api/address-township 查詢取得 */
   townshipCode?: string;
   townshipName?: string;
+  usableFraction?: number;
 }
 
 export type Theme = 'forest' | 'ocean' | 'earth';

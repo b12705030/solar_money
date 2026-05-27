@@ -10,7 +10,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type Props = {
   selectedAddress?: AddressOption | null;
-  onBuildingFound?: (info: { height: number; areaPing: number }) => void;
+  onBuildingFound?: (info: { height: number; areaPing: number; usableFraction?: number }) => void;
   sunHour?: number; // local Taiwan time (UTC+8), 0–23
 };
 
@@ -164,20 +164,18 @@ async function refreshAllShadows(
   const center = map.getCenter();
   const bodyBase = { buildings, lat: center.lat, lng: center.lng };
 
-  // phase2Done prevents phase 1 from overwriting the more authoritative phase 2 result
-  // in the common case where precompute returns from DB cache almost instantly.
-  let phase2Done = false;
-
-  // Phase 1 — current hour only (~300 ms): show shadows immediately, hide spinner
+  // Phase 1 — current hour only (~300 ms): sole owner of the display update.
+  // Phase 2 — all 14 hours: fills cacheRef for the time slider only, never touches display.
+  // Separating responsibilities avoids stale DB cache overwriting Phase 1's correct result.
   const phase1 = fetch(`${API_URL}/api/shadows/from-features`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...bodyBase, local_hour: sunHourRef.current }),
     signal,
   }).then(async r => {
-    if (!r.ok || signal.aborted || phase2Done) return;
+    if (!r.ok || signal.aborted) return;
     const data: HourData = await r.json();
-    if (signal.aborted || phase2Done) return;
+    if (signal.aborted) return;
     _applyHourData(map, data);
     if (!signal.aborted) setLoading?.(false);
   }).catch(() => {});
@@ -192,13 +190,10 @@ async function refreshAllShadows(
     if (!r.ok || signal.aborted) return;
     const allHours: Record<string, HourData> = await r.json();
     if (signal.aborted) return;
-    phase2Done = true;
     cacheRef.current.clear();
     for (const [h, data] of Object.entries(allHours)) {
       cacheRef.current.set(Number(h), data);
     }
-    const current = cacheRef.current.get(sunHourRef.current);
-    if (current) _applyHourData(map, current);
     if (!signal.aborted) setLoading?.(false);
   }).catch(() => {});
 
@@ -447,11 +442,11 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
 
     const abortCtrl = new AbortController();
 
-    const applyResult = (features: GeoJSON.Feature[], footprint: [number, number][], height: number, areaPing: number) => {
+    const applyResult = (features: GeoJSON.Feature[], footprint: [number, number][], height: number, areaPing: number, usableFraction?: number) => {
       if (abortCtrl.signal.aborted) return;
       buildingCacheRef.current = { features, footprint, height, lat: lngLat[1], lng: lngLat[0] };
       showHighlight(mapInstance!, features);
-      onBuildingFoundRef.current?.({ height, areaPing });
+      onBuildingFoundRef.current?.({ height, areaPing, usableFraction });
       if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
     };
 
@@ -464,6 +459,40 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
         f.properties?.group === 'building-3d' && f.geometry.type === 'Polygon'
       );
 
+      // Collect viewport buildings once for usable-fraction calculation
+      const canvas = mapInstance!.getCanvas();
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      const M = Math.round(Math.max(W, H) * 0.4);
+      const vpRendered = mapInstance!.queryRenderedFeatures([[-M, -M], [W + M, H + M]]);
+      const vpSeen = new Set<string>();
+      const vpBuildings: { footprint: [number, number][]; height: number }[] = [];
+      for (const f of vpRendered) {
+        const isBldg = f.properties?.group === 'building-3d' ||
+          (f.layer?.type === 'fill-extrusion' && f.properties?.height != null);
+        if (!isBldg) continue;
+        const bh = Number(f.properties?.height ?? 10);
+        if (bh <= 0) continue;
+        if (f.geometry.type === 'Polygon') {
+          const ext = (f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
+          const key = JSON.stringify(ext[0]);
+          if (!vpSeen.has(key)) { vpSeen.add(key); vpBuildings.push({ footprint: ext, height: bh }); }
+        }
+      }
+
+      const fetchUsableFraction = async (targetFootprint: [number, number][]): Promise<number | undefined> => {
+        try {
+          const res = await fetch(`${API_URL}/api/usable-fraction`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_footprint: targetFootprint, buildings: vpBuildings, lat: lngLat[1], lng: lngLat[0] }),
+            signal: abortCtrl.signal,
+          });
+          if (!res.ok || abortCtrl.signal.aborted) return undefined;
+          const data = await res.json();
+          return typeof data.usable_fraction === 'number' ? data.usable_fraction : undefined;
+        } catch { return undefined; }
+      };
+
       if (bldgFeatures.length > 0) {
         const height = Number(bldgFeatures[0].properties?.height || 10);
         const feats: GeoJSON.Feature[] = bldgFeatures.map(f => ({
@@ -475,7 +504,8 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
         const areaPing = Math.max(1, Math.round(
           bldgFeatures.reduce((sum, f) => sum + polygonAreaM2((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]), 0) * PING_PER_M2
         ));
-        applyResult(feats, footprint, height, areaPing);
+        const usableFraction = await fetchUsableFraction(footprint);
+        applyResult(feats, footprint, height, areaPing, usableFraction);
         return;
       }
 
@@ -484,9 +514,11 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
         const result = await fetchBuildingFromOSM(lngLat[0], lngLat[1], abortCtrl.signal);
         if (abortCtrl.signal.aborted || !result) return;
         const footprint = result.primaryArea.coordinates[0] as [number, number][];
+        const usableFraction = await fetchUsableFraction(footprint);
         applyResult(
           result.features, footprint, result.primaryHeight,
           Math.max(1, Math.round(polygonAreaM2(footprint) * PING_PER_M2)),
+          usableFraction,
         );
       } catch (err: any) {
         if (err?.name !== 'AbortError') console.error('[MapView] Building detection error:', err);
