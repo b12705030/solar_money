@@ -771,12 +771,15 @@ async def recompute_topsis_api(weights: TopsisWeights):
         norm_method='minmax',
     )
 
-    # 接回地理資訊
-    geo = df[['towncode', 'countyname', 'townname', 'centroid_lat', 'centroid_lon']]
+    # 接回地理資訊與原始因子值
+    geo = df[['towncode', 'countyname', 'townname', 'centroid_lat', 'centroid_lon',
+              'combined_score', 'daily_solar_radiation', 'avg_fit_rate', 'median_household_income']]
     result = result.merge(geo, left_on='alternative', right_on='towncode', how='left')
 
     return result[['towncode', 'countyname', 'townname',
-                   'score', 'rank', 'centroid_lat', 'centroid_lon']].to_dict('records')
+                   'score', 'rank', 'centroid_lat', 'centroid_lon',
+                   'combined_score', 'daily_solar_radiation',
+                   'avg_fit_rate', 'median_household_income']].to_dict('records')
 
 
 @app.get('/api/address-township')

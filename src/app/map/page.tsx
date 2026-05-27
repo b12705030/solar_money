@@ -1,5 +1,6 @@
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import Link from 'next/link';
@@ -17,10 +18,10 @@ const WEIGHT_LABELS: Record<string, string> = {
 };
 
 const WEIGHT_ICONS: Record<string, React.ReactNode> = {
-  model_score: <Bot     size={14} strokeWidth={1.8} />,
-  solar:       <Sun     size={14} strokeWidth={1.8} />,
+  model_score: <Bot      size={14} strokeWidth={1.8} />,
+  solar:       <Sun      size={14} strokeWidth={1.8} />,
   fit:         <Banknote size={14} strokeWidth={1.8} />,
-  income:      <Home    size={14} strokeWidth={1.8} />,
+  income:      <Home     size={14} strokeWidth={1.8} />,
 };
 
 const TIER_COLOR: Record<string, string> = {
@@ -37,6 +38,10 @@ interface RegionRow {
   rank: number;
   centroid_lat: number;
   centroid_lon: number;
+  combined_score: number;
+  daily_solar_radiation: number;
+  avg_fit_rate: number;
+  median_household_income: number;
 }
 
 function tierFromRank(rank: number): string {
@@ -45,18 +50,106 @@ function tierFromRank(rank: number): string {
   return '一般';
 }
 
-export default function MapPage() {
+function parseWeightParam(val: string | null, fallback: number): number {
+  const n = parseFloat(val ?? '');
+  return isFinite(n) && n >= 0 ? n : fallback;
+}
+
+// ── 計算各因子 min/max，供 tooltip bar 使用 ─────────────────────────────────
+function computeRanges(data: RegionRow[]) {
+  const fields = ['combined_score', 'daily_solar_radiation', 'avg_fit_rate', 'median_household_income'] as const;
+  const ranges: Record<string, { min: number; max: number }> = {};
+  for (const f of fields) {
+    const vals = data.map(r => r[f]).filter(v => isFinite(v));
+    ranges[f] = { min: Math.min(...vals), max: Math.max(...vals) };
+  }
+  return ranges;
+}
+
+function normPct(val: number, range: { min: number; max: number }): number {
+  const span = range.max - range.min;
+  if (span === 0) return 50;
+  return Math.round(((val - range.min) / span) * 100);
+}
+
+// ── Tooltip HTML（純字串，給 Mapbox Popup 用）────────────────────────────────
+function buildTooltipHTML(props: Record<string, unknown>): string {
+  const color = TIER_COLOR[props.tier as string] ?? '#94A3B8';
+
+  const factors = [
+    { label: '模型潛力', pct: props.model_pct as number, display: Number(props.model_val).toFixed(2) },
+    { label: '日照輻射', pct: props.solar_pct as number, display: `${Number(props.solar_val).toFixed(2)} kWh` },
+    { label: '躉購費率', pct: props.fit_pct   as number, display: `${Number(props.fit_val).toFixed(2)} 元` },
+    { label: '家戶收入', pct: props.income_pct as number, display: `NT$${Math.round(Number(props.income_val) / 1000)}K` },
+  ];
+
+  const factorRows = factors.map(f => `
+    <div style="margin-bottom:5px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:11px">
+        <span style="color:#64748B">${f.label}</span>
+        <span style="font-weight:600;color:#1A202C;font-variant-numeric:tabular-nums">${f.display}</span>
+      </div>
+      <div style="height:4px;background:#E2E8F0;border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${f.pct}%;background:${color};border-radius:2px"></div>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <div style="font-size:13px;line-height:1.5;min-width:210px;padding:2px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <b style="font-size:14px">${props.name}</b>
+        <span style="margin-left:8px;padding:2px 7px;border-radius:5px;
+          background:${color};color:#fff;font-size:11px;font-weight:700;white-space:nowrap">
+          #${props.rank} ${props.tier}
+        </span>
+      </div>
+      <div style="font-size:11px;color:#94A3B8;margin-bottom:10px">
+        TOPSIS ${Number(props.score).toFixed(3)}
+      </div>
+      <div style="border-top:1px solid #E2E8F0;padding-top:8px">
+        ${factorRows}
+      </div>
+    </div>
+  `;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 主元件（useSearchParams 需包在 Suspense 裡）
+// ════════════════════════════════════════════════════════════════════════════
+function MapPageContent() {
+  const router       = useRouter();
+  const searchParams = useSearchParams();
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef          = useRef<mapboxgl.Map | null>(null);
   const timerRef        = useRef<ReturnType<typeof setTimeout>>();
   const popupRef        = useRef<mapboxgl.Popup | null>(null);
 
-  const [weights, setWeights]   = useState(WEIGHTS_DEFAULT);
+  // 從 URL 初始化權重
+  const [weights, setWeights] = useState(() => ({
+    model_score: parseWeightParam(searchParams.get('model'),  WEIGHTS_DEFAULT.model_score),
+    solar:       parseWeightParam(searchParams.get('solar'),  WEIGHTS_DEFAULT.solar),
+    fit:         parseWeightParam(searchParams.get('fit'),    WEIGHTS_DEFAULT.fit),
+    income:      parseWeightParam(searchParams.get('income'), WEIGHTS_DEFAULT.income),
+  }));
+
   const [ranking, setRanking]   = useState<RegionRow[]>([]);
   const [loading, setLoading]   = useState(false);
   const [mapReady, setMapReady] = useState(false);
 
-  // ── 初始化地圖 ──────────────────────────────────────────────────────────────
+  // ── 更新 URL（不觸發頁面 reload）────────────────────────────────────────
+  function pushURL(w: typeof WEIGHTS_DEFAULT) {
+    const p = new URLSearchParams({
+      model:  w.model_score.toFixed(2),
+      solar:  w.solar.toFixed(2),
+      fit:    w.fit.toFixed(2),
+      income: w.income.toFixed(2),
+    });
+    router.replace(`/map?${p.toString()}`, { scroll: false });
+  }
+
+  // ── 初始化地圖 ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -83,13 +176,13 @@ export default function MapPage() {
     };
   }, []);
 
-  // ── 地圖就緒後初始載入 ──────────────────────────────────────────────────────
+  // ── 地圖就緒後以 URL 初始權重載入 ─────────────────────────────────────────
   useEffect(() => {
-    if (mapReady) fetchAndRender(WEIGHTS_DEFAULT);
+    if (mapReady) fetchAndRender(weights);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady]);
 
-  // ── 呼叫後端 TOPSIS 並渲染圓點 ─────────────────────────────────────────────
+  // ── 呼叫後端 TOPSIS 並渲染 ────────────────────────────────────────────────
   async function fetchAndRender(w: typeof WEIGHTS_DEFAULT) {
     setLoading(true);
     try {
@@ -113,6 +206,8 @@ export default function MapPage() {
     const map = mapRef.current;
     if (!map) return;
 
+    const ranges = computeRanges(data);
+
     const geojson: GeoJSON.FeatureCollection = {
       type: 'FeatureCollection',
       features: data.map(r => ({
@@ -123,6 +218,16 @@ export default function MapPage() {
           rank:       r.rank,
           name:       `${r.countyname}${r.townname}`,
           tier:       tierFromRank(r.rank),
+          // 各因子原始值
+          model_val:  r.combined_score,
+          solar_val:  r.daily_solar_radiation,
+          fit_val:    r.avg_fit_rate,
+          income_val: r.median_household_income,
+          // 各因子正規化百分比（給 tooltip bar 用）
+          model_pct:  normPct(r.combined_score,          ranges.combined_score),
+          solar_pct:  normPct(r.daily_solar_radiation,   ranges.daily_solar_radiation),
+          fit_pct:    normPct(r.avg_fit_rate,             ranges.avg_fit_rate),
+          income_pct: normPct(r.median_household_income, ranges.median_household_income),
         },
       })),
     };
@@ -138,7 +243,7 @@ export default function MapPage() {
         source: 'regions',
         maxzoom: 9,
         paint: {
-          'heatmap-weight':   ['interpolate', ['linear'], ['get', 'score'], 0.3, 0, 0.9, 1],
+          'heatmap-weight':    ['interpolate', ['linear'], ['get', 'score'], 0.3, 0, 0.9, 1],
           'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 5, 0.6, 9, 1.5],
           'heatmap-color': [
             'interpolate', ['linear'], ['heatmap-density'],
@@ -171,23 +276,14 @@ export default function MapPage() {
         },
       });
 
-      // Hover tooltip
+      // Hover tooltip（含各因子分數）
       map.on('mouseenter', 'region-circles', (e) => {
         map.getCanvas().style.cursor = 'pointer';
         const props = e.features?.[0]?.properties;
         if (!props) return;
-        const color = TIER_COLOR[props.tier as string] ?? '#94A3B8';
         popupRef.current
           ?.setLngLat(e.lngLat)
-          .setHTML(`
-            <div style="font-size:13px;line-height:1.6">
-              <b>${props.name}</b><br/>
-              全台排名 <b style="color:${color}">#${props.rank}</b>
-              <span style="margin-left:6px;padding:1px 6px;border-radius:4px;
-                background:${color};color:#fff;font-size:11px">${props.tier}</span><br/>
-              TOPSIS 分數：${Number(props.score).toFixed(3)}
-            </div>
-          `)
+          .setHTML(buildTooltipHTML(props))
           .addTo(map);
       });
       map.on('mouseleave', 'region-circles', () => {
@@ -197,15 +293,16 @@ export default function MapPage() {
     }
   }
 
-  // ── Slider 更新：debounce 400ms ─────────────────────────────────────────────
+  // ── Slider 更新：同步 URL + debounce API ──────────────────────────────────
   function handleWeight(key: string, val: number) {
     const next = { ...weights, [key]: val };
     setWeights(next);
+    pushURL(next);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => fetchAndRender(next), 400);
   }
 
-  // ── 渲染 ────────────────────────────────────────────────────────────────────
+  // ── 渲染 ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'var(--font-base, system-ui)' }}>
       {/* 左側控制面板 */}
@@ -269,6 +366,23 @@ export default function MapPage() {
           ))}
         </div>
 
+        {/* 分享連結 */}
+        <div style={{ padding: '10px 14px', background: '#F0FDF4', borderRadius: 8, fontSize: 12 }}>
+          <div style={{ fontWeight: 600, color: '#166534', marginBottom: 4 }}>分享目前設定</div>
+          <div style={{ color: '#64748B', marginBottom: 8, lineHeight: 1.5 }}>
+            複製目前網址即可分享這組權重給他人。
+          </div>
+          <button
+            onClick={() => navigator.clipboard.writeText(window.location.href)}
+            style={{
+              width: '100%', padding: '6px 0', borderRadius: 6, border: '1px solid #86EFAC',
+              background: '#fff', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            複製連結
+          </button>
+        </div>
+
         <hr style={{ border: 'none', borderTop: '1px solid #E2E8F0', margin: 0 }} />
 
         {/* Top 20 排名 */}
@@ -324,5 +438,14 @@ export default function MapPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// useSearchParams 需包在 Suspense 內（Next.js App Router 規定）
+export default function MapPage() {
+  return (
+    <Suspense>
+      <MapPageContent />
+    </Suspense>
   );
 }
