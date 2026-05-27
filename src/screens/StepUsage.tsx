@@ -40,7 +40,7 @@ export default function StepUsage({
             {kwh === 350 && <Badge tone="ink">預設值</Badge>}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 30 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 30 }}>
             <input
               type="number" min="50" max="2000" value={kwh}
               onChange={e => update({ monthlyKwh: Math.max(50, Math.min(2000, +e.target.value || 0)) })}
@@ -48,30 +48,33 @@ export default function StepUsage({
               style={{
                 fontSize: 72, fontWeight: 700, color: 'var(--green-700)',
                 border: 'none', outline: 'none', background: 'transparent',
-                width: 180, padding: 0,
+                width: `${String(kwh).length + 0.3}ch`, padding: 0,
               }}
             />
             <span style={{ fontSize: 22, color: 'var(--ink-500)', fontWeight: 500 }}>度 / 月</span>
           </div>
 
           <Slider min={100} max={1200} value={kwh} onChange={v => update({ monthlyKwh: v })} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-            <div style={{ textAlign: 'left' }}>
-              <div className="num" style={{ fontSize: 13, fontWeight: 600 }}>100</div>
-              <div className="caption">小家庭</div>
-            </div>
-            <div style={{ textAlign: 'center', opacity: kwh >= 300 && kwh <= 400 ? 1 : 0.4 }}>
-              <div className="num" style={{ fontSize: 13, fontWeight: 600, color: 'var(--green-700)' }}>350</div>
-              <div className="caption">平均</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div className="num" style={{ fontSize: 13, fontWeight: 600 }}>700</div>
-              <div className="caption">多人家庭</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="num" style={{ fontSize: 13, fontWeight: 600 }}>1,200+</div>
-              <div className="caption">大用電戶</div>
-            </div>
+          <div style={{ position: 'relative', height: 36, marginTop: 8 }}>
+            {([
+              { value: 100,  label: '100',    sub: '小家庭',   align: 'left'   },
+              { value: 350,  label: '350',    sub: '平均',     align: 'center' },
+              { value: 700,  label: '700',    sub: '多人家庭', align: 'center' },
+              { value: 1200, label: '1,200+', sub: '大用電戶', align: 'right'  },
+            ] as const).map(({ value, label, sub, align }) => {
+              const pct = (value - 100) / (1200 - 100) * 100;
+              const transform = align === 'left' ? 'none' : align === 'right' ? 'translateX(-100%)' : 'translateX(-50%)';
+              return (
+                <div key={value} style={{
+                  position: 'absolute', left: `${pct}%`, transform,
+                  textAlign: align,
+                  opacity: value === 350 ? (kwh >= 300 && kwh <= 400 ? 1 : 0.4) : 1,
+                }}>
+                  <div className="num" style={{ fontSize: 13, fontWeight: 600, color: value === 350 ? 'var(--green-700)' : undefined }}>{label}</div>
+                  <div className="caption">{sub}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
