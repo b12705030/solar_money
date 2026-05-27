@@ -145,14 +145,46 @@ def main(args: argparse.Namespace) -> None:
     bbox_3857 = bbox_4326_to_3857(min_lon, min_lat, max_lon, max_lat)
     print(f"[BBOX] Taiwan filter: WGS84 ({min_lon},{min_lat},{max_lon},{max_lat})", flush=True)
 
+    # ── Parse tile bbox from name (e.g. e120_n25_e125_n20 → lon 120-125, lat 20-25)
+    def tile_bbox_4326(tile_name: str):
+        """Return (min_lon, min_lat, max_lon, max_lat) from tile name, or None if unparseable."""
+        import re
+        parts = re.findall(r'[ew]\d+|[ns]\d+', tile_name)
+        if len(parts) < 4:
+            return None
+        def deg(token):
+            sign = -1 if token[0] in ('w', 's') else 1
+            return sign * int(token[1:])
+        lons = sorted(deg(p) for p in parts if p[0] in ('e', 'w'))
+        lats = sorted(deg(p) for p in parts if p[0] in ('n', 's'))
+        if len(lons) < 2 or len(lats) < 2:
+            return None
+        return lons[0], lats[0], lons[1], lats[1]
+
+    def tile_overlaps_bbox(tile_name, q_min_lon, q_min_lat, q_max_lon, q_max_lat) -> bool:
+        tb = tile_bbox_4326(tile_name)
+        if tb is None:
+            return True  # can't determine → include
+        t_min_lon, t_min_lat, t_max_lon, t_max_lat = tb
+        return (t_min_lon < q_max_lon and t_max_lon > q_min_lon and
+                t_min_lat < q_max_lat and t_max_lat > q_min_lat)
+
     # Find tiles
-    tiles = sorted(t.stem for t in polygon_dir.glob("*.geojson"))
+    all_tiles = sorted(t.stem for t in polygon_dir.glob("*.geojson"))
     if args.tile:
-        tiles = [t for t in tiles if t == args.tile]
-        if not tiles:
+        all_tiles = [t for t in all_tiles if t == args.tile]
+        if not all_tiles:
             print(f"[ERROR] Tile '{args.tile}' not found in {polygon_dir}")
             sys.exit(1)
-    print(f"[INFO] Tiles: {tiles}", flush=True)
+
+    # Pre-filter: skip tiles that don't overlap with the Taiwan bbox
+    tiles = []
+    for t in all_tiles:
+        if tile_overlaps_bbox(t, min_lon, min_lat, max_lon, max_lat):
+            tiles.append(t)
+        else:
+            print(f"[SKIP] Tile {t} does not overlap with bbox → skipped", flush=True)
+    print(f"[INFO] Tiles to process: {tiles}", flush=True)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     total_all = 0
