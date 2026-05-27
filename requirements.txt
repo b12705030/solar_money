@@ -11,3 +11,4 @@ asyncpg
 bcrypt
 python-jose[cryptography]
 rasterio
+fiona

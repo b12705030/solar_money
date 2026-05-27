@@ -35,6 +35,15 @@ _DEM_META: tuple[float, float, float, float] | None = None  # (origin_x, origin_
 _DEM_NPY  = Path(__file__).parent.parent / 'data' / 'taiwan_dem_100m.npy'
 _META_NPY = Path(__file__).parent.parent / 'data' / 'taiwan_dem_meta.npy'
 
+# ─── 鄉鎮市區 SHP point-in-polygon cache ─────────────────────────────────────
+_TOWN_SHP = (
+    Path(__file__).parent.parent
+    / 'data' / '鄉(鎮、市、區)界線1140318' / 'TOWN_MOI_1140318.shp'
+)
+_town_tree:    STRtree | None       = None  # shapely STRtree（空間索引）
+_town_polys:   list                 = []    # shapely Polygon list
+_town_records: list[tuple[str,str]] = []    # [(township_code, county_name), ...]
+
 
 async def load_dem() -> None:
     """
@@ -313,11 +322,64 @@ def _osm_to_lod1(elements: list[dict]) -> list[dict]:
     return buildings
 
 
+def _load_town_shp() -> None:
+    """
+    懶載入：讀取 TOWN_MOI SHP → Shapely Polygon list → STRtree。
+    第一次呼叫時執行；之後直接回傳（_town_tree is not None）。
+    CRS：GCS_TWD97[2020]（地理座標，度數）≈ WGS84，無需轉換。
+    """
+    global _town_tree, _town_polys, _town_records
+    if _town_tree is not None:
+        return
+    if not _TOWN_SHP.exists():
+        print(f'[Township] SHP not found: {_TOWN_SHP}')
+        return
+    try:
+        import fiona
+        from shapely.geometry import shape as shp_shape
+
+        polys: list   = []
+        records: list[tuple[str, str]] = []
+        with fiona.open(str(_TOWN_SHP)) as src:          # .cpg 指定 UTF-8
+            for feat in src:
+                geom = feat.get('geometry')
+                if not geom:
+                    continue
+                props = feat.get('properties') or {}
+                code   = str(props.get('TOWNCODE', '') or '').strip()
+                county = str(props.get('COUNTYNAME', '') or '').strip()
+                if not code:
+                    continue
+                polys.append(shp_shape(geom))
+                records.append((code, county))
+
+        _town_polys   = polys
+        _town_records = records
+        _town_tree    = STRtree(polys)
+        print(f'[Township] SHP loaded: {len(polys)} townships')
+    except Exception as e:
+        print(f'[Township] SHP load error: {type(e).__name__}: {e}')
+
+
 async def _get_township_info(lat: float, lng: float) -> tuple[str, str] | None:
     """
-    查 climate_annual 找最近鄉鎮市，回傳 (township_code, county_name)。
-    用 centroid 距離最小化（小範圍查詢，無需精確 polygon 判斷）。
+    查鄉鎮市，回傳 (township_code, county_name)。
+
+    優先順序：
+      1. 本地 SHP point-in-polygon（精確，不依賴 DB 連線）
+      2. climate_annual 近心 DB 查詢（沿岸/離島 fallback）
     """
+    # ── 1. 本地 SHP point-in-polygon（精確）──────────────────────────────────
+    _load_town_shp()
+    if _town_tree is not None:
+        from shapely.geometry import Point
+        pt = Point(lng, lat)  # EPSG:4326：Point(longitude, latitude)
+        idxs = _town_tree.query(pt, predicate='intersects')
+        if len(idxs):
+            code, county = _town_records[int(idxs[0])]
+            return code, county
+
+    # ── 2. Fallback：DB 近心距離（SHP 無結果：沿岸/海上點）─────────────────
     from .db import get_pool
     try:
         pool = await get_pool()
