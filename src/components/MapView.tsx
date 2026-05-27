@@ -10,7 +10,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type Props = {
   selectedAddress?: AddressOption | null;
-  onBuildingFound?: (info: { height: number; areaPing: number }) => void;
+  onBuildingFound?: (info: { height: number; areaPing: number; usableFraction?: number }) => void;
   sunHour?: number; // local Taiwan time (UTC+8), 0–23
 };
 
@@ -62,8 +62,8 @@ function _applyHourData(map: mapboxgl.Map, data: HourData) {
   const source = map.getSource('all-shadows') as mapboxgl.GeoJSONSource | undefined;
   const roofSource = map.getSource('roof-shadows') as mapboxgl.GeoJSONSource | undefined;
   console.log('[Shadow] apply — ground:', data.features?.length, 'roof:', data.roofShadows?.length);
-  if (source && data.features?.length > 0)
-    source.setData({ type: 'FeatureCollection', features: data.features });
+  if (source)
+    source.setData({ type: 'FeatureCollection', features: data.features ?? [] });
   if (roofSource) {
     // Scale overlay slightly outside the building footprint to avoid depth-test z-fighting
     // (same trick used by the amber highlight layer: scalePoly + height+0.5)
@@ -85,6 +85,7 @@ async function refreshAllShadows(
   map: mapboxgl.Map,
   sunHourRef: React.MutableRefObject<number>,
   cacheRef: React.MutableRefObject<Map<number, HourData>>,
+  buildingsRef: React.MutableRefObject<{ footprint: [number, number][]; height: number }[]>,
   setLoading?: (v: boolean) => void,
 ): Promise<void> {
   _shadowFetchCtrl?.abort();
@@ -102,7 +103,10 @@ async function refreshAllShadows(
       `${API_URL}/api/buildings?min_lon=${sw.lng}&min_lat=${sw.lat}&max_lon=${ne.lng}&max_lat=${ne.lat}`,
       { signal },
     );
-    if (res.ok) ({ buildings } = await res.json());
+    if (res.ok) {
+      ({ buildings } = await res.json());
+      buildingsRef.current = buildings;  // 儲存供 slider fallback 使用
+    }
   } catch { /* network error; buildings 留空 */ }
 
   console.log('[Shadow] buildings:', buildings.length);
@@ -123,20 +127,18 @@ async function refreshAllShadows(
 
   const bodyBase = { buildings, lat: center.lat, lng: center.lng };
 
-  // phase2Done prevents phase 1 from overwriting the more authoritative phase 2 result
-  // in the common case where precompute returns from DB cache almost instantly.
-  let phase2Done = false;
-
-  // Phase 1 — current hour only (~300 ms): show shadows immediately, hide spinner
+  // Phase 1 — current hour only (~300 ms): sole owner of the display update.
+  // Phase 2 — all 14 hours: fills cacheRef for the time slider only, never touches display.
+  // Separating responsibilities avoids stale DB cache overwriting Phase 1's correct result.
   const phase1 = fetch(`${API_URL}/api/shadows/from-features`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...bodyBase, local_hour: sunHourRef.current }),
     signal,
   }).then(async r => {
-    if (!r.ok || signal.aborted || phase2Done) return;
+    if (!r.ok || signal.aborted) return;
     const data: HourData = await r.json();
-    if (signal.aborted || phase2Done) return;
+    if (signal.aborted) return;
     _applyHourData(map, data);
     if (!signal.aborted) setLoading?.(false);
   }).catch(() => {});
@@ -151,13 +153,10 @@ async function refreshAllShadows(
     if (!r.ok || signal.aborted) return;
     const allHours: Record<string, HourData> = await r.json();
     if (signal.aborted) return;
-    phase2Done = true;
     cacheRef.current.clear();
     for (const [h, data] of Object.entries(allHours)) {
       cacheRef.current.set(Number(h), data);
     }
-    const current = cacheRef.current.get(sunHourRef.current);
-    if (current) _applyHourData(map, current);
     if (!signal.aborted) setLoading?.(false);
   }).catch(() => {});
 
@@ -219,6 +218,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
   const sunHourRef = useRef(sunHour);
   const moveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shadowCacheRef = useRef<Map<number, HourData>>(new Map());
+  const buildingsRef = useRef<{ footprint: [number, number][]; height: number }[]>([]);
 
   useEffect(() => { onBuildingFoundRef.current = onBuildingFound; });
   useEffect(() => { sunHourRef.current = sunHour; }, [sunHour]);
@@ -297,7 +297,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
 
       // style.load fires before building tiles are downloaded.
       // Wait for the first idle (all tiles loaded + rendered) before querying features.
-      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, setShadowLoading));
+      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading));
     });
 
     // After panning, refresh shadows once tiles are settled.
@@ -307,7 +307,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       moveDebounceRef.current = setTimeout(() => {
         setShadowLoading(true); // spinner only when calculation is actually about to start
-        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, setShadowLoading);
+        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading);
         if (map.loaded()) {
           doRefresh();
         } else {
@@ -326,11 +326,31 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
     };
   }, []);
 
-  // sunHour change → use cache (instant); initial load is handled by map.once('idle')
+  // sunHour change → use cache (instant); fallback to live fetch on cache miss / empty
   useEffect(() => {
     if (!mapLoaded || !mapInstance) return;
     const cached = shadowCacheRef.current.get(sunHour);
-    if (cached) _applyHourData(mapInstance, cached);
+    if (cached && (cached.features?.length ?? 0) > 0) {
+      _applyHourData(mapInstance, cached);
+      return;
+    }
+    // Cache miss 或全空 → 即時呼叫 from-features，結果回填記憶體快取
+    const buildings = buildingsRef.current;
+    if (!buildings.length) return;
+    const center = mapInstance.getCenter();
+    fetch(`${API_URL}/api/shadows/from-features`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buildings, lat: center.lat, lng: center.lng, local_hour: sunHour }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: HourData | null) => {
+        if (data) {
+          shadowCacheRef.current.set(sunHour, data);  // 回填，下次拖到同小時立即回應
+          _applyHourData(mapInstance!, data);
+        }
+      })
+      .catch(() => {});
   }, [sunHour, mapLoaded, mapInstance]);
 
   // Address change → detect building → show amber highlight
@@ -347,20 +367,90 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
 
     const abortCtrl = new AbortController();
 
-    const applyResult = (features: GeoJSON.Feature[], footprint: [number, number][], height: number, areaPing: number) => {
+    const applyResult = (features: GeoJSON.Feature[], footprint: [number, number][], height: number, areaPing: number, usableFraction?: number) => {
       if (abortCtrl.signal.aborted) return;
       buildingCacheRef.current = { features, footprint, height, lat: lngLat[1], lng: lngLat[0] };
       showHighlight(mapInstance!, features);
-      onBuildingFoundRef.current?.({ height, areaPing });
+      onBuildingFoundRef.current?.({ height, areaPing, usableFraction });
       if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
     };
 
     const detectBuilding = async () => {
       if (abortCtrl.signal.aborted) return;
+<<<<<<< HEAD
       try {
         const res = await fetch(
           `${API_URL}/api/buildings?lat=${lngLat[1]}&lng=${lngLat[0]}&radius_m=150`,
           { signal: abortCtrl.signal },
+=======
+
+      const screenPt = mapInstance!.project(lngLat);
+      const rendered = mapInstance!.queryRenderedFeatures(screenPt);
+      const bldgFeatures = rendered.filter(f =>
+        f.properties?.group === 'building-3d' && f.geometry.type === 'Polygon'
+      );
+
+      // Collect viewport buildings once for usable-fraction calculation
+      const canvas = mapInstance!.getCanvas();
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      const M = Math.round(Math.max(W, H) * 0.4);
+      const vpRendered = mapInstance!.queryRenderedFeatures([[-M, -M], [W + M, H + M]]);
+      const vpSeen = new Set<string>();
+      const vpBuildings: { footprint: [number, number][]; height: number }[] = [];
+      for (const f of vpRendered) {
+        const isBldg = f.properties?.group === 'building-3d' ||
+          (f.layer?.type === 'fill-extrusion' && f.properties?.height != null);
+        if (!isBldg) continue;
+        const bh = Number(f.properties?.height ?? 10);
+        if (bh <= 0) continue;
+        if (f.geometry.type === 'Polygon') {
+          const ext = (f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
+          const key = JSON.stringify(ext[0]);
+          if (!vpSeen.has(key)) { vpSeen.add(key); vpBuildings.push({ footprint: ext, height: bh }); }
+        }
+      }
+
+      const fetchUsableFraction = async (targetFootprint: [number, number][]): Promise<number | undefined> => {
+        try {
+          const res = await fetch(`${API_URL}/api/usable-fraction`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_footprint: targetFootprint, buildings: vpBuildings, lat: lngLat[1], lng: lngLat[0] }),
+            signal: abortCtrl.signal,
+          });
+          if (!res.ok || abortCtrl.signal.aborted) return undefined;
+          const data = await res.json();
+          return typeof data.usable_fraction === 'number' ? data.usable_fraction : undefined;
+        } catch { return undefined; }
+      };
+
+      if (bldgFeatures.length > 0) {
+        const height = Number(bldgFeatures[0].properties?.height || 10);
+        const feats: GeoJSON.Feature[] = bldgFeatures.map(f => ({
+          type: 'Feature' as const,
+          geometry: { type: 'Polygon' as const, coordinates: (f.geometry as GeoJSON.Polygon).coordinates },
+          properties: { height },
+        }));
+        const footprint = (bldgFeatures[0].geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
+        const areaPing = Math.max(1, Math.round(
+          bldgFeatures.reduce((sum, f) => sum + polygonAreaM2((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]), 0) * PING_PER_M2
+        ));
+        const usableFraction = await fetchUsableFraction(footprint);
+        applyResult(feats, footprint, height, areaPing, usableFraction);
+        return;
+      }
+
+      // Fallback: OSM Overpass
+      try {
+        const result = await fetchBuildingFromOSM(lngLat[0], lngLat[1], abortCtrl.signal);
+        if (abortCtrl.signal.aborted || !result) return;
+        const footprint = result.primaryArea.coordinates[0] as [number, number][];
+        const usableFraction = await fetchUsableFraction(footprint);
+        applyResult(
+          result.features, footprint, result.primaryHeight,
+          Math.max(1, Math.round(polygonAreaM2(footprint) * PING_PER_M2)),
+          usableFraction,
+>>>>>>> a3d8b64d4897e53684326d7bfd718a3386c419cd
         );
         if (!res.ok || abortCtrl.signal.aborted) return;
         const { buildings: nearby }: { buildings: { footprint: [number, number][]; height: number }[] } = await res.json();

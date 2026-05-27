@@ -9,6 +9,22 @@ import type { SolarState, AddressOption, Region } from '@/lib/types';
 
 const MapView = dynamic(() => import('@/components/MapView'), { ssr: false });
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+
+async function fetchTownshipCode(
+  lat: number,
+  lng: number,
+): Promise<{ townshipCode: string; townshipName: string } | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/address-township?lat=${lat}&lng=${lng}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { townshipCode: data.townshipCode, townshipName: data.townshipName };
+  } catch {
+    return null;
+  }
+}
+
 function detectRegion(address: string): Region {
   if (/台中|臺中|彰化|南投|苗栗|雲林/.test(address)) return '中部';
   if (/台南|臺南|高雄|屏東|嘉義|花蓮|台東|臺東|澎湖|金門/.test(address)) return '南部';
@@ -26,7 +42,7 @@ export default function StepAddress({
   const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [buildingInfo, setBuildingInfo] = useState<{ height: number; areaPing: number } | null>(null);
+  const [buildingInfo, setBuildingInfo] = useState<{ height: number; areaPing: number; usableFraction?: number } | null>(null);
   const [sunHour, setSunHour] = useState<number>(() => {
     const h = new Date().getHours(); // local hour
     return h >= 6 && h <= 18 ? h : 12;
@@ -94,16 +110,24 @@ export default function StepAddress({
         lng: details.lon,
       };
       setSelected(addressOption);
-      update({ address: addressOption, addressQuery: prediction.description, roofArea: 50 });
+
+      // 查詢鄉鎮市代碼（非阻塞，失敗不影響主流程）
+      const township = await fetchTownshipCode(details.lat, details.lon);
+      update({
+        address: addressOption,
+        addressQuery: prediction.description,
+        roofArea: 50,
+        townshipCode: township?.townshipCode,
+        townshipName: township?.townshipName,
+      });
     } catch (err) {
       console.error('Failed to get place details:', err);
     }
   };
 
-  const handleBuildingFound = (info: { height: number; areaPing: number }) => {
+  const handleBuildingFound = (info: { height: number; areaPing: number; usableFraction?: number }) => {
     setBuildingInfo(info);
-    // Update roofArea with real polygon footprint (only if user hasn't manually adjusted)
-    update({ roofArea: info.areaPing });
+    update({ roofArea: info.areaPing, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
   };
 
   const a = state.address;

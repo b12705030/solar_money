@@ -1,11 +1,12 @@
 'use client';
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { MapPin } from 'lucide-react';
 import { Info } from '@/components/ui';
 import { computeResults } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
 import InquiryModal from '@/components/InquiryModal';
-import type { SolarState, ComputedResults, VendorDetail, VendorRecommendation } from '@/lib/types';
+import type { SolarState, ComputedResults, VendorDetail, VendorRecommendation, RegionPotential } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -299,6 +300,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [assessmentStored, setAssessmentStored] = useState(false);
   const [claimedAccountId, setClaimedAccountId] = useState<string | null>(null);
   const [authToastMessage, setAuthToastMessage] = useState('');
+  const [regionInfo, setRegionInfo] = useState<RegionPotential | null>(null);
   const [vendorsVisible, setVendorsVisible] = useState(false);
   const [recommendedVendors, setRecommendedVendors] = useState<VendorRecommendation[]>([]);
   const [vendorsLoading, setVendorsLoading] = useState(false);
@@ -349,6 +351,15 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 地區潛力 badge
+  useEffect(() => {
+    if (!state.townshipCode) return;
+    fetch(`${API_URL}/api/region-potential/${encodeURIComponent(state.townshipCode)}`)
+      .then(res => (res.ok ? res.json() : Promise.reject()))
+      .then((data: RegionPotential) => setRegionInfo(data))
+      .catch(() => {});
+  }, [state.townshipCode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -474,6 +485,45 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         <p className="body" style={{ color: 'var(--ink-500)' }}>
           基於 {state.address?.label ?? '你輸入的地址'} 的日照資料、{r.region}氣候模型與 {state.county ?? '台北市'} 政府補助計算。
         </p>
+
+        {/* 地區潛力 badge */}
+        {regionInfo && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 10,
+            marginTop: 14, padding: '10px 16px',
+            background: regionInfo.tier === '高潛力' ? '#FFF8EE'
+                       : regionInfo.tier === '中潛力' ? '#F0F9F2'
+                       : 'var(--ink-50)',
+            border: `1px solid ${
+              regionInfo.tier === '高潛力' ? '#E8A53C'
+              : regionInfo.tier === '中潛力' ? 'var(--green-300)'
+              : 'var(--ink-200)'}`,
+            borderRadius: 10, fontSize: 14,
+          }}>
+            <MapPin size={14} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+            <span style={{ fontWeight: 600, color: 'var(--ink-900)' }}>
+              {regionInfo.countyname}{regionInfo.townname}
+            </span>
+            <span style={{ color: 'var(--ink-400)' }}>·</span>
+            <span style={{
+              fontWeight: 700,
+              color: regionInfo.tier === '高潛力' ? '#C8861E'
+                    : regionInfo.tier === '中潛力' ? 'var(--green-700)'
+                    : 'var(--ink-500)',
+            }}>
+              全台太陽能潛力 #{regionInfo.rank} / {regionInfo.total}
+            </span>
+            <span style={{
+              padding: '2px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+              background: regionInfo.tier === '高潛力' ? '#E8A53C'
+                         : regionInfo.tier === '中潛力' ? 'var(--green-500)'
+                         : 'var(--ink-300)',
+              color: regionInfo.tier === '一般' ? 'var(--ink-700)' : '#fff',
+            }}>
+              {regionInfo.tier}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Headline numbers */}

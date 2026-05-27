@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import { Map } from 'lucide-react';
 import type { AccountRole } from '@/lib/auth';
 
 const ROLE_LABELS: Record<AccountRole, string> = {
@@ -33,6 +35,9 @@ export default function TopBar({ onHome, onLoginClick, onHistoryClick, onVendorA
       <div className="topbar-actions">
         <span>資料來源：中央氣象署 · 台電 · 能源署</span>
         <span className="pill">Beta</span>
+        <Link href="/map" style={{ fontSize: 13, color: 'var(--ink-600)', textDecoration: 'none', padding: '4px 8px' }}>
+          <Map size={13} strokeWidth={1.8} style={{ verticalAlign: 'middle', marginRight: 4 }} />地區分析
+        </Link>
         {/* 只有未登入或 user 角色才顯示廠商入駐 */}
         {(!user || user.role === 'user') && (
           <button className="btn-outline-sm" onClick={onVendorApplyClick}>廠商入駐</button>

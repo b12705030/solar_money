@@ -13,12 +13,11 @@ export default function StepParams({
   update: (patch: Partial<SolarState>) => void;
 }) {
   const area = state.roofArea ?? 78;
-  const maxCapacity = parseFloat((area * 3.3 * 0.6 * 0.165).toFixed(1));
-  const county = guessCounty(state.address?.label);
-  const subsidy = SUBSIDIES[county] ?? SUBSIDIES['台北市'];
-
   const grade = state.panelGrade ?? 'standard';
   const gradeInfo = PANEL_GRADES.find(g => g.id === grade) ?? PANEL_GRADES[1];
+  const maxCapacity = parseFloat((area * 3.3 * (state.usableFraction ?? 0.6) * gradeInfo.kWpPerM2).toFixed(1));
+  const county = guessCounty(state.address?.label);
+  const subsidy = SUBSIDIES[county] ?? SUBSIDIES['台北市'];
 
   const defaultBudget = Math.min(
     800000,
@@ -74,8 +73,9 @@ export default function StepParams({
         {PANEL_GRADES.map(g => {
           const active = grade === g.id;
           const gNet = g.costPerKw - subsidy.amount;
-          const gCap = parseFloat(Math.min(maxCapacity, gNet > 0 ? budgetCeiling / gNet : maxCapacity).toFixed(1));
-          const isFull = gCap >= maxCapacity - 0.05;
+          const gMaxCap = parseFloat((area * 3.3 * (state.usableFraction ?? 0.6) * g.kWpPerM2).toFixed(1));
+          const gCap = parseFloat(Math.min(gMaxCap, gNet > 0 ? budgetCeiling / gNet : gMaxCap).toFixed(1));
+          const isFull = gCap >= gMaxCap - 0.05;
           return (
             <button
               key={g.id}
