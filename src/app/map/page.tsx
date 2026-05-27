@@ -77,10 +77,15 @@ function buildTooltipHTML(props: Record<string, unknown>): string {
   const color = TIER_COLOR[props.tier as string] ?? '#94A3B8';
 
   const factors = [
-    { label: '模型潛力', pct: props.model_pct as number, display: Number(props.model_val).toFixed(2) },
-    { label: '日照輻射', pct: props.solar_pct as number, display: `${Number(props.solar_val).toFixed(2)} kWh` },
-    { label: '躉購費率', pct: props.fit_pct   as number, display: `${Number(props.fit_val).toFixed(2)} 元` },
-    { label: '家戶收入', pct: props.income_pct as number, display: `NT$${Math.round(Number(props.income_val) / 1000)}K` },
+    { label: '模型潛力', pct: props.model_pct as number, display: (() => {
+        const pct = Number(props.model_pct);
+        const top = Math.round(100 - pct);
+        const tier = pct >= 70 ? '高' : pct >= 40 ? '中' : '低';
+        return `${tier}（全台前 ${Math.max(top, 1)}%）`;
+      })() },
+    { label: '日照輻射', pct: props.solar_pct as number, display: `${Number(props.solar_val).toFixed(2)} kWh (/m²/day)` },
+    { label: '躉購費率', pct: props.fit_pct   as number, display: `${Number(props.fit_val).toFixed(2)} 元/度` },
+    { label: '家戶收入', pct: props.income_pct as number, display: `${Math.round(Number(props.income_val))} 千元/年` },
   ];
 
   const factorRows = factors.map(f => `
@@ -134,9 +139,13 @@ function MapPageContent() {
     income:      parseWeightParam(searchParams.get('income'), WEIGHTS_DEFAULT.income),
   }));
 
-  const [ranking, setRanking]   = useState<RegionRow[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [mapReady, setMapReady] = useState(false);
+  const [ranking, setRanking]       = useState<RegionRow[]>([]);
+  const [allRanking, setAllRanking] = useState<RegionRow[]>([]);
+  const [loading, setLoading]       = useState(false);
+  const [mapReady, setMapReady]     = useState(false);
+  const [rankSearch, setRankSearch] = useState('');
+  const [showAll, setShowAll]       = useState(false);
+  const [panelOpen, setPanelOpen]   = useState(false);
 
   // ── 更新 URL（不觸發頁面 reload）────────────────────────────────────────
   function pushURL(w: typeof WEIGHTS_DEFAULT) {
@@ -193,6 +202,7 @@ function MapPageContent() {
       });
       if (!res.ok) throw new Error('TOPSIS API error');
       const data: RegionRow[] = await res.json();
+      setAllRanking(data);
       setRanking(data.slice(0, 20));
       renderOnMap(data);
     } catch (err) {
@@ -302,11 +312,55 @@ function MapPageContent() {
     timerRef.current = setTimeout(() => fetchAndRender(next), 400);
   }
 
+  function handleReset() {
+    setWeights(WEIGHTS_DEFAULT);
+    pushURL(WEIGHTS_DEFAULT);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => fetchAndRender(WEIGHTS_DEFAULT), 400);
+  }
+
+  // 搜尋過濾後的排名清單
+  const filteredRanking = (() => {
+    const q = rankSearch.trim();
+    const base = (q || showAll) ? allRanking : ranking;
+    if (!q) return base;
+    return allRanking.filter(r =>
+      `${r.countyname}${r.townname}`.includes(q)
+    );
+  })();
+
   // ── 渲染 ──────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'var(--font-base, system-ui)' }}>
+    <div style={{ display: 'flex', height: '100vh', fontFamily: 'var(--font-base, system-ui)', position: 'relative' }}>
+      <style>{`
+        @media (max-width: 640px) {
+          .map-panel {
+            position: absolute !important;
+            top: 0; left: 0; bottom: 0;
+            width: 88vw !important;
+            max-width: 320px;
+            z-index: 20;
+            transform: translateX(-100%);
+            transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+            box-shadow: 4px 0 20px rgba(0,0,0,0.12);
+          }
+          .map-panel.open { transform: translateX(0); }
+          .map-panel-toggle {
+            display: flex !important;
+          }
+          .map-overlay { display: block !important; }
+        }
+        .map-panel-toggle { display: none; }
+        .map-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.3); z-index: 15; }
+      `}</style>
+
+      {/* 手機版：點擊遮罩關閉面板 */}
+      {panelOpen && (
+        <div className="map-overlay" onClick={() => setPanelOpen(false)} />
+      )}
+
       {/* 左側控制面板 */}
-      <div style={{
+      <div className={`map-panel${panelOpen ? ' open' : ''}`} style={{
         width: 300, padding: 24, borderRight: '1px solid #E2E8F0',
         overflowY: 'auto', background: '#FAFAFA', display: 'flex', flexDirection: 'column', gap: 20,
       }}>
@@ -348,9 +402,22 @@ function MapPageContent() {
           })}
         </div>
 
-        {loading && (
-          <div style={{ fontSize: 12, color: '#94A3B8', textAlign: 'center' }}>更新中⋯</div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {loading
+            ? <span style={{ fontSize: 12, color: '#94A3B8' }}>更新中⋯</span>
+            : <span style={{ fontSize: 12, color: '#94A3B8' }}>&nbsp;</span>
+          }
+          <button
+            onClick={handleReset}
+            style={{
+              marginLeft: 'auto', padding: '4px 10px', borderRadius: 6,
+              border: '1px solid #E2E8F0', background: '#fff',
+              fontSize: 11, color: '#64748B', cursor: 'pointer',
+            }}
+          >
+            重設預設值
+          </button>
+        </div>
 
         {/* 圖例 */}
         <div style={{ padding: '12px 14px', background: '#F1F5F9', borderRadius: 8 }}>
@@ -366,36 +433,36 @@ function MapPageContent() {
           ))}
         </div>
 
-        {/* 分享連結 */}
-        <div style={{ padding: '10px 14px', background: '#F0FDF4', borderRadius: 8, fontSize: 12 }}>
-          <div style={{ fontWeight: 600, color: '#166534', marginBottom: 4 }}>分享目前設定</div>
-          <div style={{ color: '#64748B', marginBottom: 8, lineHeight: 1.5 }}>
-            複製目前網址即可分享這組權重給他人。
-          </div>
-          <button
-            onClick={() => navigator.clipboard.writeText(window.location.href)}
-            style={{
-              width: '100%', padding: '6px 0', borderRadius: 6, border: '1px solid #86EFAC',
-              background: '#fff', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            複製連結
-          </button>
-        </div>
-
         <hr style={{ border: 'none', borderTop: '1px solid #E2E8F0', margin: 0 }} />
 
-        {/* Top 20 排名 */}
+        {/* 排名清單 */}
         <div>
-          <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#1A202C', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Trophy size={14} strokeWidth={1.8} /> 目前 Top 20
+          <h3 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: '#1A202C', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Trophy size={14} strokeWidth={1.8} />
+            {rankSearch ? `搜尋結果` : showAll ? '全部排名' : 'Top 20'}
           </h3>
-          {ranking.length === 0 && !loading && (
+
+          {/* 搜尋框 */}
+          <input
+            type="text"
+            placeholder="搜尋縣市 / 鄉鎮…"
+            value={rankSearch}
+            onChange={e => setRankSearch(e.target.value)}
+            style={{
+              width: '100%', padding: '6px 10px', marginBottom: 10,
+              borderRadius: 6, border: '1px solid #E2E8F0',
+              fontSize: 12, color: '#374151', background: '#fff',
+              boxSizing: 'border-box', outline: 'none',
+            }}
+          />
+
+          {allRanking.length === 0 && !loading && (
             <div style={{ fontSize: 12, color: '#94A3B8' }}>
               資料載入中，或尚未匯入地區潛力資料。
             </div>
           )}
-          {ranking.map((r, i) => (
+
+          {filteredRanking.map((r) => (
             <div key={r.towncode} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               padding: '6px 0', borderBottom: '1px solid #F1F5F9', fontSize: 13,
@@ -404,10 +471,10 @@ function MapPageContent() {
                 <span style={{
                   width: 22, height: 22, borderRadius: '50%', display: 'inline-flex',
                   alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700,
-                  background: i < 3 ? '#E8A53C' : '#E2E8F0',
-                  color: i < 3 ? '#fff' : '#64748B',
+                  background: r.rank <= 3 ? '#E8A53C' : '#E2E8F0',
+                  color: r.rank <= 3 ? '#fff' : '#64748B',
                 }}>
-                  {i + 1}
+                  {r.rank}
                 </span>
                 <span style={{ color: '#374151' }}>
                   {r.countyname}{r.townname}
@@ -418,10 +485,24 @@ function MapPageContent() {
               </span>
             </div>
           ))}
+
+          {/* 展開 / 收合按鈕（沒在搜尋時才顯示）*/}
+          {!rankSearch && allRanking.length > 20 && (
+            <button
+              onClick={() => setShowAll(v => !v)}
+              style={{
+                marginTop: 10, width: '100%', padding: '6px 0',
+                borderRadius: 6, border: '1px solid #E2E8F0',
+                background: '#fff', fontSize: 12, color: '#64748B', cursor: 'pointer',
+              }}
+            >
+              {showAll ? '▲ 收合' : `▼ 顯示全部 ${allRanking.length} 筆`}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 右側地圖 */}
+      {/* 地圖區域 */}
       <div ref={mapContainerRef} style={{ flex: 1, position: 'relative' }}>
         {/* 標題浮層 */}
         <div style={{
@@ -436,6 +517,23 @@ function MapPageContent() {
             基於 DeepSolar 遷移學習 × TOPSIS 多準則排名
           </div>
         </div>
+
+        {/* 手機版：開啟面板按鈕 */}
+        <button
+          className="map-panel-toggle"
+          onClick={() => setPanelOpen(v => !v)}
+          style={{
+            position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 10, padding: '10px 20px', borderRadius: 24,
+            background: '#1A202C', color: '#fff', border: 'none',
+            fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+            alignItems: 'center', gap: 6,
+          }}
+        >
+          <Scale size={14} strokeWidth={1.8} />
+          調整權重
+        </button>
       </div>
     </div>
   );
