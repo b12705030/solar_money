@@ -14,10 +14,9 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
-from .db import (get_dem_bytes, get_gba_buildings_from_db, get_gba_cache,
+from .db import (get_dem_bytes, get_gba_buildings_from_db,
                  get_gba_buildings_from_fallback,
-                 get_lod1_cache, get_osm_cache,
-                 set_gba_cache, set_lod1_cache, set_osm_cache)
+                 get_osm_cache, set_osm_cache)
 
 OVERPASS_ENDPOINTS = [
     'https://overpass-api.de/api/interpreter',
@@ -306,7 +305,7 @@ def _way_height(tags: dict) -> float:
 
 
 def _osm_to_lod1(elements: list[dict]) -> list[dict]:
-    """將 OSM Overpass way 元素轉換為 LoD1 格式（與 NLSC 相容）。"""
+    """將 OSM Overpass way 元素轉換為建物格式。"""
     buildings = []
     for el in elements:
         if el.get('type') != 'way' or not el.get('geometry'):
@@ -399,50 +398,6 @@ async def _get_township_info(lat: float, lng: float) -> tuple[str, str] | None:
     return None
 
 
-_nlsc_bg_in_progress: set[str] = set()
-_gba_bg_in_progress: set[str] = set()
-
-
-async def _bg_fetch_gba(
-    gba,
-    cache_key: str,
-    min_lon: float, min_lat: float, max_lon: float, max_lat: float,
-) -> None:
-    """後台非同步抓取 GBA WFS 建物並存入 DB cache。"""
-    try:
-        buildings = await gba.fetch_gba_buildings(min_lon, min_lat, max_lon, max_lat)
-        if buildings:
-            await set_gba_cache(cache_key, buildings)
-            print(f'[GBA-BG] done: {len(buildings)} bldgs cached for {cache_key}')
-        else:
-            print(f'[GBA-BG] returned 0 buildings for {cache_key}')
-    except Exception as e:
-        print(f'[GBA-BG] error: {type(e).__name__}: {e}')
-    finally:
-        _gba_bg_in_progress.discard(cache_key)
-
-
-async def _bg_fetch_nlsc(
-    nlsc, township_code: str, county_name: str,
-    min_lon: float, min_lat: float, max_lon: float, max_lat: float,
-) -> None:
-    """
-    後台非同步抓取 NLSC I3S 建物並存入 DB cache。
-    第一次請求觸發（cache miss），下次查詢直接命中 cache。
-    """
-    try:
-        buildings = await nlsc.fetch_nlsc_buildings(
-            county_name, min_lon, min_lat, max_lon, max_lat
-        )
-        if buildings:
-            await set_lod1_cache(township_code, buildings)
-            print(f'[NLSC-BG] done: {len(buildings)} bldgs cached for {township_code}')
-        else:
-            print(f'[NLSC-BG] returned 0 buildings for {township_code} ({county_name})')
-    except Exception as e:
-        print(f'[NLSC-BG] error: {type(e).__name__}: {e}')
-    finally:
-        _nlsc_bg_in_progress.discard(township_code)
 
 
 def _log_bldg_sample(source: str, buildings: list[dict], n: int = 3) -> None:
@@ -471,61 +426,13 @@ async def get_buildings(
     取得 bbox 內建物，回傳 LoD1 格式：
       [{"footprint": [[lng, lat], ...], "height": float, "build_id": str}, ...]
 
-    優先順序：NLSC cache → GBA DB → OSM Overpass fallback。
+    優先順序：GBA DB → OSM Overpass fallback。
 
-    NLSC（步驟 1）：政府官方 I3S 3D Tiles，高度精確（實測值）。
-    GBA（步驟 2）：GlobalBuildingAtlas，OSM 向量 footprint 形狀準確，高度為 ML 估算。
-                   NLSC cache miss 時立即回傳 GBA，同時觸發 NLSC 後台預取；
-                   下次同地點請求即可命中 NLSC cache（精確高度）。
-    OSM（步驟 3）：最後手段（離島 / GBA 無覆蓋區域）。
+    GBA：GlobalBuildingAtlas，Neon DB 直接查詢，450,497 棟，覆蓋全台灣。
+          footprint 來自 OSM 向量資料（精確），高度為 ML 估算值。
+    OSM：最後手段（離島 / GBA 無覆蓋區域）。
     """
-    import asyncio, importlib, sys as _sys
-
-    center_lat = (min_lat + max_lat) / 2
-    center_lon = (min_lon + max_lon) / 2
-
-    scripts_dir = str(Path(__file__).parent.parent / 'scripts')
-    if scripts_dir not in _sys.path:
-        _sys.path.insert(0, scripts_dir)
-
-    # ── 1. NLSC cache（精確高度）─────────────────────────────────────────────
-    township_info = None
-    nlsc = None
-    township_code = county_name = ''
-    try:
-        township_info = await _get_township_info(center_lat, center_lon)
-        if township_info:
-            township_code, county_name = township_info
-            nlsc = importlib.import_module('fetch_nlsc_3dtiles')
-            corrected = nlsc._county_from_township(township_code)
-            if corrected and corrected != county_name:
-                print(f'[NLSC] county corrected: {county_name} → {corrected} ({township_code})')
-                county_name = corrected
-            nlsc_cached = await get_lod1_cache(township_code)
-            if nlsc_cached is not None:
-                result = _filter_bbox(nlsc_cached, min_lon, min_lat, max_lon, max_lat)
-                print(f'[NLSC] cache hit: {len(nlsc_cached)} stored → {len(result)} in bbox  (township={township_code})')
-                _log_bldg_sample('NLSC', result)
-                return result
-        else:
-            print(f'[NLSC] no township for ({center_lat:.4f}, {center_lon:.4f})')
-    except Exception as e:
-        print(f'[NLSC] cache lookup error: {type(e).__name__}: {e}')
-        township_info = None
-
-    # ── 2. NLSC cache miss → 觸發後台預取（不等待）+ GBA 即時回傳 ────────────
-    # GBA footprint 形狀準確，適合地圖呈現與面積計算。
-    # NLSC 在背景下載中；下次同鄉鎮請求將命中 cache，取得精確建物高度。
-    pad = 0.018  # ~2 km，用於背景預取 bbox
-    bg_bbox = (center_lon - pad, center_lat - pad, center_lon + pad, center_lat + pad)
-
-    if township_info and nlsc and township_code not in _nlsc_bg_in_progress:
-        _nlsc_bg_in_progress.add(township_code)
-        print(f'[NLSC] cache miss, starting background fetch for {township_code}')
-        asyncio.create_task(_bg_fetch_nlsc(nlsc, township_code, county_name, *bg_bbox))
-    elif township_info and township_code in _nlsc_bg_in_progress:
-        print(f'[NLSC] background fetch already running for {township_code}')
-
+    # ── 1. GBA DB（直接查詢，footprint 準確）────────────────────────────────
     try:
         gba_result = await get_gba_buildings_from_db(min_lon, min_lat, max_lon, max_lat)
         if not gba_result:
@@ -539,7 +446,7 @@ async def get_buildings(
     except Exception as e:
         print(f'[GBA] DB query error: {type(e).__name__}: {e}')
 
-    # ── 3. OSM Overpass 立即 fallback ─────────────────────────────────────────
+    # ── 2. OSM Overpass 立即 fallback ─────────────────────────────────────────
     print(f'[OSM] falling back to Overpass for bbox={min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f}')
     osm_key = _bbox_key(min_lon, min_lat, max_lon, max_lat)
     cached_osm = await get_osm_cache(osm_key)

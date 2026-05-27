@@ -281,7 +281,19 @@ function VendorDetailModal({
 
 export default function Results({ state, onRestart, onLoginClick }: { state: SolarState; onRestart: () => void; onLoginClick?: () => void }) {
   const { user } = useAuth();
-  const r: ComputedResults = useMemo(() => computeResults(state), [state]);
+
+  const [monthlyGhi, setMonthlyGhi] = useState<number[] | null>(null);
+  useEffect(() => {
+    const lat = state.address?.lat;
+    const lng = state.address?.lng;
+    if (!lat || !lng) return;
+    fetch(`${API_URL}/api/township?lat=${lat}&lng=${lng}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(d => { if (d?.monthly_ghi?.length === 12) setMonthlyGhi(d.monthly_ghi); })
+      .catch(() => {});
+  }, [state.address?.lat, state.address?.lng]);
+
+  const r: ComputedResults = useMemo(() => computeResults(state, monthlyGhi ?? undefined), [state, monthlyGhi]);
   const [tab, setTab] = useState<'generation' | 'investment'>('generation');
   const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
   const [assessmentStored, setAssessmentStored] = useState(false);

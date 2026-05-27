@@ -14,9 +14,9 @@ const BEST_ANGLE: Record<string, number> = {
   annual: 22, summer: 10, winter: 45, peak: 18, match: 20, roi: 22,
 };
 
-export function computeResults(state: SolarState): ComputedResults {
+export function computeResults(state: SolarState, monthlyGhi?: number[]): ComputedResults {
   const region = (state.address?.region ?? '北部') as Region;
-  const irr = TW_IRRADIANCE[region];
+  const irr = (monthlyGhi && monthlyGhi.length === 12) ? monthlyGhi : TW_IRRADIANCE[region];
   const capacity = state.capacity ?? 7.7;
   const goalAdj = GOAL_ADJ[state.goal ?? 'summer'];
 

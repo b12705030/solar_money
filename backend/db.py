@@ -191,11 +191,6 @@ async def init_db() -> None:
                 comment    TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
-            CREATE TABLE IF NOT EXISTS nlsc_lod1_cache (
-                township_code TEXT        PRIMARY KEY,
-                buildings     JSONB       NOT NULL,
-                cached_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
             CREATE TABLE IF NOT EXISTS gba_cache (
                 bbox_key   TEXT        PRIMARY KEY,
                 buildings  JSONB       NOT NULL,
@@ -1213,60 +1208,6 @@ async def get_potential_leads(
         return []
 
 
-# ─── NLSC LoD1 建物 cache（鄉鎮市級別，永不過期）───────────────────────────
-
-async def get_lod1_cache(township_code: str) -> list[dict] | None:
-    try:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                'SELECT buildings FROM nlsc_lod1_cache WHERE township_code = $1',
-                township_code,
-            )
-            return json.loads(row['buildings']) if row else None
-    except Exception:
-        return None
-
-
-async def set_lod1_cache(township_code: str, buildings: list[dict]) -> None:
-    try:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                '''INSERT INTO nlsc_lod1_cache (township_code, buildings)
-                   VALUES ($1, $2::jsonb)
-                   ON CONFLICT (township_code) DO UPDATE
-                   SET buildings = EXCLUDED.buildings, cached_at = NOW()''',
-                township_code, json.dumps(buildings),
-            )
-    except Exception:
-        pass
-
-
-async def delete_lod1_cache(township_code: str | None = None) -> int:
-    """
-    清除 NLSC LoD1 快取。
-    - township_code=None → 清除全部（DELETE FROM nlsc_lod1_cache）
-    - township_code 有值 → 只清除該鄉鎮市
-    回傳刪除筆數。
-    """
-    try:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            if township_code:
-                result = await conn.execute(
-                    'DELETE FROM nlsc_lod1_cache WHERE township_code = $1',
-                    township_code,
-                )
-            else:
-                result = await conn.execute('DELETE FROM nlsc_lod1_cache')
-            # asyncpg 回傳 "DELETE N" 字串
-            return int(result.split()[-1])
-    except Exception as e:
-        print(f'[DB] delete_lod1_cache error: {e}')
-        return 0
-
-
 async def delete_gba_cache(bbox_key: str | None = None) -> int:
     """清除 GBA WFS 快取。bbox_key=None → 全部清除。"""
     try:
@@ -1292,7 +1233,7 @@ async def get_gba_buildings_from_db(
 ) -> list[dict]:
     """
     從 gba_buildings 表以 bbox 查詢建物。
-    回傳格式與 fetch_gba_wfs / fetch_nlsc 相容：
+    回傳格式：
       [{"footprint": [[lng, lat], ...], "height": float, "build_id": str}, ...]
 
     索引條件：min_lon < $max_lon AND max_lon > $min_lon

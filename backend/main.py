@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from .auth import create_token, decode_token, hash_password, verify_password
 from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  claim_anonymous_assessments, close_pool, create_account,
-                 create_vendor_application, delete_gba_cache, delete_lod1_cache,
+                 create_vendor_application, delete_gba_cache,
                  delete_portfolio, get_account_assessments,
                  get_account_by_email, get_account_by_id, get_application_status,
                  get_climate, get_climate_monthly, get_my_vendor, get_potential_leads,
@@ -227,11 +227,10 @@ async def api_get_buildings(
     radius_m: float = Query(300, le=2000),
 ):
     """
-    回傳指定範圍內的 NLSC LoD1 建物清單。
+    回傳指定範圍內的建物清單（GBA DB → OSM Overpass fallback）。
     接受兩種形式：
     - 地圖視口 bbox：?min_lon=...&min_lat=...&max_lon=...&max_lat=...
     - 點+半徑：?lat=...&lng=...&radius_m=...（預設 300m）
-    cache miss 時自動呼叫 NLSC I3S API；失敗時 fallback OSM Overpass。
     """
     if min_lon is not None and min_lat is not None and max_lon is not None and max_lat is not None:
         bbox = (min_lon, min_lat, max_lon, max_lat)
@@ -247,25 +246,16 @@ async def api_get_buildings(
 
 @app.delete('/api/buildings/cache')
 async def clear_buildings_cache(
-    nlsc: bool = Query(True,  description='清除 nlsc_lod1_cache'),
-    gba:  bool = Query(False, description='清除 gba_cache'),
-    township_code: Optional[str] = Query(None, description='只清除指定鄉鎮市（nlsc）'),
+    gba: bool = Query(True, description='清除 gba_cache'),
     admin_secret: str = Header(..., alias='X-Admin-Secret'),
 ):
     """
-    清除建物快取，強制下次請求重新從 NLSC 3D Tiles 或 GBA 抓取。
+    清除 GBA 建物快取，強制下次請求重新從 DB 抓取。
     需要 X-Admin-Secret header（與 ADMIN_SECRET 環境變數一致）。
-
-    常用：POST 地圖點選後看到 [NLSC] cache hit 但建物位置錯誤 →
-         DELETE /api/buildings/cache?nlsc=true  →  重整地圖 → 等待背景重抓
     """
     if admin_secret != _ADMIN_SECRET:
         raise HTTPException(status_code=403, detail='Invalid admin secret')
     deleted: dict[str, int] = {}
-    if nlsc:
-        n = await delete_lod1_cache(township_code)
-        deleted['nlsc_lod1_cache'] = n
-        print(f'[Cache] cleared nlsc_lod1_cache: {n} rows (township_code={township_code!r})')
     if gba:
         n = await delete_gba_cache()
         deleted['gba_cache'] = n
