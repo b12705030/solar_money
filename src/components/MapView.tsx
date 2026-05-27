@@ -377,41 +377,11 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
 
     const detectBuilding = async () => {
       if (abortCtrl.signal.aborted) return;
-<<<<<<< HEAD
-      try {
-        const res = await fetch(
-          `${API_URL}/api/buildings?lat=${lngLat[1]}&lng=${lngLat[0]}&radius_m=150`,
-          { signal: abortCtrl.signal },
-=======
 
-      const screenPt = mapInstance!.project(lngLat);
-      const rendered = mapInstance!.queryRenderedFeatures(screenPt);
-      const bldgFeatures = rendered.filter(f =>
-        f.properties?.group === 'building-3d' && f.geometry.type === 'Polygon'
-      );
-
-      // Collect viewport buildings once for usable-fraction calculation
-      const canvas = mapInstance!.getCanvas();
-      const W = canvas.clientWidth, H = canvas.clientHeight;
-      const M = Math.round(Math.max(W, H) * 0.4);
-      const vpRendered = mapInstance!.queryRenderedFeatures([[-M, -M], [W + M, H + M]]);
-      const vpSeen = new Set<string>();
-      const vpBuildings: { footprint: [number, number][]; height: number }[] = [];
-      for (const f of vpRendered) {
-        const isBldg = f.properties?.group === 'building-3d' ||
-          (f.layer?.type === 'fill-extrusion' && f.properties?.height != null);
-        if (!isBldg) continue;
-        const bh = Number(f.properties?.height ?? 10);
-        if (bh <= 0) continue;
-        if (f.geometry.type === 'Polygon') {
-          const ext = (f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
-          const key = JSON.stringify(ext[0]);
-          if (!vpSeen.has(key)) { vpSeen.add(key); vpBuildings.push({ footprint: ext, height: bh }); }
-        }
-      }
-
+      // 計算可用屋頂比例 — 使用 buildingsRef 中已快取的視口 GBA 建物（無需額外 API 呼叫）
       const fetchUsableFraction = async (targetFootprint: [number, number][]): Promise<number | undefined> => {
         try {
+          const vpBuildings = buildingsRef.current;
           const res = await fetch(`${API_URL}/api/usable-fraction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -424,33 +394,10 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
         } catch { return undefined; }
       };
 
-      if (bldgFeatures.length > 0) {
-        const height = Number(bldgFeatures[0].properties?.height || 10);
-        const feats: GeoJSON.Feature[] = bldgFeatures.map(f => ({
-          type: 'Feature' as const,
-          geometry: { type: 'Polygon' as const, coordinates: (f.geometry as GeoJSON.Polygon).coordinates },
-          properties: { height },
-        }));
-        const footprint = (bldgFeatures[0].geometry as GeoJSON.Polygon).coordinates[0] as [number, number][];
-        const areaPing = Math.max(1, Math.round(
-          bldgFeatures.reduce((sum, f) => sum + polygonAreaM2((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]), 0) * PING_PER_M2
-        ));
-        const usableFraction = await fetchUsableFraction(footprint);
-        applyResult(feats, footprint, height, areaPing, usableFraction);
-        return;
-      }
-
-      // Fallback: OSM Overpass
       try {
-        const result = await fetchBuildingFromOSM(lngLat[0], lngLat[1], abortCtrl.signal);
-        if (abortCtrl.signal.aborted || !result) return;
-        const footprint = result.primaryArea.coordinates[0] as [number, number][];
-        const usableFraction = await fetchUsableFraction(footprint);
-        applyResult(
-          result.features, footprint, result.primaryHeight,
-          Math.max(1, Math.round(polygonAreaM2(footprint) * PING_PER_M2)),
-          usableFraction,
->>>>>>> a3d8b64d4897e53684326d7bfd718a3386c419cd
+        const res = await fetch(
+          `${API_URL}/api/buildings?lat=${lngLat[1]}&lng=${lngLat[0]}&radius_m=150`,
+          { signal: abortCtrl.signal },
         );
         if (!res.ok || abortCtrl.signal.aborted) return;
         const { buildings: nearby }: { buildings: { footprint: [number, number][]; height: number }[] } = await res.json();
@@ -477,8 +424,9 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
           properties: { height: primary.height },
         };
         const areaPing = Math.max(1, Math.round(polygonAreaM2(primary.footprint) * PING_PER_M2));
-        console.log('[MapView] NLSC building — height:', primary.height, 'area ping:', areaPing);
-        applyResult([primaryFeat], primary.footprint, primary.height, areaPing);
+        const usableFraction = await fetchUsableFraction(primary.footprint);
+        console.log('[MapView] GBA building — height:', primary.height, 'area ping:', areaPing, 'usable:', usableFraction);
+        applyResult([primaryFeat], primary.footprint, primary.height, areaPing, usableFraction);
       } catch (err: any) {
         if (err?.name !== 'AbortError') console.error('[MapView] Building detection error:', err);
       }
