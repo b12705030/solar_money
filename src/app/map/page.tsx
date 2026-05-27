@@ -146,6 +146,7 @@ function MapPageContent() {
   const [rankSearch, setRankSearch] = useState('');
   const [showAll, setShowAll]       = useState(false);
   const [panelOpen, setPanelOpen]   = useState(false);
+  const [methodOpen, setMethodOpen] = useState(false);
 
   // ── 更新 URL（不觸發頁面 reload）────────────────────────────────────────
   function pushURL(w: typeof WEIGHTS_DEFAULT) {
@@ -251,10 +252,10 @@ function MapPageContent() {
         id: 'region-heat',
         type: 'heatmap',
         source: 'regions',
-        maxzoom: 9,
+        maxzoom: 10,
         paint: {
           'heatmap-weight':    ['interpolate', ['linear'], ['get', 'score'], 0.3, 0, 0.9, 1],
-          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 5, 0.6, 9, 1.5],
+          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 5, 0.6, 10, 1.5],
           'heatmap-color': [
             'interpolate', ['linear'], ['heatmap-density'],
             0,   'rgba(0,0,0,0)',
@@ -262,8 +263,8 @@ function MapPageContent() {
             0.5, '#F39C12',
             1,   '#E74C3C',
           ],
-          'heatmap-radius':  ['interpolate', ['linear'], ['zoom'], 5, 10, 9, 20],
-          'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 7, 1, 9, 0],
+          'heatmap-radius':  ['interpolate', ['linear'], ['zoom'], 5, 10, 10, 20],
+          'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 8.5, 1, 10, 0],
         },
       });
 
@@ -271,7 +272,7 @@ function MapPageContent() {
         id: 'region-circles',
         type: 'circle',
         source: 'regions',
-        minzoom: 7,
+        minzoom: 7.5,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 5, 12, 10],
           'circle-color': [
@@ -500,6 +501,7 @@ function MapPageContent() {
             </button>
           )}
         </div>
+
       </div>
 
       {/* 地圖區域 */}
@@ -517,6 +519,87 @@ function MapPageContent() {
             基於 DeepSolar 遷移學習 × TOPSIS 多準則排名
           </div>
         </div>
+
+        {/* 右下角：方法說明卡片（獨立定位，不影響按鈕位置）*/}
+        {methodOpen && (
+          <div style={{
+            position: 'absolute', bottom: 78, right: 16, zIndex: 10,
+            width: 300,
+            background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(6px)',
+            borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+            padding: '16px 18px',
+            fontSize: 12, color: '#4B5563', lineHeight: 1.7,
+            display: 'flex', flexDirection: 'column', gap: 14,
+            maxHeight: '70vh', overflowY: 'auto',
+          }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#1A202C' }}>
+                這個排名怎麼算出來的？
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, color: '#1A202C', marginBottom: 4 }}>資料基礎</div>
+                <p style={{ margin: 0 }}>
+                  以美國 Stanford DeepSolar 資料集（73,000+ 普查區、169 項特徵）訓練機器學習模型。移除族裔組成、行政代碼等美國特有欄位，保留氣候、電價、社經、住宅類可跨國泛化的 90 項特徵，再與台灣日照、躉購費率、家戶收入資料整合。
+                </p>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, color: '#1A202C', marginBottom: 6 }}>模型</div>
+                <p style={{ margin: '0 0 6px' }}>採用兩階段模型，對應原論文 DeepSolar SolarForest：</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 8, borderLeft: '2px solid #E2E8F0' }}>
+                  <div><b>Stage 1</b>　預測「一個地區是否具備太陽能部署傾向」</div>
+                  <div><b>Stage 2</b>　預測「已具傾向地區的相對部署強度」</div>
+                </div>
+                <div style={{
+                  marginTop: 10, padding: '8px 12px', borderRadius: 8,
+                  background: '#F0F9F2', border: '1px solid #86EFAC',
+                  fontSize: 12, color: '#166534',
+                }}>
+                  本模型 R² = <b>0.750</b>，優於原論文 SolarForest（R² = 0.722）
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, color: '#1A202C', marginBottom: 4 }}>排名方法</div>
+                <p style={{ margin: 0 }}>
+                  以 TOPSIS 多準則分析整合四項因子：模型潛力、日照輻射量、躉購費率、家戶收入。左側滑桿可調整各因子相對權重，排名即時更新。
+                </p>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, color: '#1A202C', marginBottom: 4 }}>外部驗證</div>
+                <p style={{ margin: '0 0 6px' }}>
+                  以台電 114 年縣市太陽能裝置容量統計資料交叉比對（22 個縣市）。
+                </p>
+                <div style={{
+                  padding: '8px 12px', borderRadius: 8,
+                  background: '#FFF8EE', border: '1px solid #FCD34D',
+                  fontSize: 12, color: '#92400E',
+                }}>
+                  預測排名與實際裝設分布呈顯著正相關<br />
+                  Spearman ρ = <b>+0.60</b>，p &lt; 0.01
+                </div>
+              </div>
+            </div>
+          )}
+
+        {/* ℹ 觸發按鈕（固定在右下角，不受卡片影響）*/}
+        <button
+          onClick={() => setMethodOpen(v => !v)}
+          title="方法說明"
+          style={{
+            position: 'absolute', bottom: 32, right: 16, zIndex: 10,
+            width: 36, height: 36, borderRadius: '50%',
+            background: methodOpen ? '#1A202C' : 'rgba(255,255,255,0.92)',
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 15, color: methodOpen ? '#fff' : '#64748B',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          ℹ
+        </button>
 
         {/* 手機版：開啟面板按鈕 */}
         <button
