@@ -219,6 +219,21 @@ async def init_db() -> None:
                 meta       BYTEA       NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS region_potential (
+                towncode                TEXT             PRIMARY KEY,
+                countyname              TEXT             NOT NULL,
+                townname                TEXT             NOT NULL,
+                priority_rank           INTEGER          NOT NULL,
+                topsis_score            DOUBLE PRECISION NOT NULL,
+                combined_score          DOUBLE PRECISION,
+                stage1_prob             DOUBLE PRECISION,
+                stage2_pred             DOUBLE PRECISION,
+                daily_solar_radiation   DOUBLE PRECISION,
+                avg_fit_rate            DOUBLE PRECISION,
+                median_household_income DOUBLE PRECISION,
+                centroid_lat            DOUBLE PRECISION,
+                centroid_lon            DOUBLE PRECISION
+            );
         ''')
         # 相容舊版 schema（補齊新欄位）
         for col, definition in [
@@ -1257,3 +1272,32 @@ async def set_dem_bytes(dem_bytes: bytes, meta_bytes: bytes) -> None:
                SET data = EXCLUDED.data, meta = EXCLUDED.meta, created_at = NOW()''',
             dem_bytes, meta_bytes,
         )
+
+
+# ─── 地區潛力排名 ──────────────────────────────────────────────────────────────
+
+async def get_region_potential(towncode: str) -> dict | None:
+    """回傳單一鄉鎮市的潛力分數與排名。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT * FROM region_potential WHERE towncode = $1',
+                towncode,
+            )
+            return dict(row) if row else None
+    except Exception:
+        return None
+
+
+async def get_all_region_potential() -> list[dict]:
+    """回傳所有 368 鄉鎮市的排名資料（供地圖初始載入）。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                'SELECT * FROM region_potential ORDER BY priority_rank',
+            )
+            return [dict(r) for r in rows]
+    except Exception:
+        return []

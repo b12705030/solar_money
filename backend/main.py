@@ -14,18 +14,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+import pandas as pd
+
 from .auth import create_token, decode_token, hash_password, verify_password
 from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  claim_anonymous_assessments, close_pool, create_account,
                  create_vendor_application, delete_portfolio, get_account_assessments,
                  get_account_by_email, get_account_by_id, get_application_status,
-                 get_climate, get_climate_monthly, get_my_vendor, get_potential_leads,
+                 get_climate, get_climate_monthly, get_my_vendor, get_pool, get_potential_leads,
+                 get_region_potential, get_all_region_potential,
                  get_shadow_cache, get_user_assessments, get_user_inquiries,
                  get_vendor_detail, get_vendor_inquiries, init_db,
                  list_pending_vendor_applications, list_vendors, reject_vendor_application,
                  reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
                  update_vendor_logo, update_vendor_profile)
+from .mada import topsis
 from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
                      compute_usable_roof_fraction, get_buildings, load_dem,
                      precompute_shadows_all_hours, project_shadow)
@@ -710,6 +714,124 @@ async def me_add_review(
     if not ok:
         raise HTTPException(status_code=404, detail='找不到詢價記錄，或已評價過')
     return {'ok': True}
+
+
+# ─── 地區潛力排名（MADA / TOPSIS）────────────────────────────────────────────
+
+_TIER_THRESHOLDS = (50, 150)  # rank ≤ 50 → 高潛力；≤ 150 → 中潛力；其餘 → 一般
+
+
+def _row_to_tier(rank: int) -> str:
+    if rank <= _TIER_THRESHOLDS[0]:
+        return '高潛力'
+    if rank <= _TIER_THRESHOLDS[1]:
+        return '中潛力'
+    return '一般'
+
+
+@app.get('/api/region-potential/{towncode}')
+async def get_region_potential_api(towncode: str):
+    """
+    回傳單一鄉鎮市的潛力資訊，供 Results 頁顯示地區 badge。
+    towncode 格式：8 碼帶前導零（例如 06300100）。
+    """
+    row = await get_region_potential(towncode.zfill(8))
+    if not row:
+        raise HTTPException(status_code=404, detail=f'找不到 {towncode} 的潛力資料')
+    rank = int(row['priority_rank'])
+    return {
+        'towncode':     row['towncode'],
+        'countyname':   row['countyname'],
+        'townname':     row['townname'],
+        'rank':         rank,
+        'total':        368,
+        'tier':         _row_to_tier(rank),
+        'topsis_score': float(row['topsis_score']),
+    }
+
+
+@app.get('/api/region-all')
+async def get_all_regions_api():
+    """
+    回傳全部 368 鄉鎮的座標 + 分數，供 /map 頁地圖初始載入。
+    """
+    rows = await get_all_region_potential()
+    return rows
+
+
+class TopsisWeights(BaseModel):
+    model_score: float = 0.40
+    solar:       float = 0.25
+    fit:         float = 0.20
+    income:      float = 0.15
+
+
+@app.post('/api/topsis')
+async def recompute_topsis_api(weights: TopsisWeights):
+    """
+    以用戶自訂權重重新跑 TOPSIS，回傳新排名。
+    供 /map 頁 slider 即時更新。
+    """
+    rows = await get_all_region_potential()
+    if not rows:
+        raise HTTPException(status_code=503, detail='地區潛力資料尚未匯入，請先執行 import_region_data.py')
+
+    df = pd.DataFrame(rows)
+
+    result = topsis(
+        df,
+        weights={
+            'combined_score':          weights.model_score,
+            'daily_solar_radiation':   weights.solar,
+            'avg_fit_rate':            weights.fit,
+            'median_household_income': weights.income,
+        },
+        benefit_criteria=[
+            'combined_score', 'daily_solar_radiation',
+            'avg_fit_rate', 'median_household_income',
+        ],
+        alternative_col='towncode',
+        norm_method='minmax',
+    )
+
+    # 接回地理資訊與原始因子值
+    geo = df[['towncode', 'countyname', 'townname', 'centroid_lat', 'centroid_lon',
+              'combined_score', 'daily_solar_radiation', 'avg_fit_rate', 'median_household_income']]
+    result = result.merge(geo, left_on='alternative', right_on='towncode', how='left')
+
+    return result[['towncode', 'countyname', 'townname',
+                   'score', 'rank', 'centroid_lat', 'centroid_lon',
+                   'combined_score', 'daily_solar_radiation',
+                   'avg_fit_rate', 'median_household_income']].to_dict('records')
+
+
+@app.get('/api/address-township')
+async def get_address_township(lat: float = Query(...), lng: float = Query(...)):
+    """
+    根據座標查詢最近鄉鎮市代碼，供前端取得 townshipCode 後查詢地區潛力。
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                '''SELECT township_code, county_name, township_name,
+                          (centroid_lat - $1)^2 + (centroid_lon - $2)^2 AS dist2
+                   FROM climate_annual
+                   ORDER BY dist2 ASC
+                   LIMIT 1''',
+                lat, lng,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail='找不到對應鄉鎮市')
+            return {
+                'townshipCode': str(row['township_code']),
+                'countyName':   str(row['county_name']),
+                'townshipName': str(row['township_name']),
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
