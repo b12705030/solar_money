@@ -471,8 +471,13 @@ async def get_buildings(
     取得 bbox 內建物，回傳 LoD1 格式：
       [{"footprint": [[lng, lat], ...], "height": float, "build_id": str}, ...]
 
-    優先順序：GBA DB（直接查詢）→ NLSC cache → 背景預取 NLSC → OSM Overpass fallback。
-    GBA 原本透過 WFS API 慢取（需 cache + background task），現在改為直接查 Neon DB（<1ms）。
+    優先順序：NLSC cache → GBA DB → OSM Overpass fallback。
+
+    NLSC（步驟 1）：政府官方 I3S 3D Tiles，高度精確（實測值）。
+    GBA（步驟 2）：GlobalBuildingAtlas，OSM 向量 footprint 形狀準確，高度為 ML 估算。
+                   NLSC cache miss 時立即回傳 GBA，同時觸發 NLSC 後台預取；
+                   下次同地點請求即可命中 NLSC cache（精確高度）。
+    OSM（步驟 3）：最後手段（離島 / GBA 無覆蓋區域）。
     """
     import asyncio, importlib, sys as _sys
 
@@ -483,22 +488,7 @@ async def get_buildings(
     if scripts_dir not in _sys.path:
         _sys.path.insert(0, scripts_dir)
 
-    # ── 1. GBA DB 直接查詢（取代舊 WFS cache 機制）────────────────────────────
-    try:
-        gba_result = await get_gba_buildings_from_db(min_lon, min_lat, max_lon, max_lat)
-        if not gba_result:
-            # DB miss → 嘗試本地 Polygon fallback（NDJSON.gz）
-            gba_result = get_gba_buildings_from_fallback(min_lon, min_lat, max_lon, max_lat)
-        if gba_result:
-            print(f'[GBA] DB returned {len(gba_result)} buildings for bbox '
-                  f'({min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f})')
-            _log_bldg_sample('GBA', gba_result)
-            return gba_result
-        print(f'[GBA] DB + fallback: 0 buildings, falling through to NLSC/OSM')
-    except Exception as e:
-        print(f'[GBA] DB query error: {type(e).__name__}: {e}')
-
-    # ── 2. NLSC cache ─────────────────────────────────────────────────────────
+    # ── 1. NLSC cache（精確高度）─────────────────────────────────────────────
     township_info = None
     nlsc = None
     township_code = county_name = ''
@@ -523,8 +513,9 @@ async def get_buildings(
         print(f'[NLSC] cache lookup error: {type(e).__name__}: {e}')
         township_info = None
 
-    # ── 3. NLSC cache miss → 背景預取 NLSC ──────────────────────────────────────
-    # 注意：GBA 背景任務已移除，GBA 現在直接同步查 DB（step 1）
+    # ── 2. NLSC cache miss → 觸發後台預取（不等待）+ GBA 即時回傳 ────────────
+    # GBA footprint 形狀準確，適合地圖呈現與面積計算。
+    # NLSC 在背景下載中；下次同鄉鎮請求將命中 cache，取得精確建物高度。
     pad = 0.018  # ~2 km，用於背景預取 bbox
     bg_bbox = (center_lon - pad, center_lat - pad, center_lon + pad, center_lat + pad)
 
@@ -535,7 +526,20 @@ async def get_buildings(
     elif township_info and township_code in _nlsc_bg_in_progress:
         print(f'[NLSC] background fetch already running for {township_code}')
 
-    # ── 4. OSM Overpass 立即 fallback ─────────────────────────────────────────
+    try:
+        gba_result = await get_gba_buildings_from_db(min_lon, min_lat, max_lon, max_lat)
+        if not gba_result:
+            gba_result = get_gba_buildings_from_fallback(min_lon, min_lat, max_lon, max_lat)
+        if gba_result:
+            print(f'[GBA] DB returned {len(gba_result)} buildings for bbox '
+                  f'({min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f})')
+            _log_bldg_sample('GBA', gba_result)
+            return gba_result
+        print(f'[GBA] DB + fallback: 0 buildings, falling through to OSM')
+    except Exception as e:
+        print(f'[GBA] DB query error: {type(e).__name__}: {e}')
+
+    # ── 3. OSM Overpass 立即 fallback ─────────────────────────────────────────
     print(f'[OSM] falling back to Overpass for bbox={min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f}')
     osm_key = _bbox_key(min_lon, min_lat, max_lon, max_lat)
     cached_osm = await get_osm_cache(osm_key)
