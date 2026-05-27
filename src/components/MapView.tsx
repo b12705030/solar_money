@@ -164,20 +164,18 @@ async function refreshAllShadows(
   const center = map.getCenter();
   const bodyBase = { buildings, lat: center.lat, lng: center.lng };
 
-  // phase2Done prevents phase 1 from overwriting the more authoritative phase 2 result
-  // in the common case where precompute returns from DB cache almost instantly.
-  let phase2Done = false;
-
-  // Phase 1 — current hour only (~300 ms): show shadows immediately, hide spinner
+  // Phase 1 — current hour only (~300 ms): sole owner of the display update.
+  // Phase 2 — all 14 hours: fills cacheRef for the time slider only, never touches display.
+  // Separating responsibilities avoids stale DB cache overwriting Phase 1's correct result.
   const phase1 = fetch(`${API_URL}/api/shadows/from-features`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...bodyBase, local_hour: sunHourRef.current }),
     signal,
   }).then(async r => {
-    if (!r.ok || signal.aborted || phase2Done) return;
+    if (!r.ok || signal.aborted) return;
     const data: HourData = await r.json();
-    if (signal.aborted || phase2Done) return;
+    if (signal.aborted) return;
     _applyHourData(map, data);
     if (!signal.aborted) setLoading?.(false);
   }).catch(() => {});
@@ -192,13 +190,10 @@ async function refreshAllShadows(
     if (!r.ok || signal.aborted) return;
     const allHours: Record<string, HourData> = await r.json();
     if (signal.aborted) return;
-    phase2Done = true;
     cacheRef.current.clear();
     for (const [h, data] of Object.entries(allHours)) {
       cacheRef.current.set(Number(h), data);
     }
-    const current = cacheRef.current.get(sunHourRef.current);
-    if (current) _applyHourData(map, current);
     if (!signal.aborted) setLoading?.(false);
   }).catch(() => {});
 
