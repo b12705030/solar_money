@@ -12,7 +12,7 @@ export default function WizardFooter({
 }) {
   return (
     <div className="wizard-footer">
-      <button className="btn-nav" onClick={onBack}>
+      <button className="btn-ghost wizard-back-btn" onClick={onBack}>
         <ChevronIcon dir="left" /> 上一步
       </button>
       <span className="step-hint">

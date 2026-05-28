@@ -136,7 +136,7 @@ export default function StepAddress({
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 36, alignItems: 'start' }}>
+      <div className="step-address-grid">
         <div>
           <div className="eyebrow" style={{ marginBottom: 16 }}>Step 1 · 地址</div>
           <h2 className="h-title" style={{ margin: '0 0 14px' }}>你家在哪裡？</h2>
@@ -258,7 +258,7 @@ export default function StepAddress({
         </div>
 
         {/* Map + time slider (always visible) */}
-        <div style={{ position: 'sticky', top: 100, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="step-address-map-col">
           <div style={{
             height: 400,
             borderRadius: 'var(--radius-lg)', overflow: 'hidden',

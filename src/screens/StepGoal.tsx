@@ -55,7 +55,7 @@ export default function StepGoal({
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+      <div className="step-goal-grid">
         {GOALS.map(g => {
           const active = goal === g.id;
           const isRec = recommended === g.id;

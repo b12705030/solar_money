@@ -32,7 +32,7 @@ export default function StepUsage({
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 40 }}>
+      <div className="step-usage-grid">
         {/* Input card */}
         <div className="card elevated" style={{ padding: 36 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 24 }}>

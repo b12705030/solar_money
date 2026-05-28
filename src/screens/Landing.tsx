@@ -6,17 +6,7 @@ import { MISCONCEPTIONS } from '@/lib/constants';
 
 function MythCard({ item, idx }: { item: typeof MISCONCEPTIONS[number]; idx: number }) {
   return (
-    <div style={{
-      flex: '0 0 360px',
-      background: 'var(--white)',
-      border: '1px solid var(--ink-100)',
-      borderRadius: 'var(--radius-lg)',
-      padding: 24,
-      display: 'flex', flexDirection: 'column',
-      boxShadow: 'var(--shadow-sm)',
-      scrollSnapAlign: 'start',
-      position: 'relative', overflow: 'hidden',
-    }}>
+    <div className="myth-card">
       <div style={{
         position: 'absolute', top: -30, right: -30,
         width: 140, height: 140, borderRadius: '50%',
@@ -69,21 +59,27 @@ export default function Landing({ onStart }: { onStart: () => void }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [scrollIdx, setScrollIdx] = useState(0);
 
+  const getCardStep = () => {
+    const el = scrollerRef.current;
+    const card = el?.firstElementChild as HTMLElement | null;
+    return card ? card.offsetWidth + 20 : 380; // card width + gap
+  };
+
   const scrollBy = (dir: number) => {
-    scrollerRef.current?.scrollBy({ left: dir * 380, behavior: 'smooth' });
+    scrollerRef.current?.scrollBy({ left: dir * getCardStep(), behavior: 'smooth' });
   };
 
   const onScroll = () => {
     const el = scrollerRef.current;
     if (!el) return;
-    setScrollIdx(Math.round(el.scrollLeft / 380));
+    setScrollIdx(Math.round(el.scrollLeft / getCardStep()));
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 80 }}>
       {/* HERO */}
       <section style={{ paddingTop: 40, position: 'relative' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.85fr', gap: 60, alignItems: 'center' }}>
+        <div className="landing-hero-grid">
           <div>
             <div className="eyebrow" style={{ marginBottom: 24 }}>屋頂太陽能 · 自助可行性評估</div>
             <h1 className="h-display" style={{ margin: 0 }}>
@@ -101,7 +97,7 @@ export default function Landing({ onStart }: { onStart: () => void }) {
               <span className="body-sm">免註冊 · 資料不留存 · 約需 30 秒</span>
             </div>
 
-            <div style={{ marginTop: 44, display: 'flex', gap: 32, paddingTop: 28, borderTop: '1px solid var(--ink-100)' }}>
+            <div className="landing-stats">
               {[
                 { k: '中央氣象署', v: '日照資料', unit: '2015–2025' },
                 { k: '台電',       v: '躉購費率', unit: 'FIT 2026 Q1' },
@@ -117,19 +113,8 @@ export default function Landing({ onStart }: { onStart: () => void }) {
           </div>
 
           {/* Hero visual */}
-          <div style={{
-            borderRadius: 'var(--radius-sm)', overflow: 'hidden',
-            boxShadow: '0 32px 80px rgba(27,67,50,0.14), 0 2px 8px rgba(27,67,50,0.08)',
-            border: '1px solid var(--ink-100)',
-            marginLeft: -30,
-            marginTop: 40,
-            maxWidth: '100%',
-          }}>
-            <img
-              src="/report.png"
-              alt="評估報告預覽"
-              style={{ width: '100%', display: 'block' }}
-            />
+          <div className="landing-hero-img">
+            <img src="/report.png" alt="評估報告預覽" />
           </div>
         </div>
       </section>
@@ -154,15 +139,7 @@ export default function Landing({ onStart }: { onStart: () => void }) {
         <div
           ref={scrollerRef}
           onScroll={onScroll}
-          style={{
-            display: 'flex', gap: 20,
-            overflowX: 'auto',
-            scrollSnapType: 'x mandatory',
-            paddingBottom: 24,
-            marginLeft: -40, marginRight: -40,
-            paddingLeft: 40, paddingRight: 40,
-            scrollbarWidth: 'thin',
-          }}
+          className="myth-scroller"
         >
           {MISCONCEPTIONS.map((m, i) => <MythCard key={i} item={m} idx={i} />)}
         </div>

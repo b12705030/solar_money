@@ -28,12 +28,12 @@ function MonthlyChart({ data, highlight }: { data: number[]; highlight?: string 
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 240, padding: '0 8px' }}>
+      <div className="monthly-chart-bars">
         {data.map((v, i) => {
           const h = (v / max) * 100;
           const hl = highlightIdx.includes(i);
           return (
-            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%' }}>
+            <div key={i} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%' }}>
               <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', width: '100%' }}>
                 <div style={{
                   width: '100%', height: `${h}%`,
@@ -489,7 +489,8 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         {/* 地區潛力 badge */}
         {regionInfo && (
           <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 10,
+            display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+            maxWidth: '100%',
             marginTop: 14, padding: '10px 16px',
             background: regionInfo.tier === '高潛力' ? '#FFF8EE'
                        : regionInfo.tier === '中潛力' ? '#F0F9F2'
@@ -527,7 +528,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       </div>
 
       {/* Headline numbers */}
-      <div className="card elevated" style={{ padding: 36, marginBottom: 28, background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
+      <div className="card elevated results-kpi-card" style={{ marginBottom: 28, background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
         <div className="results-kpi-grid">
           <div>
             <div className="caption" style={{ marginBottom: 10 }}>年發電量</div>
@@ -594,7 +595,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       {/* Generation panel — always in DOM; hidden via CSS when inactive tab */}
       <div className={tab !== 'generation' ? 'tab-panel tab-panel--hidden' : 'tab-panel'}>
         <div className="tab-section-title">發電潛力</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20 }}>
+        <div className="results-gen-grid">
           <div className="card" style={{ padding: 28 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 24 }}>
               <h3 className="h-section" style={{ margin: 0 }}>月發電量</h3>
@@ -659,7 +660,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       {/* Investment panel — always in DOM; hidden via CSS when inactive tab */}
       <div className={tab !== 'investment' ? 'tab-panel tab-panel--hidden' : 'tab-panel'}>
         <div className="tab-section-title">投資試算</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 20 }}>
+        <div className="results-inv-grid">
           {/* Cost breakdown */}
           <div className="card" style={{ padding: 28 }}>
             <h3 className="h-section" style={{ margin: '0 0 22px' }}>成本拆解</h3>
@@ -702,7 +703,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </div>
             <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} />
 
-            <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, paddingTop: 18, borderTop: '1px solid var(--ink-100)' }}>
+            <div className="results-inv-summary">
               <div>
                 <div className="caption">起始投資</div>
                 <div className="num" style={{ fontSize: 16, fontWeight: 600, color: 'var(--danger)', marginTop: 4 }}>

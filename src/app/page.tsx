@@ -93,7 +93,7 @@ export default function App() {
     return (
       <div className="app">
         <TopBar {...topBarProps} />
-        <main style={{ maxWidth: 1200, width: '100%', margin: '0 auto', padding: '0 40px', flex: 1 }}>
+        <main className="main-content">
           <Landing onStart={start} />
         </main>
         <Footer />
@@ -107,7 +107,7 @@ export default function App() {
       <div className="app">
         <TopBar {...topBarProps} onHome={reset} />
         <ProgressBar step={4} steps={STEPS} />
-        <main style={{ maxWidth: 1200, width: '100%', margin: '0 auto', padding: '0 40px', flex: 1 }}>
+        <main className="main-content">
           <div style={{ padding: '24px 0' }}>
             <Results state={state} onRestart={reset} onLoginClick={() => setAuthOpen(true)} />
           </div>
@@ -121,11 +121,7 @@ export default function App() {
     <div className="app">
       <TopBar {...topBarProps} onHome={reset} />
       <ProgressBar step={step} steps={STEPS} />
-      <main style={{
-        maxWidth: 1200, width: '100%', margin: '0 auto',
-        padding: '0 40px', flex: 1,
-        position: 'relative', overflow: 'hidden',
-      }}>
+      <main className="main-content" style={{ position: 'relative', overflow: 'hidden' }}>
         <div style={{ padding: '30px 0 40px', position: 'relative', minHeight: 520 }}>
           {([0, 1, 2, 3] as const).map(i => (
             <div

@@ -97,37 +97,9 @@ a { text-decoration: none; }
   letter-spacing: 0.01em;
 }
 .brand-mark {
-  width: 28px; height: 28px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, var(--amber), #C8861E);
-  box-shadow: 0 0 0 3px var(--amber-soft), 0 0 0 4px var(--white);
-  position: relative;
+  width: 70px; height: 70px;
+  object-fit: contain;
   flex-shrink: 0;
-}
-.brand-mark::before {
-  content: ""; position: absolute; inset: -8px;
-  background: conic-gradient(from 0deg,
-    transparent 0deg, transparent 22deg,
-    var(--amber) 22deg, var(--amber) 23deg,
-    transparent 23deg, transparent 67deg,
-    var(--amber) 67deg, var(--amber) 68deg,
-    transparent 68deg, transparent 112deg,
-    var(--amber) 112deg, var(--amber) 113deg,
-    transparent 113deg, transparent 157deg,
-    var(--amber) 157deg, var(--amber) 158deg,
-    transparent 158deg, transparent 202deg,
-    var(--amber) 202deg, var(--amber) 203deg,
-    transparent 203deg, transparent 247deg,
-    var(--amber) 247deg, var(--amber) 248deg,
-    transparent 248deg, transparent 292deg,
-    var(--amber) 292deg, var(--amber) 293deg,
-    transparent 293deg, transparent 337deg,
-    var(--amber) 337deg, var(--amber) 338deg,
-    transparent 338deg);
-  opacity: 0.6;
-  border-radius: 50%;
-  mask: radial-gradient(circle, transparent 14px, #000 15px);
-  -webkit-mask: radial-gradient(circle, transparent 14px, #000 15px);
 }
 .brand-meta { display: flex; flex-direction: column; line-height: 1.2; }
 .brand-meta .sub { font-size: 12px; color: var(--ink-500); font-weight: 400; }
@@ -2865,4 +2837,204 @@ input[type="range"]::-moz-range-thumb {
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
+}
+
+/* Prevent any overflowing child from creating horizontal scroll */
+.app { overflow-x: hidden; }
+
+/* ========== Mobile Responsive — Public Wizard Flow ========== */
+
+/* ── Main content wrapper (replaces inline padding on <main>) ── */
+.main-content {
+  max-width: 1200px; width: 100%; margin: 0 auto; padding: 0 40px; flex: 1;
+}
+
+/* ── TopBar: class hooks for mobile hiding ── */
+.topbar-source {}
+.topbar-pill {}
+.topbar-map-link {}
+
+/* ── Landing: myth card ── */
+.myth-card {
+  flex: 0 0 360px;
+  background: var(--white);
+  border: 1px solid var(--ink-100);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-sm);
+  scroll-snap-align: start;
+  position: relative; overflow: hidden;
+}
+
+/* ── Landing: hero two-column grid ── */
+.landing-hero-grid {
+  display: grid; grid-template-columns: 1.2fr 0.85fr; gap: 60px; align-items: center;
+}
+.landing-hero-img {
+  border-radius: var(--radius-sm); overflow: hidden;
+  box-shadow: 0 32px 80px rgba(27,67,50,0.14), 0 2px 8px rgba(27,67,50,0.08);
+  border: 1px solid var(--ink-100);
+  margin-left: -30px; margin-top: 40px; max-width: 100%;
+}
+.landing-hero-img img { width: 100%; display: block; }
+.landing-stats {
+  margin-top: 44px; display: flex; gap: 32px;
+  padding-top: 28px; border-top: 1px solid var(--ink-100);
+}
+.myth-scroller {
+  display: flex; gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory;
+  padding-bottom: 24px;
+  margin-left: -40px; margin-right: -40px;
+  padding-left: 40px; padding-right: 40px;
+  scrollbar-width: thin;
+}
+
+/* ── StepAddress: grid + sticky map ── */
+.step-address-grid {
+  display: grid; grid-template-columns: 1.2fr 1fr; gap: 36px; align-items: start;
+}
+.step-address-map-col {
+  position: sticky; top: 100px; display: flex; flex-direction: column; gap: 12px;
+}
+
+/* ── StepUsage: two-column grid ── */
+.step-usage-grid {
+  display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px;
+}
+
+/* ── StepGoal: three-column goal cards ── */
+.step-goal-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+}
+
+/* ── Results KPI card ── */
+.results-kpi-card { padding: 36px; }
+
+/* ── Results: monthly chart bars ── */
+.monthly-chart-bars {
+  display: flex; align-items: flex-end; gap: 10px; height: 240px; padding: 0 8px;
+}
+
+/* ── Results: content grids ── */
+.results-gen-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; }
+.results-inv-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; }
+.results-inv-summary {
+  margin-top: 18px; display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 16px; padding-top: 18px; border-top: 1px solid var(--ink-100);
+}
+
+/* ===== @media (max-width: 768px) — tablets & phones ===== */
+@media (max-width: 768px) {
+  /* Main content wrapper */
+  .main-content { padding: 0 16px; }
+
+  /* TopBar */
+  .topbar { padding: 12px 16px; }
+  .topbar-actions { gap: 10px; }
+  .topbar-source,
+  .topbar-pill,
+  .topbar-map-link { display: none; }
+
+  /* Progress bar */
+  .progress { padding: 16px 16px 6px; }
+  .progress-step span { display: none; }   /* hide text labels, keep step numbers */
+
+  /* Wizard footer */
+  .wizard-footer { padding: 12px 16px 20px; gap: 10px; }
+  .wizard-back-label { display: none; }
+  .wizard-back-btn   { padding: 12px 14px; }
+
+  /* Landing hero: single column */
+  .landing-hero-grid { grid-template-columns: 1fr; gap: 32px; }
+  .landing-hero-img  { display: none; }
+  .landing-stats     { gap: 20px; flex-wrap: wrap; }
+
+  /* Myth scroller: symmetric 34px padding so active card is centred */
+  .myth-scroller {
+    margin-left: -16px; margin-right: -16px;
+    padding-left: 34px; padding-right: 34px;
+    scroll-padding-inline: 34px;
+  }
+
+  /* Myth card: (100vw - 2×34px) wide, centre-snap, ~14px peek of next */
+  .myth-card {
+    flex: 0 0 calc(100vw - 68px);
+    scroll-snap-align: center;
+    padding: 20px;
+  }
+
+  /* StepAddress: single column, map static */
+  .step-address-grid    { grid-template-columns: 1fr; }
+  .step-address-map-col { position: static; }
+
+  /* StepUsage: single column */
+  .step-usage-grid { grid-template-columns: 1fr; gap: 20px; }
+
+  /* StepGoal: single column */
+  .step-goal-grid  { grid-template-columns: 1fr; }
+
+  /* StepParams: grade cards single column */
+  .grade-grid         { grid-template-columns: 1fr; }
+  .grade-card-title   { padding-right: 80px; }   /* make room for badge */
+
+  /* StepParams: summary cards single column */
+  .param-summary-grid { grid-template-columns: 1fr; }
+
+  /* StepParams: budget amount wraps cleanly */
+  .budget-row   { flex-wrap: wrap; gap: 6px; }
+  .budget-amount { font-size: 24px; }
+
+  /* Results KPI card: reduce padding on mobile */
+  .results-kpi-card { padding: 20px; }
+
+  /* Results KPI: 2 × 2 */
+  .results-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .results-kpi-item--divided {
+    border-left: none; padding-left: 0;
+    border-top: 1px solid var(--ink-100); padding-top: 16px;
+  }
+
+  /* Results chart panels: single column */
+  .results-gen-grid,
+  .results-inv-grid { grid-template-columns: 1fr; }
+
+  /* Monthly chart: tighter gap so 12 bars fit within card */
+  .monthly-chart-bars { gap: 5px; padding: 0 4px; }
+
+  /* Results investment summary: 2 columns */
+  .results-inv-summary { grid-template-columns: 1fr 1fr; }
+
+  /* Results CTA: stack and full-width buttons */
+  .results-cta { flex-direction: column; align-items: flex-start; }
+  .results-cta-actions {
+    --results-cta-button-width: 100%;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  /* Modals */
+  .modal { width: calc(100vw - 32px); padding: 24px 20px; }
+
+  /* Vendor apply modal: stack login/dismiss buttons vertically */
+  .vendor-apply-login-actions { flex-direction: column; }
+  .vendor-apply-login-actions .btn { width: 100%; justify-content: center; }
+}
+
+/* ===== @media (max-width: 480px) — small phones ===== */
+@media (max-width: 480px) {
+  /* KPI: single column */
+  .results-kpi-grid { grid-template-columns: 1fr; }
+  .results-kpi-item--divided { border-top: 1px solid var(--ink-100); padding-top: 16px; }
+
+  /* Investment summary: single column */
+  .results-inv-summary { grid-template-columns: 1fr; }
+
+  /* Typography scale-down */
+  .h-display { font-size: 38px; }
+  .h-title   { font-size: 26px; }
+  .h-section { font-size: 18px; }
+
+  /* Brand subtitle hidden on very small screens */
+  .brand-meta .sub { display: none; }
 }

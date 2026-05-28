@@ -25,7 +25,7 @@ export default function TopBar({ onHome, onLoginClick, onHistoryClick, onVendorA
   return (
     <div className="topbar">
       <button className="brand" onClick={onHome}>
-        <div className="brand-mark" />
+        <img src="/logo.png" alt="屋頂日光" className="brand-mark" />
         <div className="brand-meta">
           <span>屋頂日光</span>
           <span className="sub">台灣屋頂太陽能自助評估</span>
@@ -33,9 +33,9 @@ export default function TopBar({ onHome, onLoginClick, onHistoryClick, onVendorA
       </button>
 
       <div className="topbar-actions">
-        <span>資料來源：中央氣象署 · 台電 · 能源署</span>
-        <span className="pill">Beta</span>
-        <Link href="/map" style={{ fontSize: 13, color: 'var(--ink-600)', textDecoration: 'none', padding: '4px 8px' }}>
+        <span className="topbar-source">資料來源：中央氣象署 · 台電 · 能源署</span>
+        <span className="pill topbar-pill">Beta</span>
+        <Link href="/map" className="topbar-map-link" style={{ fontSize: 13, color: 'var(--ink-600)', textDecoration: 'none', padding: '4px 8px' }}>
           <Map size={13} strokeWidth={1.8} style={{ verticalAlign: 'middle', marginRight: 4 }} />地區分析
         </Link>
         {/* 只有未登入或 user 角色才顯示廠商入駐 */}
