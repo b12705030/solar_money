@@ -8,7 +8,7 @@ import { Bot, Sun, Banknote, Home, Scale, Trophy } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-const WEIGHTS_DEFAULT = { model_score: 0.40, solar: 0.25, fit: 0.20, income: 0.15 };
+const WEIGHTS_DEFAULT = { model_score: 0.55, solar: 0.20, fit: 0.15, income: 0.10 };
 
 const WEIGHT_LABELS: Record<string, string> = {
   model_score: '模型潛力',
