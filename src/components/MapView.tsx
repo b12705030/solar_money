@@ -111,7 +111,7 @@ async function refreshAllShadows(
 
   console.log('[Shadow] buildings:', buildings.length);
 
-  // 更新自訂 3D 建物 layer（GBA/NLSC 資料）
+  // 更新自訂 3D 建物 layer（GBA 資料）
   const bldgSource3d = map.getSource('api-buildings-3d') as mapboxgl.GeoJSONSource | undefined;
   if (bldgSource3d && !signal.aborted) {
     const bldgFeats: GeoJSON.Feature[] = buildings.map(b => ({
@@ -269,7 +269,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
         paint: { 'fill-color': '#000000', 'fill-opacity': 0.15 },
       });
 
-      // 自訂 3D 建物層（來自 /api/buildings，GBA/NLSC 官方資料）
+      // 自訂 3D 建物層（來自 /api/buildings，GBA 離線資料）
       // Mapbox 原生 show3dObjects 已關閉，改由此 layer 渲染
       map.addSource('api-buildings-3d', {
         type: 'geojson',

@@ -1,6 +1,6 @@
 # Solar Money — 功能路線圖
 
-> 更新：2026-05-27  
+> 更新：2026-05-28  
 > 新 branch 一律從 `main` 建立：`git checkout main && git pull && git checkout -b feature/X`
 
 ---
@@ -34,10 +34,15 @@
 | P6 | 平台後台 — 廠商審核 UI | `feature/admin` | ✅ 核准/拒絕 API 完成 |
 | P6 | 平台後台 — 數據儀表板 | — | ⬜ 未開始 |
 | P6 | 補助資料後台管理 | — | ⬜ 未開始 |
-| P7 | NLSC LoD1 官方建物資料整合 | `feature/lod1-tmy-dem` | ✅ 已完成 |
+| P7 | NLSC LoD1 官方建物資料整合 | `feature/lod1-tmy-dem` | ❌ 已移除（被 GBA DB 取代） |
 | P7 | DEM 數值地形模型（100m，RAM 常駐） | `feature/lod1-tmy-dem` | ✅ 已完成 |
 | P7 | NASA POWER 13 年氣候月典型值（TMY） | `feature/lod1-tmy-dem` | ✅ 已完成（匯入 DB） |
 | P7 | 前端整合月均 GHI 取代靜態 TW_IRRADIANCE | `feature/lod1-tmy-dem` | ⬜ 未開始 |
+| P8 | GBA 離線建物 DB（510K 棟，全台主島） | `master` | ✅ 已完成 |
+| P8 | 台灣離島建物補全（澎湖 / 金門 / 馬祖） | `master` | ✅ 已完成 |
+| P8 | Polygon 離線 fallback（2.56M 棟，167 MB） | `master` | ✅ 已完成 |
+| P8 | DEM tile server（3D 地形圖層 + 山體陰影） | `master` | ✅ 已完成 |
+| P8 | 每棟建物地形高程修正（shadow cache v3） | `master` | ✅ 已完成 |
 
 ---
 
@@ -196,20 +201,13 @@
 
 ---
 
-## P7 · feature/lod1-tmy-dem　✅ 後端已完成，前端待整合
+## P7 · feature/lod1-tmy-dem　✅ DEM + TMY 已完成；NLSC 已移除
 
 **目標：** 以官方資料取代估算值，提升太陽能預測精度（教授建議項目）
 
-### NLSC LoD1 官方建物資料
-- [x] `scripts/fetch_nlsc_lod1.py` — NLSC I3S v1.8 REST API 擷取模組
-  - nodepages 遍歷找 leaf node（OBB 與 bbox 相交篩選）
-  - binary geometry 解碼（footprint = 地板面 convex hull）
-  - attribute f_9 解碼（BUILD_H = 官方建物高度）
-- [x] `backend/shadow.py` — `get_buildings()` 改為 NLSC I3S 優先，OSM 備援
-  - `_get_township_info()` 查 `climate_annual` centroid 找最近鄉鎮市
-  - NLSC cache miss → 呼叫 I3S API → 寫入 `nlsc_lod1_cache`
-  - NLSC 連線失敗 → fallback to OSM Overpass
-- [x] `backend/db.py` — `nlsc_lod1_cache` 表（township 為單元，永不過期）
+### NLSC LoD1 官方建物資料　❌ 已移除
+> NLSC I3S API 實作嘗試但無法穩定運作（API 連線不穩定、格式解析困難），已全數移除。  
+> 建物幾何改由 P8 的 GBA 離線 DB 提供（更穩定、涵蓋離島）。
 
 ### DEM 數值地形模型
 - [x] `scripts/build_dem_cache.py` — 20m GeoTIFF rasterio average 降采樣至 100m `.npy`
@@ -224,6 +222,41 @@
 - [x] `backend/main.py` — `GET /api/climate/{township_code}` 提供年均 + 12 月典型值
 - [ ] `src/lib/compute.ts` — 改用 API 鄉鎮月均 GHI 取代靜態 `TW_IRRADIANCE` 常數
 - [ ] 前端快取 `/api/climate` 回應，避免每次 Step 3 重複請求
+
+---
+
+## P8 · GBA 離線建物 + 3D 地形　✅ 已完成
+
+**目標：** 以 GlobalBuildingAtlas ML 高度估算資料取代即時 API 呼叫，解決 NLSC 連線不穩與離島無資料問題；同步加入 3D 地形視覺化。
+
+### GBA 離線建物 DB
+- [x] `scripts/import_gba_to_db.py` — 串流匯入 GBA tile（ODbLPolygon + Polygon + LoD1 高度索引）
+  - bbox clip（避免匯入非台灣建物）
+  - ON CONFLICT DO NOTHING（安全重試）
+  - 自動重連（Neon serverless 閒置斷線處理）
+- [x] `backend/db.py` — `gba_buildings` 表（510K 棟，bbox 索引）
+- [x] `backend/shadow.py` — `get_buildings()` 改為 GBA DB 優先（3 層 fallback：GBA DB → Polygon fallback → OSM）
+- [x] 台灣主島（北部 + 南部，e120_n25 + e120_n30 tiles）
+- [x] 澎湖縣（11,664 棟，e115_n25 tile，精確 bbox 避免匯入中國大陸建物）
+- [x] 金門縣（24,527 棟，含烈嶼）
+- [x] 馬祖（南竿/莒光/北竿/東引，1,151 棟）
+
+### Polygon 離線 fallback
+- [x] `scripts/export_polygon_fallback.py` — 從 Polygon GeoJSON 產生 NDJSON.GZ
+- [x] `data/taiwan_polygon_fallback.ndjson.gz`（167 MB gz，2.56M 棟）直接進 repo
+- [x] 後端啟動時懶載入至 RAM，作為 DB miss 的本地備援
+
+### DEM tile server（3D 地形視覺化）
+- [x] `backend/dem_tiles.py` — `GET /api/dem/tile/{z}/{x}/{y}.png` terrain-rgb 格式
+  - 從 RAM 常駐的 numpy array 切片
+  - 輸出 Mapbox terrain-rgb PNG（R×65536 + G×256 + B，-10000 + 0.1× 編碼）
+- [x] 前端：Mapbox `terrain-rgb` source + `hillshade` layer，3D 地形開關按鈕
+- [x] `backend/shadow.py` — 陰影計算改用每棟建物的 DEM 高程（`shadow cache v3`，原 v2 失效）
+
+### 維護腳本
+- [x] `scripts/_test_islands.py` — 驗證各離島建物數（澎湖/金門/馬祖各地）
+- [x] `scripts/_cleanup_e115.py` — 清除 e115 wide-bbox 誤匯入的大陸建物
+- [x] `SETUP_GBA_DATA.md` — 完整匯入步驟文件
 
 ---
 

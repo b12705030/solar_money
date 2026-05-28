@@ -9,8 +9,9 @@
 | 功能 | 說明 |
 |------|------|
 | 地址搜尋 | Google Places API 自動完成，限台灣地區 |
-| 建物偵測 | 點選地址後自動從內政部 NLSC LoD1 API 取得官方建物高度與 footprint；NLSC 不可用時自動 fallback 至 OSM |
-| 3D 陰影預覽 | 依太陽位置即時計算周圍建物陰影（pvlib NREL SPA），可拖曳時間軸 6–19 時；結合 20m DEM 考慮地形遮蔽 |
+| 建物偵測 | 以 **GBA（GlobalBuildingAtlas）** Neon DB 為主要來源（全台 + 離島 51 萬筆）；DB 無資料時 fallback 至本地 `taiwan_polygon_fallback.ndjson.gz`（256 萬筆，含澎湖、金門、馬祖）；最終備援為 OSM Overpass API |
+| 3D 陰影預覽 | 依太陽位置即時計算周圍建物陰影（pvlib NREL SPA），可拖曳時間軸 6–19 時；結合 20m DEM 考慮地形遮蔽；**每棟建物獨立查詢 DEM 地表高程**，坡地陰影長度加入地形高差修正 |
+| 3D 地形 | Mapbox terrain-rgb 3D 地形顯示（exaggeration 1.0）+ hillshade 山體陰影；地圖左下角可一鍵切換開/關 |
 | 用電量輸入 | 輸入每月平均用電 kWh |
 | 目標選擇 | 全年最大、夏季最大、冬季最大、正午峰值、與用電曲線最匹配、投資回收最快；依地區自動推薦 |
 | 裝機參數 | 預算上限倒推可裝容量；三種面板等級（入門 / 標準 / 高效）即時試算 |
@@ -47,23 +48,24 @@
   │
   ├─ pvlib NREL SPA       太陽方位角、仰角計算
   ├─ Shapely + pyproj     陰影多邊形幾何計算（EPSG:4326 ↔ 3857 ↔ TWD97）
-  ├─ httpx → NLSC I3S     內政部 LoD1 官方建物資料（主要來源）
-  ├─ httpx → Overpass API OSM 建物資料（NLSC 不可用時備援）
-  ├─ numpy (DEM)          全台 100m 數值地形模型，RAM 常駐，O(1) 查詢
-  ├─ rasterio             DEM GeoTIFF 降采樣（一次性前置作業）
+  ├─ GBA DB (gba_buildings)  全台 + 離島 510K 棟建物（asyncpg bbox 查詢）
+  ├─ taiwan_polygon_fallback.ndjson.gz  256 萬棟本地 fallback（啟動時載入 RAM）
+  ├─ httpx → Overpass API OSM 建物資料（GBA DB + fallback miss 時備援）
+  ├─ numpy / rasterio     全台 20m DEM，100m 降采樣後 RAM 常駐，O(1) 高程查詢
+  ├─ dem_tiles.py         DEM → Mapbox terrain-rgb PNG tile server（/api/dem/tile/{z}/{x}/{y}.png）
   ├─ bcrypt               密碼雜湊（直接使用，不透過 passlib）
   ├─ python-jose          JWT 簽發與驗證
   │
   └─ asyncpg
         │
         ▼
-PostgreSQL（Neon serverless，~289 MB / 512 MB 上限）
-  ├─ nlsc_lod1_cache      NLSC LoD1 建物快取（鄉鎮市為單元，永不過期）
+PostgreSQL（Neon serverless，~480 MB / 512 MB 上限）
+  ├─ gba_buildings        GBA 建物永久資料庫（510,408 棟，含全台主島 + 澎湖 / 金門 / 馬祖）
   ├─ climate_annual       368 鄉鎮市年均 GHI / 溫度 / 風速（13 年均值）
   ├─ climate_monthly      368 × 12 月典型氣候（4,416 筆，NASA POWER）
   ├─ dem_cache            全台 100m DEM numpy bytea（28.9 MB，啟動時載入 RAM）
   ├─ osm_cache            OSM 建物備援快取（7 天 TTL）
-  ├─ shadow_cache         陰影預計算結果（月份粒度）
+  ├─ shadow_cache         陰影預計算結果（月份粒度，cache key v3）
   ├─ accounts             會員帳號與角色（user / vendor / admin）
   ├─ assessments          使用者評估紀錄（匿名 or 帳號綁定）
   ├─ vendors              廠商基本資料、服務縣市、評分、訂閱狀態
@@ -124,23 +126,29 @@ solar_money/
 ├─ backend/                      後端（FastAPI / Python）
 │   ├─ main.py                   API 路由、FastAPI app 設定
 │   ├─ auth.py                   JWT 工具 + bcrypt 密碼雜湊
-│   ├─ shadow.py                 陰影計算核心（pvlib + Shapely + DEM）
-│   ├─ db.py                     PostgreSQL 連線池、cache 操作、帳號與評估查詢
+│   ├─ shadow.py                 陰影計算核心（pvlib + Shapely + DEM + 地形高差修正）
+│   ├─ db.py                     PostgreSQL 連線池、GBA 建物查詢、cache 操作、帳號與評估查詢
+│   ├─ dem_tiles.py              DEM → Mapbox terrain-rgb PNG tile 渲染（/api/dem/tile/）
 │   ├─ __init__.py               Python package 宣告
 │   ├─ .env                      後端環境變數（不 commit，見 .env.example）
 │   ├─ .env.example              後端環境變數範本
 │   └─ DATABASE.md               資料庫架構詳細說明
 │
-├─ scripts/                      一次性資料前置作業腳本
+├─ scripts/                      資料前置作業腳本（一次性 / 維護用）
+│   ├─ import_gba_to_db.py       GBA 建物匯入 Neon gba_buildings（含離島，詳見 SETUP_GBA_DATA.md）
+│   ├─ export_polygon_fallback.py GBA Polygon → taiwan_polygon_fallback.ndjson.gz
 │   ├─ build_dem_cache.py        20m GeoTIFF → 100m numpy .npy（需本機有原始 TIF）
 │   ├─ upload_dem.py             上傳 .npy 至 Neon dem_cache（bytea）
-│   ├─ import_climate.py         NASA POWER CSV → climate_annual + climate_monthly
-│   └─ fetch_nlsc_lod1.py        NLSC I3S v1.8 建物擷取模組（供 shadow.py import）
+│   └─ import_climate.py         NASA POWER CSV → climate_annual + climate_monthly
 │
 ├─ data/                         資料集（部分不進 git）
+│   ├─ taiwan_polygon_fallback.ndjson.gz  GBA Polygon 離線 fallback（167 MB gz，2.56M 棟）
 │   ├─ taiwan_dem_100m.npy       全台 100m DEM numpy array（28.9 MB，進 git 作備用）
 │   ├─ taiwan_dem_meta.npy       DEM 空間參考元資料（160 bytes）
 │   ├─ climate/                  氣候資料 CSV（NASA POWER，已匯入 DB）
+│   ├─ LoD1/                     GBA LoD1 JSON 高程索引（不進 git，本機自備）
+│   ├─ Polygon/                  GBA Polygon GeoJSON 建物輪廓（不進 git，本機自備）
+│   ├─ ODbLPolygon/              GBA ODbLPolygon GeoJSON（OSM 授權，不進 git，本機自備）
 │   └─ 不分幅_全台20MDEM(2025)/  721 MB 原始 GeoTIFF（不進 git，本機自備）
 │
 ├─ project/                      設計原型（已完成實作，僅供參考）
@@ -235,14 +243,26 @@ uvicorn backend.main:app --reload
 
 ## 後端 API
 
+### 建物資料
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/buildings` | 回傳指定範圍建物（GBA DB → 本地 fallback → OSM）<br>參數：`?lat=&lng=&radius_m=300` 或 `?min_lon=&min_lat=&max_lon=&max_lat=` |
+
 ### 陰影計算
 
 | Method | Endpoint | 說明 |
 |--------|----------|------|
 | `POST` | `/api/shadow` | 單一建物陰影計算 |
-| `GET` | `/api/shadows` | bbox 範圍內所有建物陰影（NLSC LoD1 優先，OSM fallback） |
-| `POST` | `/api/shadows/from-features` | 前端送入建物清單，計算**當前時刻**陰影（快速，~300ms） |
-| `POST` | `/api/shadows/precompute` | 前端送入建物清單，預計算 **6–19 時全天**陰影並存 DB cache |
+| `GET` | `/api/shadows` | bbox 範圍內所有建物陰影（GBA DB 優先，OSM fallback） |
+| `POST` | `/api/shadows/from-features` | 前端送入建物清單，計算**當前時刻**陰影（含地形高差修正，~300ms） |
+| `POST` | `/api/shadows/precompute` | 前端送入建物清單，預計算 **6–19 時全天**陰影並存 DB cache（v3 key） |
+
+### DEM Tile Server
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/dem/tile/{z}/{x}/{y}.png` | 台灣 20m DEM 以 Mapbox terrain-rgb 格式輸出（z ≤ 15），供前端 3D 地形使用；Cache-Control: 86400s |
 
 ### 氣候資料
 
@@ -339,11 +359,15 @@ moveend + 600ms debounce
 ```python
 # 1. 太陽位置：pvlib NREL SPA → (azimuth, altitude)
 # 2. 建物 footprint: EPSG:4326 → 3857（公尺）
-# 3. 陰影長度 = height / tan(altitude)
-# 4. 位移向量 = shadow_len × (sin(azimuth+180°), cos(azimuth+180°))
-# 5. 陰影多邊形 = convex_hull(building ∪ translated_building)
-# 6. 屋頂遮蔽 = STRtree 空間索引 O(n log n)，找出被其他建物陰影覆蓋的屋頂區域
-# 7. 結果: EPSG:3857 → 4326 回傳 GeoJSON
+# 3. 地形高差修正（新增）：
+#    - 查詢中心點 DEM 高程（center_terrain_elev）
+#    - 每棟建物各自查詢 DEM 高程（per-building terrain_elev）
+#    - effective_height = building_height + (terrain_elev - center_terrain_elev)
+# 4. 陰影長度 = effective_height / tan(altitude)
+# 5. 位移向量 = shadow_len × (sin(azimuth+180°), cos(azimuth+180°))
+# 6. 陰影多邊形 = convex_hull(building ∪ translated_building)
+# 7. 屋頂遮蔽 = STRtree 空間索引 O(n log n)，找出被其他建物陰影覆蓋的屋頂區域
+# 8. 結果: EPSG:3857 → 4326 回傳 GeoJSON
 ```
 
 ---
@@ -468,7 +492,7 @@ moveend + 600ms debounce
 `project/` 裡面是開發初期用 Claude Design 工具產出的 HTML 原型，已全部實作為 React/Next.js。目前保留僅供設計參考，不影響運作。
 
 ---
-### 5. 初始化資料（首次設定，一次性，）
+### 5. 初始化資料（首次設定，一次性）
 
 ```bash
 # DEM：若 data/taiwan_dem_100m.npy 不存在，從 DB 自動下載（後端啟動時自動處理）
@@ -481,3 +505,39 @@ python scripts/import_climate.py
 ```
 
 > **DEM 免設定**：`data/taiwan_dem_100m.npy` 已 commit 至 repo，`git clone` 後後端啟動即自動載入，無需手動執行腳本。
+
+---
+
+## GBA 建物資料庫
+
+主要建物資料來自 [GlobalBuildingAtlas（GBA）](https://huggingface.co/datasets/zhu-xlab/GBA.LoD1)，以 ML 估算建物高度，搭配 OSM / 非 OSM 建物輪廓。
+
+### DB 現況（Neon gba_buildings，510,408 棟）
+
+| 地區 | 來源 tile | 建物數 |
+|------|-----------|--------|
+| 台灣主島 | e120_n25 + e120_n30 | ~450,000 |
+| 澎湖縣 | e115_n25 Polygon | ~9,200 |
+| 金門縣 | e115_n25 Polygon | ~24,500 |
+| 馬祖南竿/莒光/北竿 | e115_n30 ODbL + Polygon | ~4,600 |
+| 馬祖東引/東莒/西莒 | e120_n30 ODbL + Polygon | ~162 |
+
+### 離線 Fallback（taiwan_polygon_fallback.ndjson.gz）
+
+啟動時載入 RAM，當 DB 查詢回傳空結果時使用。目前涵蓋所有已下載 tile 的 bbox 範圍（含福建/廣東部分海岸，不影響台灣使用情境）。
+
+### 重新匯入 / 更新
+
+```bash
+# 匯入台灣主島（e120 tiles，本機需有 data/LoD1/ 與 data/Polygon/ 檔案）
+python scripts/import_gba_to_db.py --tile e120_n25_e125_n20 --bbox 119.8,21.9,122.1,25.4 --source both
+python scripts/import_gba_to_db.py --tile e120_n30_e125_n25 --bbox 119.8,25.8,122.1,26.5 --source both
+
+# 下載並匯入 e115 離島 tile（澎湖/金門/馬祖）
+python scripts/download_gba_tiles.py          # 下載 + 自動匯入
+
+# 更新離線 fallback（涵蓋全台 + 離島）
+python scripts/export_polygon_fallback.py --bbox 118.0,21.0,123.0,26.5
+```
+
+> **Neon 512 MB 上限**：e115 tile 包含大量中國大陸建物，匯入時需使用精確的離島 bbox（見 `download_gba_tiles.py` 中的 `OFFSHORE_TILES`）。e120_n20_e125_n15（15–20°N，菲律賓）請勿匯入。

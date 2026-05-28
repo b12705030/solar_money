@@ -13,18 +13,25 @@
 
 ## 資料表
 
-### `nlsc_lod1_cache`
-內政部國土測繪局 LoD1 建物資料快取，以鄉鎮市為單元，永不過期（地籍資料異動頻率極低）。
+### `gba_buildings`
+GlobalBuildingAtlas (GBA) 離線建物資料，ML 估算高度 + footprint，為建物幾何查詢的主要來源。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| `township_code` | TEXT PK | 內政部 7 碼鄉鎮市代碼（對應 `climate_annual.township_code`） |
-| `buildings` | JSONB | `[{"footprint":[[lng,lat],...], "height": float, "build_id": str}, ...]` |
-| `cached_at` | TIMESTAMPTZ | 最後更新時間 |
+| `id` | TEXT PK | `{tile}_{source}_{raw_key}`（例如 `e120_n25_odbl_OSM12345678TW`） |
+| `footprint` | JSONB | `[[lng, lat], ...]` WGS84 外牆多邊形 |
+| `height` | REAL | 建物高度 (m)，ML 估算值；無估算時預設 10.0 |
+| `source` | TEXT | 資料來源：`odbl`（ODbLPolygon）/ `polygon` |
+| `min_lon` / `max_lon` | REAL | footprint bbox 邊界（索引欄位） |
+| `min_lat` / `max_lat` | REAL | footprint bbox 邊界（索引欄位） |
 
-**資料來源**：NLSC I3S v1.8 REST API（`https://i3s.nlsc.gov.tw/building/i3s/SceneServer`）  
-**Neon 佔用**：~210 MB（30 熱門鄉鎮市全快取後）  
-**查詢邏輯**：以 footprint centroid 落在 bbox 內為過濾條件，cache miss 時即時從 NLSC 擷取。
+**索引**：`gba_buildings_bbox ON (min_lon, max_lon, min_lat, max_lat)`  
+**資料來源**：HuggingFace `zhu-xlab/GBA.LoD1`（ODbLPolygon + Polygon GeoJSON + LoD1 高度 JSON）  
+**匯入方式**：`python scripts/import_gba_to_db.py`（見 `SETUP_GBA_DATA.md`）  
+**Neon 佔用**：~480 MB（510,408 棟；主島 + 澎湖 + 金門 + 馬祖）  
+**查詢邏輯**：`WHERE min_lon <= :lng AND max_lon >= :lng AND min_lat <= :lat AND max_lat >= :lat`，取半徑內建物。
+
+> ⚠️ Neon 免費上限 512 MB，目前剩餘約 32 MB。勿再匯入新 tile；詳見 `SETUP_GBA_DATA.md`。
 
 ---
 
@@ -110,6 +117,8 @@ NASA POWER API 月均氣候典型值，368 鄉鎮市 × 12 月 = 4,416 筆（13 
 | `computed_at` | TIMESTAMPTZ | 寫入時間 |
 
 **Cache key 範例**：`25.05_121.52_2026_04`（台北信義區，2026 年 4 月）
+
+**Cache key 版本**：目前為 v3。引入每棟建物 DEM 地形高程修正後，v2 快取因計算邏輯改變而失效，已在 `shadow.py` 中升版至 v3（舊 v2 資料自動不被讀取，不需手動清除）。
 
 **效果**：同月份內任何人造訪同一 ~1km 格子，直接從 DB 拿結果，省去 2–5 秒的 pvlib 計算。
 
@@ -486,9 +495,21 @@ python scripts/import_climate.py
 輸出：寫入 `climate_annual`（368 筆）+ `climate_monthly`（4,416 筆）至 Neon  
 依賴：`DATABASE_URL` 環境變數
 
-### 3. NLSC LoD1（自動 on-demand）
-`shadow.py` 的 `get_buildings()` 會在 bbox 查詢時自動：
-1. 查 `climate_annual` 找最近鄉鎮市（centroid 最短距離）
-2. 查 `nlsc_lod1_cache`（cache hit → 直接返回）
-3. cache miss → 呼叫 NLSC I3S API → 寫入 cache
-4. NLSC 連線失敗 → fallback to OSM Overpass API
+### 3. GBA 建物查詢（3 層 fallback）
+`shadow.py` 的 `get_buildings()` 依序嘗試：
+
+1. **GBA DB**（`gba_buildings`）— 半徑 bbox 查詢，全台主島 + 離島均覆蓋
+2. **Polygon fallback**（`data/taiwan_polygon_fallback.ndjson.gz`）— 後端啟動時懶載入 RAM；DB miss 時從記憶體查詢
+3. **OSM Overpass API** — GBA DB + Polygon fallback 均無結果時的最終備援
+
+> 離島（澎湖 / 金門 / 馬祖）已在 GBA DB 中，第一層即可直接回應。  
+> NLSC LoD1 I3S API 嘗試實作後因連線不穩定而移除，不再納入 fallback 鏈。
+
+### 4. GBA 建物匯入（一次性前置作業）
+```bash
+cd solar_money
+# 詳細步驟見 SETUP_GBA_DATA.md
+python scripts/import_gba_to_db.py --tile e120_n25_e125_n20 --bbox 119.8,21.9,122.1,25.4 --source both
+python scripts/import_gba_to_db.py --tile e120_n30_e125_n25 --bbox 119.8,25.8,122.1,26.5 --source both
+# 澎湖、金門、馬祖各需精確 bbox，詳見 SETUP_GBA_DATA.md
+```

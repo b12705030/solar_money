@@ -36,7 +36,7 @@ async def fetch_gba_buildings(
     若 DB 回傳空結果，自動 fallback 至本地 taiwan_polygon_fallback.ndjson.gz。
 
     輸入為 WGS84 (EPSG:4326) bbox。
-    回傳格式與 OSM / NLSC 相容：
+    回傳格式與 OSM 相容：
       [{"footprint": [[lng, lat], ...], "height": float, "build_id": str}, ...]
     """
     from db import get_gba_buildings_from_db, get_gba_buildings_from_fallback

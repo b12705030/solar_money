@@ -1,7 +1,7 @@
 # 太陽能評估平台功能規格
 
 > 本文件是產品功能規格的 canonical source。README 偏工程導覽，ROADMAP 偏開發排程。  
-> 更新：2026-05-27（新增 §1.5 資料精度架構）
+> 更新：2026-05-28（§1.5 建物幾何更新為 3 層 fallback；NLSC LoD1 已移除）
 
 ---
 
@@ -51,8 +51,13 @@
 
 | 層級 | 來源 | 精度 | 啟用條件 |
 |------|------|------|---------|
-| 主要 | **內政部 NLSC LoD1**（I3S v1.8 API） | 官方測量高度 + footprint | 預設啟用，以鄉鎮市為單元快取 |
-| 備援 | OSM Overpass API | 估算（levels × 3.2m 或 tag） | NLSC API 不可用時自動切換 |
+| 主要 | **GBA 離線 DB**（510K 棟，Neon `gba_buildings`） | ML 估算高度 + footprint | 預設啟用；半徑查詢 bbox index |
+| 本地 fallback | **Polygon fallback**（`taiwan_polygon_fallback.ndjson.gz`，2.56M 棟） | ML 估算高度 + footprint | 後端啟動時載入 RAM；DB miss 自動切換 |
+| 最終備援 | **OSM Overpass API** | 估算（levels × 3.2m 或 tag） | GBA DB + 本地 fallback 均無結果時呼叫 |
+
+> 離島（澎湖 / 金門 / 馬祖）已全數匯入 GBA DB（合計 ~37,000 棟），主要層即可覆蓋，無需 API 呼叫。
+>
+> NLSC LoD1 I3S API 已嘗試實作但因 API 連線不穩定無法穩定運作，已完全移除。
 
 #### 地形遮蔽
 

@@ -155,7 +155,7 @@ async def precompute(req: ShadowFromFeaturesRequest):
 
     cached = await get_shadow_cache(key)
     if cached is not None:
-        # 防護：舊空快取（NLSC 時代，buildings=[] 時遺留）視為 miss 重算
+        # 防護：舊空快取（buildings=[] 時遺留）視為 miss 重算
         has_shadows = any(isinstance(d, dict) and d.get('features') for d in cached.values())
         if has_shadows:
             print(f'[Shadow cache] HIT {key}')
