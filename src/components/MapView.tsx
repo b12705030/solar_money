@@ -171,6 +171,18 @@ function scalePoly(coords: [number, number][], factor: number): [number, number]
   return coords.map(([lng, lat]) => [cx + (lng - cx) * factor, cy + (lat - cy) * factor] as [number, number]);
 }
 
+function applyTerrain(map: mapboxgl.Map, enabled: boolean): void {
+  if (enabled) {
+    map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.0 });
+    if (map.getLayer('hillshade-layer'))
+      map.setLayoutProperty('hillshade-layer', 'visibility', 'visible');
+  } else {
+    map.setTerrain(null as any);
+    if (map.getLayer('hillshade-layer'))
+      map.setLayoutProperty('hillshade-layer', 'visibility', 'none');
+  }
+}
+
 function clearHighlight(map: mapboxgl.Map) {
   ['highlight-base', 'highlight-fill'].forEach(id => {
     if (map.getLayer(id)) map.removeLayer(id);
@@ -212,6 +224,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [shadowLoading, setShadowLoading] = useState(false);
+  const [terrainEnabled, setTerrainEnabled] = useState(true);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const onBuildingFoundRef = useRef(onBuildingFound);
   const buildingCacheRef = useRef<BuildingCache | null>(null);
@@ -292,6 +305,36 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
         },
       });
 
+      // ─── 3D 地形 DEM ──────────────────────────────────────────────────────
+      // terrain source（獨立，不與 hillshade 共用，避免解析度降低的警告）
+      map.addSource('mapbox-dem', {
+        type: 'raster-dem',
+        url: 'mapbox://mapbox.terrain-rgb',
+        tileSize: 256,
+        maxzoom: 14,
+      });
+      // hillshade 使用獨立的 source，保持最高解析度
+      map.addSource('mapbox-dem-hillshade', {
+        type: 'raster-dem',
+        url: 'mapbox://mapbox.terrain-rgb',
+        tileSize: 256,
+        maxzoom: 14,
+      });
+      // exaggeration: 1.0 = 真實比例，不誇大，避免建物埋入山體
+      map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.0 });
+      (map as any).addLayer({
+        id: 'hillshade-layer',
+        type: 'hillshade',
+        slot: 'bottom',
+        source: 'mapbox-dem-hillshade',
+        paint: {
+          'hillshade-exaggeration': 0.5,
+          'hillshade-shadow-color': '#2D4A3A',
+          'hillshade-highlight-color': '#F0F9F2',
+        },
+      });
+      console.log('[Terrain] setTerrain result:', map.getTerrain());
+
       setMapLoaded(true);
       setShadowLoading(true); // show spinner immediately; cleared when first idle calculation completes
 
@@ -325,6 +368,12 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
       setMapLoaded(false);
     };
   }, []);
+
+  // terrainEnabled change → toggle terrain + hillshade
+  useEffect(() => {
+    if (!mapLoaded || !mapInstance) return;
+    applyTerrain(mapInstance, terrainEnabled);
+  }, [terrainEnabled, mapLoaded, mapInstance]);
 
   // sunHour change → use cache (instant); fallback to live fetch on cache miss / empty
   useEffect(() => {
@@ -455,6 +504,22 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
           }} />
           計算陰影中…
         </div>
+      )}
+      {mapLoaded && (
+        <button
+          onClick={() => setTerrainEnabled(v => !v)}
+          style={{
+            position: 'absolute', bottom: 30, left: 10, zIndex: 999,
+            background: terrainEnabled ? '#2D6A4F' : 'rgba(255,255,255,0.92)',
+            color: terrainEnabled ? '#fff' : '#2D6A4F',
+            border: '1.5px solid #2D6A4F', borderRadius: 8,
+            padding: '5px 12px', fontSize: 12, fontWeight: 600,
+            cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+            pointerEvents: 'auto',
+          }}
+        >
+          {terrainEnabled ? '3D 地形 ▲' : '3D 地形 ▽'}
+        </button>
       )}
     </div>
   );
