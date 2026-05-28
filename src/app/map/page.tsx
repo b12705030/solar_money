@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import Link from 'next/link';
-import { Bot, Sun, Banknote, Home, Scale, Trophy } from 'lucide-react';
+import { Bot, Sun, Home, Scale, Trophy } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -13,14 +13,14 @@ const WEIGHTS_DEFAULT = { model_score: 0.55, solar: 0.20, fit: 0.15, income: 0.1
 const WEIGHT_LABELS: Record<string, string> = {
   model_score: '模型潛力',
   solar:       '日照輻射量',
-  fit:         '躉購費率',
+  fit:         '住宅自有率',
   income:      '家戶收入',
 };
 
 const WEIGHT_ICONS: Record<string, React.ReactNode> = {
   model_score: <Bot      size={14} strokeWidth={1.8} />,
   solar:       <Sun      size={14} strokeWidth={1.8} />,
-  fit:         <Banknote size={14} strokeWidth={1.8} />,
+  fit:         <Home     size={14} strokeWidth={1.8} />,
   income:      <Home     size={14} strokeWidth={1.8} />,
 };
 
@@ -40,7 +40,7 @@ interface RegionRow {
   centroid_lon: number;
   combined_score: number;
   daily_solar_radiation: number;
-  avg_fit_rate: number;
+  occupancy_owner_rate: number;
   median_household_income: number;
 }
 
@@ -57,7 +57,7 @@ function parseWeightParam(val: string | null, fallback: number): number {
 
 // ── 計算各因子 min/max，供 tooltip bar 使用 ─────────────────────────────────
 function computeRanges(data: RegionRow[]) {
-  const fields = ['combined_score', 'daily_solar_radiation', 'avg_fit_rate', 'median_household_income'] as const;
+  const fields = ['combined_score', 'daily_solar_radiation', 'occupancy_owner_rate', 'median_household_income'] as const;
   const ranges: Record<string, { min: number; max: number }> = {};
   for (const f of fields) {
     const vals = data.map(r => r[f]).filter(v => isFinite(v));
@@ -84,7 +84,7 @@ function buildTooltipHTML(props: Record<string, unknown>): string {
         return `${tier}（全台前 ${Math.max(top, 1)}%）`;
       })() },
     { label: '日照輻射', pct: props.solar_pct as number, display: `${Number(props.solar_val).toFixed(2)} kWh (/m²/day)` },
-    { label: '躉購費率', pct: props.fit_pct   as number, display: `${Number(props.fit_val).toFixed(2)} 元/度` },
+    { label: '住宅自有率', pct: props.fit_pct as number, display: `${Number(props.fit_val).toFixed(1)}%` },
     { label: '家戶收入', pct: props.income_pct as number, display: `${Math.round(Number(props.income_val))} 千元/年` },
   ];
 
@@ -232,12 +232,12 @@ function MapPageContent() {
           // 各因子原始值
           model_val:  r.combined_score,
           solar_val:  r.daily_solar_radiation,
-          fit_val:    r.avg_fit_rate,
+          fit_val:    r.occupancy_owner_rate,
           income_val: r.median_household_income,
           // 各因子正規化百分比（給 tooltip bar 用）
           model_pct:  normPct(r.combined_score,          ranges.combined_score),
           solar_pct:  normPct(r.daily_solar_radiation,   ranges.daily_solar_radiation),
-          fit_pct:    normPct(r.avg_fit_rate,             ranges.avg_fit_rate),
+          fit_pct:    normPct(r.occupancy_owner_rate,      ranges.occupancy_owner_rate),
           income_pct: normPct(r.median_household_income, ranges.median_household_income),
         },
       })),

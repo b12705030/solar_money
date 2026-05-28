@@ -73,7 +73,7 @@ async def run() -> None:
         'TOWNCODE', 'COUNTYNAME', 'TOWNNAME',
         'priority_rank', 'topsis_score', 'combined_score',
         'stage1_prob', 'stage2_density_pred',
-        'daily_solar_radiation', 'avg_fit_rate', 'median_household_income',
+        'daily_solar_radiation', 'occupancy_owner_rate', 'median_household_income',
     ]
     missing = [c for c in required_ranking if c not in ranking.columns]
     if missing:
@@ -104,7 +104,7 @@ async def run() -> None:
                    (towncode, countyname, townname,
                     priority_rank, topsis_score, combined_score,
                     stage1_prob, stage2_pred,
-                    daily_solar_radiation, avg_fit_rate, median_household_income,
+                    daily_solar_radiation, occupancy_owner_rate, median_household_income,
                     centroid_lat, centroid_lon)
                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
                    ON CONFLICT (towncode) DO UPDATE SET
@@ -114,7 +114,7 @@ async def run() -> None:
                        stage1_prob             = EXCLUDED.stage1_prob,
                        stage2_pred             = EXCLUDED.stage2_pred,
                        daily_solar_radiation   = EXCLUDED.daily_solar_radiation,
-                       avg_fit_rate            = EXCLUDED.avg_fit_rate,
+                       occupancy_owner_rate            = EXCLUDED.occupancy_owner_rate,
                        median_household_income = EXCLUDED.median_household_income,
                        centroid_lat            = EXCLUDED.centroid_lat,
                        centroid_lon            = EXCLUDED.centroid_lon
@@ -128,7 +128,7 @@ async def run() -> None:
                 float(r['stage1_prob']) if pd.notna(r.get('stage1_prob')) else None,
                 float(r['stage2_density_pred']) if pd.notna(r.get('stage2_density_pred')) else None,
                 float(r['daily_solar_radiation']) if pd.notna(r.get('daily_solar_radiation')) else None,
-                float(r['avg_fit_rate']) if pd.notna(r.get('avg_fit_rate')) else None,
+                float(r['occupancy_owner_rate']) if pd.notna(r.get('occupancy_owner_rate')) else None,
                 float(r['median_household_income']) if pd.notna(r.get('median_household_income')) else None,
                 float(r['centroid_lat']),
                 float(r['centroid_lon']),

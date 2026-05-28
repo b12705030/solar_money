@@ -869,10 +869,10 @@ async def get_all_regions_api():
 
 
 class TopsisWeights(BaseModel):
-    model_score: float = 0.40
-    solar:       float = 0.25
-    fit:         float = 0.20
-    income:      float = 0.15
+    model_score: float = 0.55
+    solar:       float = 0.20
+    fit:         float = 0.15
+    income:      float = 0.10
 
 
 @app.post('/api/topsis')
@@ -892,12 +892,12 @@ async def recompute_topsis_api(weights: TopsisWeights):
         weights={
             'combined_score':          weights.model_score,
             'daily_solar_radiation':   weights.solar,
-            'avg_fit_rate':            weights.fit,
+            'occupancy_owner_rate':            weights.fit,
             'median_household_income': weights.income,
         },
         benefit_criteria=[
             'combined_score', 'daily_solar_radiation',
-            'avg_fit_rate', 'median_household_income',
+            'occupancy_owner_rate', 'median_household_income',
         ],
         alternative_col='towncode',
         norm_method='minmax',
@@ -905,13 +905,13 @@ async def recompute_topsis_api(weights: TopsisWeights):
 
     # 接回地理資訊與原始因子值
     geo = df[['towncode', 'countyname', 'townname', 'centroid_lat', 'centroid_lon',
-              'combined_score', 'daily_solar_radiation', 'avg_fit_rate', 'median_household_income']]
+              'combined_score', 'daily_solar_radiation', 'occupancy_owner_rate', 'median_household_income']]
     result = result.merge(geo, left_on='alternative', right_on='towncode', how='left')
 
     return result[['towncode', 'countyname', 'townname',
                    'score', 'rank', 'centroid_lat', 'centroid_lon',
                    'combined_score', 'daily_solar_radiation',
-                   'avg_fit_rate', 'median_household_income']].to_dict('records')
+                   'occupancy_owner_rate', 'median_household_income']].to_dict('records')
 
 
 @app.get('/api/address-township')

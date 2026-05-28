@@ -244,7 +244,7 @@ async def init_db() -> None:
                 stage1_prob             DOUBLE PRECISION,
                 stage2_pred             DOUBLE PRECISION,
                 daily_solar_radiation   DOUBLE PRECISION,
-                avg_fit_rate            DOUBLE PRECISION,
+                occupancy_owner_rate     DOUBLE PRECISION,
                 median_household_income DOUBLE PRECISION,
                 centroid_lat            DOUBLE PRECISION,
                 centroid_lon            DOUBLE PRECISION
