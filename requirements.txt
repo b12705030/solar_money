@@ -12,3 +12,4 @@ bcrypt
 python-jose[cryptography]
 rasterio
 fiona
+Pillow

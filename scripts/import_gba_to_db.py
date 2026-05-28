@@ -92,8 +92,15 @@ def load_height_dict(json_path: Path) -> dict:
 
 # ─── Stream GeoJSON -> DB ─────────────────────────────────────────────────────
 
+_INSERT_SQL = """INSERT INTO gba_buildings
+                   (id, footprint, height, source,
+                    min_lon, max_lon, min_lat, max_lat)
+               VALUES ($1,$2::jsonb,$3,$4,$5,$6,$7,$8)
+               ON CONFLICT (id) DO NOTHING"""
+
+
 async def import_geojson_source(
-    conn: asyncpg.Connection,
+    fresh_conn_fn,          # callable() -> asyncpg.Connection
     geojson_path: Path,
     tile_name: str,
     source_tag: str,
@@ -105,6 +112,27 @@ async def import_geojson_source(
     bx0, by0, bx1, by1 = bbox_3857
     batch = []
     total = 0
+    conn = await fresh_conn_fn()
+
+    async def flush(b: list) -> None:
+        """Insert batch, reconnecting on idle-timeout drops (ON CONFLICT = safe retry)."""
+        nonlocal conn
+        for attempt in range(3):
+            try:
+                await conn.executemany(_INSERT_SQL, b)
+                return
+            except (
+                asyncpg.ConnectionDoesNotExistError,
+                asyncpg.InterfaceError,
+                ConnectionResetError,
+                OSError,
+            ):
+                try:
+                    await conn.close()
+                except Exception:
+                    pass
+                conn = await fresh_conn_fn()
+        await conn.executemany(_INSERT_SQL, b)  # final attempt, propagate on failure
 
     with fiona.open(str(geojson_path), "r") as src:
         for i, feat in enumerate(src):
@@ -118,11 +146,9 @@ async def import_geojson_source(
                 continue
 
             outer = rings[0]
-            # Taiwan bbox filter (centroid test in EPSG:3857)
             if not centroid_in_bbox(outer, bx0, by0, bx1, by1):
                 continue
 
-            # Look up height from in-memory dict
             raw_key = (
                 str(props.get("source") or "") +
                 str(props.get("id") or "") +
@@ -131,7 +157,6 @@ async def import_geojson_source(
             h_entry = height_dict.get(raw_key)
             height = (h_entry[0] if h_entry and h_entry[0] is not None else None) or 10.0
 
-            # CRS: EPSG:3857 -> EPSG:4326
             footprint = ring_to_4326(outer)
             if len(footprint) < 3:
                 continue
@@ -156,30 +181,20 @@ async def import_geojson_source(
 
             if len(batch) >= batch_size:
                 if not dry_run:
-                    await conn.executemany(
-                        """INSERT INTO gba_buildings
-                               (id, footprint, height, source,
-                                min_lon, max_lon, min_lat, max_lat)
-                           VALUES ($1,$2::jsonb,$3,$4,$5,$6,$7,$8)
-                           ON CONFLICT (id) DO NOTHING""",
-                        batch,
-                    )
+                    await flush(batch)
                 total += len(batch)
                 batch.clear()
                 print(f"    ... {total:,} features processed", end="\r", flush=True)
 
     if batch:
         if not dry_run:
-            await conn.executemany(
-                """INSERT INTO gba_buildings
-                       (id, footprint, height, source,
-                        min_lon, max_lon, min_lat, max_lat)
-                   VALUES ($1,$2::jsonb,$3,$4,$5,$6,$7,$8)
-                   ON CONFLICT (id) DO NOTHING""",
-                batch,
-            )
+            await flush(batch)
         total += len(batch)
 
+    try:
+        await conn.close()
+    except Exception:
+        pass
     return total
 
 
@@ -218,12 +233,13 @@ async def main(args: argparse.Namespace) -> None:
     bbox_3857 = bbox_4326_to_3857(min_lon, min_lat, max_lon, max_lat)
     print(f"[BBOX] Taiwan filter: WGS84 ({min_lon},{min_lat},{max_lon},{max_lat})", flush=True)
 
-    # Find tiles
-    tiles = sorted(t.stem for t in odbl_dir.glob("*.geojson"))
+    # Find tiles — scan the directory that matches the requested source
+    _discovery_dir = polygon_dir if args.source == "polygon" else odbl_dir
+    tiles = sorted(t.stem for t in _discovery_dir.glob("*.geojson"))
     if args.tile:
         tiles = [t for t in tiles if t == args.tile]
         if not tiles:
-            print(f"[ERROR] Tile '{args.tile}' not found in {odbl_dir}")
+            print(f"[ERROR] Tile '{args.tile}' not found in {_discovery_dir}")
             sys.exit(1)
     print(f"[INFO] Tiles to process: {tiles}", flush=True)
 
@@ -238,42 +254,51 @@ async def main(args: argparse.Namespace) -> None:
         print("[ERROR] DATABASE_URL not set in backend/.env")
         sys.exit(1)
 
+    async def fresh_conn() -> asyncpg.Connection:
+        """Open a fresh connection (reconnect after idle drops)."""
+        return await asyncpg.connect(db_url)
+
     print("[DB] Connecting...", flush=True)
-    conn = await asyncpg.connect(db_url)
+    conn = await fresh_conn()
     try:
         if not args.dry_run:
             await ensure_table(conn)
+        await conn.close()
+    except Exception:
+        pass
 
-        total_all = 0
-        t_start = time.time()
+    total_all = 0
+    t_start = time.time()
 
-        for tile in tiles:
-            odbl_path    = odbl_dir    / f"{tile}.geojson"
-            polygon_path = polygon_dir / f"{tile}.geojson"
-            json_path    = lod1_dir    / f"{tile}.json"
+    for tile in tiles:
+        odbl_path    = odbl_dir    / f"{tile}.geojson"
+        polygon_path = polygon_dir / f"{tile}.geojson"
+        json_path    = lod1_dir    / f"{tile}.json"
 
-            # Only check files that are actually needed for the chosen source
-            required = [json_path]
-            if args.source in ("odbl", "both"):
-                required.append(odbl_path)
-            if args.source in ("polygon", "both"):
-                required.append(polygon_path)
-            for p in required:
-                if not p.exists():
-                    print(f"[ERROR] Missing: {p}")
-                    sys.exit(1)
+        # Only check files that are actually needed for the chosen source
+        required = [json_path]
+        if args.source in ("odbl", "both"):
+            required.append(odbl_path)
+        if args.source in ("polygon", "both"):
+            required.append(polygon_path)
+        for p in required:
+            if not p.exists():
+                print(f"[ERROR] Missing: {p}")
+                sys.exit(1)
 
-            print(f"\n[FILE] Processing tile: {tile}", flush=True)
+        print(f"\n[FILE] Processing tile: {tile}", flush=True)
 
-            # Load height dict once per tile (in-memory, no temp files)
-            height_dict = load_height_dict(json_path)
+        # Load height dict once per tile (in-memory, no temp files)
+        height_dict = load_height_dict(json_path)
 
+        print("[DB] Ready (will reconnect per-source as needed)...", flush=True)
+        try:
             # Import ODbL source
             n1 = 0
             if args.source in ("odbl", "both"):
                 print(f"  >> ODbL source ({odbl_path.name})...", flush=True)
                 n1 = await import_geojson_source(
-                    conn, odbl_path, tile, "odbl",
+                    fresh_conn, odbl_path, tile, "odbl",
                     height_dict, bbox_3857, args.batch_size, args.dry_run,
                 )
                 print(f"  [OK] ODbL: {n1:,} Taiwan buildings imported", flush=True)
@@ -283,7 +308,7 @@ async def main(args: argparse.Namespace) -> None:
             if args.source in ("polygon", "both"):
                 print(f"  >> Polygon source ({polygon_path.name})...", flush=True)
                 n2 = await import_geojson_source(
-                    conn, polygon_path, tile, "polygon",
+                    fresh_conn, polygon_path, tile, "polygon",
                     height_dict, bbox_3857, args.batch_size, args.dry_run,
                 )
                 print(f"  [OK] Polygon: {n2:,} Taiwan buildings imported", flush=True)
@@ -291,15 +316,18 @@ async def main(args: argparse.Namespace) -> None:
             del height_dict  # free memory before next tile
             total_all += n1 + n2
 
-        elapsed = time.time() - t_start
-        print(f"\n[DONE] Total: {total_all:,} buildings in {elapsed:.1f}s")
+            if not args.dry_run:
+                c = await fresh_conn()
+                try:
+                    row = await c.fetchrow("SELECT COUNT(*) AS cnt FROM gba_buildings")
+                    print(f"[DB] gba_buildings total so far: {row['cnt']:,} rows")
+                finally:
+                    await c.close()
+        except Exception:
+            raise
 
-        if not args.dry_run:
-            row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM gba_buildings")
-            print(f"[DB] gba_buildings total: {row['cnt']:,} rows")
-
-    finally:
-        await conn.close()
+    elapsed = time.time() - t_start
+    print(f"\n[DONE] Total: {total_all:,} buildings in {elapsed:.1f}s")
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────

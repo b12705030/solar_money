@@ -160,28 +160,48 @@ def project_shadow(
 
 # ─── Shadow from frontend-supplied building features ─────────────────────────
 
-def _project_buildings(buildings: list[dict], to_3857) -> list[tuple]:
-    """Project footprints to EPSG:3857. Returns [(Polygon|None, height), ...]."""
-    result = []
+def _compute_building_elevations(buildings: list[dict]) -> list[float]:
+    """Per-building terrain elevation by DEM lookup at each footprint centroid."""
+    elevations = []
     for bldg in buildings:
+        fp = bldg.get('footprint', [])
+        if fp:
+            cx = sum(p[0] for p in fp) / len(fp)
+            cy = sum(p[1] for p in fp) / len(fp)
+            elevations.append(get_elevation(cy, cx))
+        else:
+            elevations.append(0.0)
+    return elevations
+
+
+def _project_buildings(
+    buildings: list[dict],
+    to_3857,
+    elevations: list[float] | None = None,
+) -> list[tuple]:
+    """Project footprints to EPSG:3857. Returns [(Polygon|None, height, terrain_elev), ...]."""
+    result = []
+    for i, bldg in enumerate(buildings):
         try:
             height = float(bldg.get('height') or 10)
+            terrain_elev = elevations[i] if elevations is not None else 0.0
             coords = [to_3857.transform(lng, lt) for lng, lt in bldg['footprint']]
             if len(coords) < 3:
-                result.append((None, height))
+                result.append((None, height, terrain_elev))
                 continue
             poly = Polygon(coords)
-            result.append((poly.buffer(0) if not poly.is_valid else poly, height))
+            result.append((poly.buffer(0) if not poly.is_valid else poly, height, terrain_elev))
         except Exception:
-            result.append((None, float(bldg.get('height') or 10)))
+            result.append((None, float(bldg.get('height') or 10), 0.0))
     return result
 
 
 def _shadows_for_sun(
-    bldg_polys: list[tuple],   # [(Polygon|None, height), ...]
+    bldg_polys: list[tuple],   # [(Polygon|None, height, terrain_elev), ...]
     azimuth: float,
     altitude: float,
     to_4326,
+    center_terrain_elev: float = 0.0,
 ) -> tuple[list, list]:
     """Return (ground_features, roof_shadow_features) for a given sun position."""
     angle = np.radians(azimuth + 180)
@@ -191,12 +211,14 @@ def _shadows_for_sun(
     shadow_data: list[tuple] = []   # (bldg_poly, shadow_poly | None, height)
     shadow_polys_3857: list = []    # 收集所有陰影多邊形（EPSG:3857），最後 union
 
-    for bldg_poly, height in bldg_polys:
+    for bldg_poly, height, terrain_elev in bldg_polys:
         if bldg_poly is None:
             shadow_data.append((None, None, height))
             continue
         try:
-            shadow_len = min(height / np.tan(np.radians(altitude)), max_shadow_len)
+            # 地形修正：坡地上的建物實際有效高度 = 建物高 + 與中心點的地形高差
+            effective_height = max(1.0, height + (terrain_elev - center_terrain_elev))
+            shadow_len = min(effective_height / np.tan(np.radians(altitude)), max_shadow_len)
             dx, dy = shadow_len * np.sin(angle), shadow_len * np.cos(angle)
             tip = Polygon([(x + dx, y + dy) for x, y in bldg_poly.exterior.coords])
             sp = unary_union([bldg_poly, tip]).convex_hull
@@ -267,14 +289,15 @@ def compute_shadows_from_features(
 ) -> dict:
     if not buildings:
         return {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
-    terrain_elev = get_elevation(center_lat, center_lon)
-    azimuth, altitude = compute_solar_position(center_lat, center_lon, _make_timestamp(local_hour), altitude_m=terrain_elev)
+    center_terrain_elev = get_elevation(center_lat, center_lon)
+    azimuth, altitude = compute_solar_position(center_lat, center_lon, _make_timestamp(local_hour), altitude_m=center_terrain_elev)
     if altitude <= 0:
         return {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
     to_3857 = Transformer.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True)
     to_4326 = Transformer.from_crs('EPSG:3857', 'EPSG:4326', always_xy=True)
-    bldg_polys = _project_buildings(buildings, to_3857)
-    features, roof_features = _shadows_for_sun(bldg_polys, azimuth, altitude, to_4326)
+    bldg_elevations = _compute_building_elevations(buildings)
+    bldg_polys = _project_buildings(buildings, to_3857, bldg_elevations)
+    features, roof_features = _shadows_for_sun(bldg_polys, azimuth, altitude, to_4326, center_terrain_elev)
     return {'type': 'FeatureCollection', 'features': features, 'roofShadows': roof_features}
 
 
@@ -289,15 +312,16 @@ def precompute_shadows_all_hours(
     empty = {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
     if not buildings:
         return {str(h): empty for h in range(6, 20)}
-    terrain_elev = get_elevation(center_lat, center_lon)
-    bldg_polys = _project_buildings(buildings, to_3857)
+    center_terrain_elev = get_elevation(center_lat, center_lon)
+    bldg_elevations = _compute_building_elevations(buildings)
+    bldg_polys = _project_buildings(buildings, to_3857, bldg_elevations)
     result = {}
     for hour in range(6, 20):
-        az, alt = compute_solar_position(center_lat, center_lon, _make_timestamp(hour), altitude_m=terrain_elev)
+        az, alt = compute_solar_position(center_lat, center_lon, _make_timestamp(hour), altitude_m=center_terrain_elev)
         if alt <= 0:
             result[str(hour)] = empty
             continue
-        features, roof_features = _shadows_for_sun(bldg_polys, az, alt, to_4326)
+        features, roof_features = _shadows_for_sun(bldg_polys, az, alt, to_4326, center_terrain_elev)
         result[str(hour)] = {'type': 'FeatureCollection', 'features': features, 'roofShadows': roof_features}
     return result
 

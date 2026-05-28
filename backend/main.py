@@ -44,6 +44,7 @@ from .mada import topsis
 from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
                      compute_usable_roof_fraction, get_buildings, load_dem,
                      precompute_shadows_all_hours, project_shadow)
+from .dem_tiles import render_dem_tile
 
 
 @asynccontextmanager
@@ -248,6 +249,27 @@ async def list_assessments(
 ):
     rows = await get_user_assessments(user_id, limit)
     return rows
+
+
+# ─── DEM Tile Server ─────────────────────────────────────────────────────────
+
+from fastapi.responses import Response as FastAPIResponse
+
+@app.get('/api/dem/tile/{z}/{x}/{y}.png')
+async def dem_tile(z: int, x: int, y: int):
+    """Serve Taiwan 20m DEM as Mapbox terrain-rgb PNG tiles."""
+    if z < 0 or z > 15 or x < 0 or y < 0:
+        raise HTTPException(status_code=400, detail='Invalid tile coordinates')
+    loop = asyncio.get_event_loop()
+    png_bytes = await loop.run_in_executor(None, render_dem_tile, z, x, y)
+    return FastAPIResponse(
+        content=png_bytes,
+        media_type='image/png',
+        headers={
+            'Cache-Control': 'public, max-age=86400',
+            'Access-Control-Allow-Origin': '*',
+        },
+    )
 
 
 # ─── 氣候資料 (TMY) ───────────────────────────────────────────────────────────

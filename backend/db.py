@@ -421,9 +421,9 @@ async def set_gba_cache(bbox_key: str, buildings: list[dict]) -> None:
 
 def shadow_cache_key(lat: float, lng: float) -> str:
     """以 ~1km 網格 × 月份為 key，同月份陰影差異很小可共用。
-    v2：陰影多邊形改為 union 後再儲存（避免重疊過深），舊 v1 快取自動失效。"""
+    v3：陰影計算加入地形高差修正（per-building terrain elevation），舊 v2 快取自動失效。"""
     today = date.today()
-    return f'v2_{lat:.2f}_{lng:.2f}_{today.year}_{today.month:02d}'
+    return f'v3_{lat:.2f}_{lng:.2f}_{today.year}_{today.month:02d}'
 
 
 async def get_shadow_cache(key: str) -> dict | None:
