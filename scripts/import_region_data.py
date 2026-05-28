@@ -114,7 +114,7 @@ async def run() -> None:
                        stage1_prob             = EXCLUDED.stage1_prob,
                        stage2_pred             = EXCLUDED.stage2_pred,
                        daily_solar_radiation   = EXCLUDED.daily_solar_radiation,
-                       occupancy_owner_rate            = EXCLUDED.occupancy_owner_rate,
+                       occupancy_owner_rate    = EXCLUDED.occupancy_owner_rate,
                        median_household_income = EXCLUDED.median_household_income,
                        centroid_lat            = EXCLUDED.centroid_lat,
                        centroid_lon            = EXCLUDED.centroid_lon

@@ -235,10 +235,10 @@ function MapPageContent() {
           fit_val:    r.occupancy_owner_rate,
           income_val: r.median_household_income,
           // 各因子正規化百分比（給 tooltip bar 用）
-          model_pct:  normPct(r.combined_score,          ranges.combined_score),
-          solar_pct:  normPct(r.daily_solar_radiation,   ranges.daily_solar_radiation),
-          fit_pct:    normPct(r.occupancy_owner_rate,      ranges.occupancy_owner_rate),
-          income_pct: normPct(r.median_household_income, ranges.median_household_income),
+          model_pct:  normPct(r.combined_score,                ranges.combined_score),
+          solar_pct:  normPct(r.daily_solar_radiation,         ranges.daily_solar_radiation),
+          fit_pct:    normPct(r.occupancy_owner_rate,          ranges.occupancy_owner_rate),
+          income_pct: normPct(r.median_household_income,        ranges.median_household_income),
         },
       })),
     };

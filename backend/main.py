@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+import numpy as np
 import pandas as pd
 
 from .auth import create_token, decode_token, hash_password, verify_password
@@ -886,18 +887,19 @@ async def recompute_topsis_api(weights: TopsisWeights):
         raise HTTPException(status_code=503, detail='地區潛力資料尚未匯入，請先執行 import_region_data.py')
 
     df = pd.DataFrame(rows)
+    df['log_median_household_income'] = np.log(df['median_household_income'].clip(lower=1))
 
     result = topsis(
         df,
         weights={
-            'combined_score':          weights.model_score,
-            'daily_solar_radiation':   weights.solar,
-            'occupancy_owner_rate':            weights.fit,
-            'median_household_income': weights.income,
+            'combined_score':               weights.model_score,
+            'daily_solar_radiation':        weights.solar,
+            'occupancy_owner_rate':         weights.fit,
+            'log_median_household_income':  weights.income,
         },
         benefit_criteria=[
             'combined_score', 'daily_solar_radiation',
-            'occupancy_owner_rate', 'median_household_income',
+            'occupancy_owner_rate', 'log_median_household_income',
         ],
         alternative_col='towncode',
         norm_method='minmax',
@@ -905,13 +907,15 @@ async def recompute_topsis_api(weights: TopsisWeights):
 
     # 接回地理資訊與原始因子值
     geo = df[['towncode', 'countyname', 'townname', 'centroid_lat', 'centroid_lon',
-              'combined_score', 'daily_solar_radiation', 'occupancy_owner_rate', 'median_household_income']]
+              'combined_score', 'daily_solar_radiation', 'occupancy_owner_rate',
+              'log_median_household_income', 'median_household_income']]
     result = result.merge(geo, left_on='alternative', right_on='towncode', how='left')
 
     return result[['towncode', 'countyname', 'townname',
                    'score', 'rank', 'centroid_lat', 'centroid_lon',
                    'combined_score', 'daily_solar_radiation',
-                   'occupancy_owner_rate', 'median_household_income']].to_dict('records')
+                   'occupancy_owner_rate',
+                   'log_median_household_income', 'median_household_income']].to_dict('records')
 
 
 @app.get('/api/address-township')
