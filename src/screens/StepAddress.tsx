@@ -125,9 +125,29 @@ export default function StepAddress({
     }
   };
 
-  const handleBuildingFound = (info: { height: number; areaPing: number; usableFraction?: number }) => {
-    setBuildingInfo(info);
+  const handleBuildingFound = async (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => {
+    // Immediate UI update — don't wait for the async township fetch
+    setBuildingInfo({ height: info.height, areaPing: info.areaPing, usableFraction: info.usableFraction });
     update({ roofArea: info.areaPing, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
+
+    if (!selected) {
+      // User clicked the map directly (no address typed) — synthesise an AddressOption
+      const township = await fetchTownshipCode(info.lat, info.lng);
+      const label = township
+        ? `${township.townshipName}（地圖點選）`
+        : `${info.lat.toFixed(5)}, ${info.lng.toFixed(5)}（地圖點選）`;
+      const synthetic: AddressOption = {
+        label, meta: '', area: info.areaPing, type: '一般住宅', floors: 0,
+        region: detectRegion(township?.townshipName ?? ''), lat: info.lat, lng: info.lng,
+      };
+      setSelected(synthetic);
+      setQuery(label);
+      update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
+    } else {
+      // Address already set — re-fetch township in case user clicked a different building
+      const township = await fetchTownshipCode(info.lat, info.lng);
+      if (township) update({ townshipCode: township.townshipCode, townshipName: township.townshipName });
+    }
   };
 
   const a = state.address;
@@ -204,6 +224,12 @@ export default function StepAddress({
             )}
           </div>
 
+          {!selected && (
+            <p style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-400)' }}>
+              或直接在地圖上點選建物
+            </p>
+          )}
+
           {/* Confirmed info */}
           {a && (
             <div style={{ marginTop: 28, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -246,10 +272,10 @@ export default function StepAddress({
                     <span style={{ fontSize: 13, color: 'var(--ink-500)', marginLeft: 4 }}>坪</span>
                   </div>
                 </div>
-                <Slider min={10} max={200} value={roofArea} onChange={v => update({ roofArea: v })} />
+                <Slider min={10} max={buildingInfo ? buildingInfo.areaPing : 200} value={roofArea} onChange={v => update({ roofArea: v })} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
                   <span className="caption">10 坪</span>
-                  <span className="caption">200 坪</span>
+                  <span className="caption">{buildingInfo ? buildingInfo.areaPing : 200} 坪</span>
                 </div>
               </div>
 

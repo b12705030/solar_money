@@ -10,7 +10,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type Props = {
   selectedAddress?: AddressOption | null;
-  onBuildingFound?: (info: { height: number; areaPing: number; usableFraction?: number }) => void;
+  onBuildingFound?: (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => void;
   sunHour?: number; // local Taiwan time (UTC+8), 0–23
 };
 
@@ -217,6 +217,28 @@ function showHighlight(map: mapboxgl.Map, features: GeoJSON.Feature[]) {
 }
 
 
+// ─── Shared usable-fraction fetch (used by both address-detect and map-click paths) ──
+
+async function fetchUsableFractionForBuilding(
+  targetFootprint: [number, number][],
+  lat: number,
+  lng: number,
+  buildingsRef: React.MutableRefObject<{ footprint: [number, number][]; height: number }[]>,
+  signal?: AbortSignal,
+): Promise<number | undefined> {
+  try {
+    const res = await fetch(`${API_URL}/api/usable-fraction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_footprint: targetFootprint, buildings: buildingsRef.current, lat, lng }),
+      signal,
+    });
+    if (!res.ok || signal?.aborted) return undefined;
+    const data = await res.json();
+    return typeof data.usable_fraction === 'number' ? data.usable_fraction : undefined;
+  } catch { return undefined; }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12 }: Props) {
@@ -242,8 +264,14 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
     if (!token || !token.startsWith('pk.')) { console.error('[MapView] Invalid or missing Mapbox token'); return; }
     mapboxgl.accessToken = token;
+    // Create a fresh inner div each invocation so React StrictMode's cleanup+remount
+    // cycle always gives Mapbox a virgin container with no leftover internal state.
+    const mapDiv = document.createElement('div');
+    mapDiv.style.width = '100%';
+    mapDiv.style.height = '100%';
+    containerRef.current.appendChild(mapDiv);
     const map = new mapboxgl.Map({
-      container: containerRef.current,
+      container: mapDiv,
       style: 'mapbox://styles/mapbox/standard',
       config: { basemap: { lightPreset: 'day', show3dObjects: false, shadows: false } },
       center: NTU_CENTER,
@@ -335,6 +363,43 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
       });
       console.log('[Terrain] setTerrain result:', map.getTerrain());
 
+      // ─── Click-to-select building ────────────────────────────────────────────
+      map.on('mouseenter', 'api-buildings-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'api-buildings-fill', () => { map.getCanvas().style.cursor = ''; });
+
+      map.on('click', 'api-buildings-fill', async (e) => {
+        const clickLng = e.lngLat.lng;
+        const clickLat = e.lngLat.lat;
+        const clickPt: [number, number] = [clickLng, clickLat];
+        const buildings = buildingsRef.current;
+
+        let primary: { footprint: [number, number][]; height: number } | null =
+          buildings.find(b => pointInPolygon(clickPt, b.footprint)) ?? null;
+        if (!primary) {
+          let minD = Infinity;
+          for (const b of buildings) {
+            const cx = b.footprint.reduce((s, p) => s + p[0], 0) / b.footprint.length;
+            const cy = b.footprint.reduce((s, p) => s + p[1], 0) / b.footprint.length;
+            const d = (cx - clickPt[0]) ** 2 + (cy - clickPt[1]) ** 2;
+            if (d < minD) { minD = d; primary = b; }
+          }
+        }
+        if (!primary) return;
+
+        const primaryFeat: GeoJSON.Feature = {
+          type: 'Feature' as const,
+          geometry: { type: 'Polygon' as const, coordinates: [primary.footprint] },
+          properties: { height: primary.height },
+        };
+        const areaPing = Math.max(1, Math.round(polygonAreaM2(primary.footprint) * PING_PER_M2));
+        showHighlight(map, [primaryFeat]);
+
+        const usableFraction = await fetchUsableFractionForBuilding(
+          primary.footprint, clickLat, clickLng, buildingsRef,
+        );
+        onBuildingFoundRef.current?.({ height: primary.height, areaPing, usableFraction, lat: clickLat, lng: clickLng });
+      });
+
       setMapLoaded(true);
       setShadowLoading(true); // show spinner immediately; cleared when first idle calculation completes
 
@@ -364,6 +429,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
     return () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       map.remove();
+      mapDiv.remove();
       setMapInstance(null);
       setMapLoaded(false);
     };
@@ -420,28 +486,12 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
       if (abortCtrl.signal.aborted) return;
       buildingCacheRef.current = { features, footprint, height, lat: lngLat[1], lng: lngLat[0] };
       showHighlight(mapInstance!, features);
-      onBuildingFoundRef.current?.({ height, areaPing, usableFraction });
+      onBuildingFoundRef.current?.({ height, areaPing, usableFraction, lat: lngLat[1], lng: lngLat[0] });
       if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
     };
 
     const detectBuilding = async () => {
       if (abortCtrl.signal.aborted) return;
-
-      // 計算可用屋頂比例 — 使用 buildingsRef 中已快取的視口 GBA 建物（無需額外 API 呼叫）
-      const fetchUsableFraction = async (targetFootprint: [number, number][]): Promise<number | undefined> => {
-        try {
-          const vpBuildings = buildingsRef.current;
-          const res = await fetch(`${API_URL}/api/usable-fraction`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ target_footprint: targetFootprint, buildings: vpBuildings, lat: lngLat[1], lng: lngLat[0] }),
-            signal: abortCtrl.signal,
-          });
-          if (!res.ok || abortCtrl.signal.aborted) return undefined;
-          const data = await res.json();
-          return typeof data.usable_fraction === 'number' ? data.usable_fraction : undefined;
-        } catch { return undefined; }
-      };
 
       try {
         const res = await fetch(
@@ -473,7 +523,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
           properties: { height: primary.height },
         };
         const areaPing = Math.max(1, Math.round(polygonAreaM2(primary.footprint) * PING_PER_M2));
-        const usableFraction = await fetchUsableFraction(primary.footprint);
+        const usableFraction = await fetchUsableFractionForBuilding(primary.footprint, lngLat[1], lngLat[0], buildingsRef, abortCtrl.signal);
         console.log('[MapView] GBA building — height:', primary.height, 'area ping:', areaPing, 'usable:', usableFraction);
         applyResult([primaryFeat], primary.footprint, primary.height, areaPing, usableFraction);
       } catch (err: any) {
