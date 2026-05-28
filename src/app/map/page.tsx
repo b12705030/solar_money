@@ -84,7 +84,7 @@ function buildTooltipHTML(props: Record<string, unknown>): string {
         return `${tier}（全台前 ${Math.max(top, 1)}%）`;
       })() },
     { label: '日照輻射', pct: props.solar_pct as number, display: `${Number(props.solar_val).toFixed(2)} kWh (/m²/day)` },
-    { label: '住宅自有率', pct: props.fit_pct as number, display: `${Number(props.fit_val).toFixed(1)}%` },
+    { label: '住宅自有率', pct: props.fit_pct as number, display: `${(Number(props.fit_val) * 100).toFixed(1)}%` },
     { label: '家戶收入', pct: props.income_pct as number, display: `${Math.round(Number(props.income_val))} 千元/年` },
   ];
 
