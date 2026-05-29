@@ -45,13 +45,15 @@ export function computeResults(
   monthlyGhi?: number[],
   monthlyTemp?: number[],
   monthlyWind?: number[],
+  apiGoalAdj?: number[],
+  apiBestAngle?: number,
 ): ComputedResults {
   const region = (state.address?.region ?? '北部') as Region;
   const irr  = (monthlyGhi  && monthlyGhi.length  === 12) ? monthlyGhi  : TW_IRRADIANCE[region];
   const temp = (monthlyTemp && monthlyTemp.length  === 12) ? monthlyTemp : DEFAULT_TEMP[region];
   const wind = (monthlyWind && monthlyWind.length  === 12) ? monthlyWind : DEFAULT_WIND[region];
   const capacity = state.capacity ?? 7.7;
-  const goalAdj = GOAL_ADJ[state.goal ?? 'summer'];
+  const goalAdj = (apiGoalAdj && apiGoalAdj.length === 12) ? apiGoalAdj : GOAL_ADJ[state.goal ?? 'summer'];
 
   const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
@@ -87,11 +89,8 @@ export function computeResults(
     Math.round(annualRevenue * Math.pow(0.995, y))
   ).reduce((a, b) => a + b, 0);
 
-  const bestAngle = BEST_ANGLE[state.goal ?? 'summer'];
-  const recommendedAngle =
-    state.goal === 'summer' ? '朝南，仰角 10°' :
-    state.goal === 'winter' ? '朝南，仰角 45°' :
-    '朝南，仰角 22°';
+  const bestAngle = apiBestAngle ?? BEST_ANGLE[state.goal ?? 'summer'];
+  const recommendedAngle = `朝南，仰角 ${bestAngle}°`;
 
   return {
     region, annualKwh, selfSufficiency, paybackYears, total20yr,

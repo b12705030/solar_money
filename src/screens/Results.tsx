@@ -288,24 +288,39 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [monthlyTemp,     setMonthlyTemp]     = useState<number[] | null>(null);
   const [monthlyWind,     setMonthlyWind]     = useState<number[] | null>(null);
   const [monthlyHumidity, setMonthlyHumidity] = useState<number[] | null>(null);
+  const [apiGoalAdj,      setApiGoalAdj]      = useState<number[] | null>(null);
+  const [apiBestAngle,    setApiBestAngle]    = useState<number | null>(null);
+  const [tiltLoading,     setTiltLoading]     = useState(!!(state.address?.lat && state.address?.lng));
   useEffect(() => {
     const lat = state.address?.lat;
     const lng = state.address?.lng;
-    if (!lat || !lng) return;
-    fetch(`${API_URL}/api/township?lat=${lat}&lng=${lng}`)
+    if (!lat || !lng) { setTiltLoading(false); return; }
+    const goal = state.goal ?? 'annual';
+    setTiltLoading(true);
+    fetch(`${API_URL}/api/township?lat=${lat}&lng=${lng}&goal=${goal}`)
       .then(res => res.ok ? res.json() : null)
       .then(d => {
         if (d?.monthly_ghi?.length      === 12) setMonthlyGhi(d.monthly_ghi);
         if (d?.monthly_temp?.length     === 12) setMonthlyTemp(d.monthly_temp);
         if (d?.monthly_wind?.length     === 12) setMonthlyWind(d.monthly_wind);
         if (d?.monthly_humidity?.length === 12) setMonthlyHumidity(d.monthly_humidity);
+        if (Array.isArray(d?.goal_adj)  && d.goal_adj.length === 12) setApiGoalAdj(d.goal_adj);
+        if (typeof d?.best_angle === 'number') setApiBestAngle(d.best_angle);
       })
-      .catch(() => {});
-  }, [state.address?.lat, state.address?.lng]);
+      .catch(() => {})
+      .finally(() => setTiltLoading(false));
+  }, [state.address?.lat, state.address?.lng, state.goal]);
 
   const r: ComputedResults = useMemo(
-    () => computeResults(state, monthlyGhi ?? undefined, monthlyTemp ?? undefined, monthlyWind ?? undefined),
-    [state, monthlyGhi, monthlyTemp, monthlyWind],
+    () => computeResults(
+      state,
+      monthlyGhi   ?? undefined,
+      monthlyTemp  ?? undefined,
+      monthlyWind  ?? undefined,
+      apiGoalAdj   ?? undefined,
+      apiBestAngle ?? undefined,
+    ),
+    [state, monthlyGhi, monthlyTemp, monthlyWind, apiGoalAdj, apiBestAngle],
   );
   const [tab, setTab] = useState<'generation' | 'investment'>('generation');
   const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
@@ -471,7 +486,20 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       .finally(() => setVendorDetailLoading(false));
   };
 
-  const goalLabel = state.goal === 'summer' ? '夏季發電量最高' : state.goal === 'winter' ? '冬季發電量最高' : '全年總發電量最高';
+  const GOAL_LABELS: Record<string, string> = {
+    annual: '全年總發電量最高', summer: '夏季發電量最高', winter: '冬季發電量最高',
+    peak: '正午峰值最高', match: '與用電曲線最匹配', roi: '投資回收最快',
+  };
+  const GOAL_TILT_INSIGHT: Record<string, string> = {
+    annual: '全年均衡最佳化，穩定長期發電收益',
+    summer: '夏季日照角高，仰角較低讓面板正對夏季太陽',
+    winter: '冬季日照角低，仰角較高讓面板直對冬季陽光',
+    peak:   '優化春秋日照，每日正午發電效率最高',
+    match:  '配合夏季冷氣尖峰用電，降低買電支出',
+    roi:    '全年均衡最佳化，回收週期最短',
+  };
+  const goalLabel = GOAL_LABELS[state.goal ?? 'annual'] ?? '全年總發電量最高';
+  const goalTiltInsight = GOAL_TILT_INSIGHT[state.goal ?? 'annual'] ?? '';
 
   return (
     <div style={{ paddingBottom: 40 }}>
@@ -675,28 +703,139 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </div>
             <MonthlyChart data={r.monthlyKwh} highlight={state.goal} />
             <div style={{ marginTop: 20, padding: 14, background: 'var(--green-50)', borderRadius: 10, fontSize: 13, color: 'var(--ink-700)' }}>
-              ★ 根據你選的目標「<b>{goalLabel}</b>」，夏季（6–8 月）月平均發電量較台灣平均高約 8%。
+              {tiltLoading
+                ? <span style={{ color: 'var(--ink-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                    正在依你的地點計算最佳仰角…
+                  </span>
+                : apiBestAngle != null
+                  ? <>★ 目標「<b>{goalLabel}</b>」，pvlib 依你的地點緯度計算最佳仰角 <b>{r.bestAngle}°</b>。{goalTiltInsight}。</>
+                  : <>★ 根據你選的目標「<b>{goalLabel}</b>」建議最佳安裝角度。</>
+              }
             </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Best angle */}
             <div className="card" style={{ padding: 24 }}>
-              <div className="caption" style={{ marginBottom: 10 }}>最佳安裝角度</div>
-              <div className="num" style={{ fontSize: 34, fontWeight: 700, color: 'var(--green-900)' }}>{r.bestAngle}°</div>
-              <div className="body-sm" style={{ marginTop: 6 }}>{r.recommendedAngle}</div>
-              <svg viewBox="0 0 160 80" style={{ width: '100%', marginTop: 16 }}>
-                <line x1="10" y1="68" x2="150" y2="68" stroke="var(--ink-300)" strokeWidth="1.5" />
-                <polygon
-                  points={`20,68 ${20 + 80 * Math.cos(r.bestAngle * Math.PI / 180)},${68 - 80 * Math.sin(r.bestAngle * Math.PI / 180)} ${40 + 80 * Math.cos(r.bestAngle * Math.PI / 180)},${68 - 80 * Math.sin(r.bestAngle * Math.PI / 180)} 40,68`}
-                  fill="var(--green-700)" opacity="0.85"
-                />
-                <path
-                  d={`M 45 68 A 25 25 0 0 0 ${45 + 25 * Math.cos((180 - r.bestAngle) * Math.PI / 180)} ${68 + 25 * Math.sin((180 - r.bestAngle) * Math.PI / 180)}`}
-                  fill="none" stroke="var(--amber)" strokeWidth="1.5"
-                />
-                <text x={55} y={60} fontSize="11" fontFamily="var(--font-num)" fill="#8B5A10" fontWeight="600">{r.bestAngle}°</text>
-              </svg>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span className="caption">最佳安裝角度</span>
+                {apiBestAngle != null && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                    padding: '2px 8px', borderRadius: 999,
+                    background: 'var(--green-50)', color: 'var(--green-700)',
+                    fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
+                    border: '1px solid var(--green-200)',
+                  }}>pvlib 計算</span>
+                )}
+              </div>
+              {tiltLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 0', color: 'var(--ink-400)', fontSize: 14 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-700)', animation: 'spin 0.6s linear infinite' }} />
+                  依日照幾何計算最佳仰角…
+                </div>
+              ) : (
+                <>
+                  <div className="num" style={{ fontSize: 34, fontWeight: 700, color: 'var(--green-900)' }}>{r.bestAngle}°</div>
+                  <div className="body-sm" style={{ marginTop: 6 }}>{r.recommendedAngle}</div>
+                  {(() => {
+                    const ang = r.bestAngle * Math.PI / 180;
+                    // Layout: ground at y=100, viewBox 240×120, panel base at bx=44
+                    const bx = 44, by = 100, L = 90, T = 10;
+
+                    // Sun: along panel face normal (sinθ, −cosθ), clamped so circle never clips top
+                    const faceCX = bx + (L / 2) * Math.cos(ang) - T * Math.sin(ang);
+                    const faceCY = by - (L / 2) * Math.sin(ang) - T * Math.cos(ang);
+                    const D = 60;
+                    const sx = faceCX + D * Math.sin(ang);
+                    const sy = Math.max(14, faceCY - D * Math.cos(ang));
+
+                    // Panel face corners (sky-facing edge) in SVG space — needed for rays
+                    const P4x = bx - T * Math.sin(ang),    P4y = by - T * Math.cos(ang);
+                    const P3x = bx + L * Math.cos(ang) - T * Math.sin(ang);
+                    const P3y = by - L * Math.sin(ang) - T * Math.cos(ang);
+
+                    // 2 solar rays from sun to evenly spaced points on panel face
+                    const rays = [0.28, 0.72].map(t => ({
+                      x1: sx.toFixed(1), y1: sy.toFixed(1),
+                      x2: (P4x + t * (P3x - P4x)).toFixed(1),
+                      y2: (P4y + t * (P3y - P4y)).toFixed(1),
+                    }));
+
+                    // Arc
+                    const arcR = 36;
+                    const arcEx = bx + arcR * Math.cos(ang);
+                    const arcEy = by - arcR * Math.sin(ang);
+
+                    // Angle label: at the arc endpoint (where arc meets panel line),
+                    // slightly below the panel edge — always in the "wedge" between panel and ground
+                    const lblX = bx + (arcR + 2) * Math.cos(ang);
+                    const lblY = by - (arcR + 2) * Math.sin(ang) + 11;
+
+                    return (
+                      <svg viewBox="0 0 240 120" style={{ width: '100%', marginTop: 16 }}>
+                        {/* Ground fill */}
+                        <rect x="0" y={by} width="240" height="20" fill="var(--green-50)" />
+                        {/* Ground line */}
+                        <line x1="0" y1={by} x2="240" y2={by} stroke="var(--ink-300)" strokeWidth="1.5" />
+                        {/* Mounting leg */}
+                        <line x1={bx} y1={by} x2={bx} y2={by + 9}
+                          stroke="var(--ink-400)" strokeWidth="2.5" strokeLinecap="round" />
+
+                        {/* Solar rays */}
+                        {rays.map((ray, i) => (
+                          <line key={i} x1={ray.x1} y1={ray.y1} x2={ray.x2} y2={ray.y2}
+                            stroke="var(--amber)" strokeWidth="1.2" strokeDasharray="5 3" opacity="0.6" />
+                        ))}
+
+                        {/* Angle arc — filled sector */}
+                        <path
+                          d={`M ${bx + arcR} ${by} A ${arcR} ${arcR} 0 0 0 ${arcEx.toFixed(1)} ${arcEy.toFixed(1)} L ${bx} ${by} Z`}
+                          fill="rgba(251,191,36,0.13)" />
+                        {/* Angle arc — stroke */}
+                        <path
+                          d={`M ${bx + arcR} ${by} A ${arcR} ${arcR} 0 0 0 ${arcEx.toFixed(1)} ${arcEy.toFixed(1)}`}
+                          fill="none" stroke="var(--amber)" strokeWidth="2" />
+
+                        {/* Panel — rotated rect for clean shape, no distortion */}
+                        <g transform={`translate(${bx},${by}) rotate(${-r.bestAngle})`}>
+                          <rect x="0" y={-T} width={L} height={T} fill="var(--green-700)" rx="1.5" />
+                          {/* Cell grid lines */}
+                          {[0.33, 0.66].map((t, i) => (
+                            <line key={i} x1={+(L * t).toFixed(1)} y1={-T} x2={+(L * t).toFixed(1)} y2={0}
+                              stroke="rgba(255,255,255,0.3)" strokeWidth="0.9" />
+                          ))}
+                          {/* Sky-facing highlight */}
+                          <line x1="3" y1={-T} x2={L - 3} y2={-T}
+                            stroke="rgba(255,255,255,0.55)" strokeWidth="1.5" strokeLinecap="round" />
+                          {/* Right end cap */}
+                          <line x1={L} y1={-T + 1} x2={L} y2={-1}
+                            stroke="var(--green-900)" strokeWidth="1.5" opacity="0.4" strokeLinecap="round" />
+                        </g>
+
+                        {/* Angle label: at arc endpoint, below panel edge */}
+                        <text x={lblX.toFixed(1)} y={lblY.toFixed(1)} fontSize="11"
+                          fontFamily="var(--font-num)" fill="#8B5A10" fontWeight="700"
+                          textAnchor="start">{r.bestAngle}°</text>
+
+                        {/* Sun */}
+                        <circle cx={sx.toFixed(1)} cy={sy.toFixed(1)} r="8"
+                          fill="var(--amber)" opacity="0.9" />
+                        {[0, 60, 120, 180, 240, 300].map((deg, i) => {
+                          const rd = deg * Math.PI / 180;
+                          return (
+                            <line key={i}
+                              x1={(sx + 11 * Math.cos(rd)).toFixed(1)} y1={(sy + 11 * Math.sin(rd)).toFixed(1)}
+                              x2={(sx + 17 * Math.cos(rd)).toFixed(1)} y2={(sy + 17 * Math.sin(rd)).toFixed(1)}
+                              stroke="var(--amber)" strokeWidth="1.5" strokeLinecap="round" opacity="0.75" />
+                          );
+                        })}
+                      </svg>
+                    );
+                  })()}
+                </>
+              )}
             </div>
 
             {/* Comparison */}
