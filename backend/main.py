@@ -325,9 +325,14 @@ async def clear_buildings_cache(
 @app.get('/api/township')
 async def get_township_climate(lat: float = Query(...), lng: float = Query(...)):
     """
-    依座標查詢最近鄉鎮市的 12 個月 NASA POWER GHI。
+    依座標查詢最近鄉鎮市的 12 個月 NASA POWER 氣候資料。
     前端 Results.tsx 用此取代靜態 TW_IRRADIANCE 三區常數。
-    回傳：{ township_code, county_name, monthly_ghi: [12 floats, kWh/m²/day] }
+    回傳：{
+      township_code, county_name,
+      monthly_ghi:  [12 floats, kWh/m²/day],
+      monthly_temp: [12 floats, °C],
+      monthly_wind: [12 floats, m/s],
+    }
     """
     from .shadow import _get_township_info
     info = await _get_township_info(lat, lng)
@@ -338,8 +343,15 @@ async def get_township_climate(lat: float = Query(...), lng: float = Query(...))
     if len(monthly) != 12:
         raise HTTPException(status_code=404,
                             detail=f'鄉鎮市 {township_code} 氣候資料不完整，請重新執行 import_climate.py')
-    monthly_ghi = [row['ghi'] for row in sorted(monthly, key=lambda r: r['month'])]
-    return {'township_code': township_code, 'county_name': county_name, 'monthly_ghi': monthly_ghi}
+    rows = sorted(monthly, key=lambda r: r['month'])
+    return {
+        'township_code': township_code,
+        'county_name': county_name,
+        'monthly_ghi':      [row['ghi']         for row in rows],
+        'monthly_temp':     [row['temperature']  for row in rows],
+        'monthly_wind':     [row['wind_speed']   for row in rows],
+        'monthly_humidity': [row['humidity']     for row in rows],
+    }
 
 
 @app.get('/api/climate/{township_code}')

@@ -101,3 +101,17 @@ export const TW_IRRADIANCE: Record<Region, number[]> = {
   '中部': [3.1, 3.4, 4.0, 4.5, 4.8, 4.9, 5.3, 5.0, 4.6, 4.1, 3.4, 2.9],
   '南部': [3.6, 3.9, 4.5, 4.9, 5.2, 5.1, 5.5, 5.2, 4.9, 4.5, 3.9, 3.4],
 };
+
+// Fallback monthly temperature (°C) and wind speed (m/s) when NASA POWER API is unavailable.
+// Derived from CWA long-term averages; used by the Faiman T_cell model in compute.ts.
+export const DEFAULT_TEMP: Record<Region, number[]> = {
+  '北部': [16, 16, 18, 22, 25, 28, 30, 30, 27, 24, 21, 17],
+  '中部': [17, 17, 20, 24, 27, 29, 31, 31, 28, 25, 22, 18],
+  '南部': [19, 20, 23, 26, 29, 30, 31, 31, 29, 26, 23, 20],
+};
+
+export const DEFAULT_WIND: Record<Region, number[]> = {
+  '北部': [3.5, 3.2, 3.0, 2.8, 2.5, 2.3, 3.0, 3.2, 2.8, 3.0, 3.5, 3.8],
+  '中部': [2.8, 2.6, 2.5, 2.3, 2.0, 1.8, 2.2, 2.5, 2.2, 2.3, 2.8, 3.0],
+  '南部': [3.2, 3.0, 2.8, 2.5, 2.2, 2.0, 2.5, 2.8, 2.5, 2.8, 3.2, 3.5],
+};

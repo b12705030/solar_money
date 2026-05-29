@@ -7,6 +7,7 @@ import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
 import InquiryModal from '@/components/InquiryModal';
 import type { SolarState, ComputedResults, VendorDetail, VendorRecommendation, RegionPotential } from '@/lib/types';
+import { TW_IRRADIANCE, DEFAULT_TEMP, DEFAULT_WIND } from '@/lib/constants';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -283,18 +284,29 @@ function VendorDetailModal({
 export default function Results({ state, onRestart, onLoginClick }: { state: SolarState; onRestart: () => void; onLoginClick?: () => void }) {
   const { user } = useAuth();
 
-  const [monthlyGhi, setMonthlyGhi] = useState<number[] | null>(null);
+  const [monthlyGhi,      setMonthlyGhi]      = useState<number[] | null>(null);
+  const [monthlyTemp,     setMonthlyTemp]     = useState<number[] | null>(null);
+  const [monthlyWind,     setMonthlyWind]     = useState<number[] | null>(null);
+  const [monthlyHumidity, setMonthlyHumidity] = useState<number[] | null>(null);
   useEffect(() => {
     const lat = state.address?.lat;
     const lng = state.address?.lng;
     if (!lat || !lng) return;
     fetch(`${API_URL}/api/township?lat=${lat}&lng=${lng}`)
       .then(res => res.ok ? res.json() : null)
-      .then(d => { if (d?.monthly_ghi?.length === 12) setMonthlyGhi(d.monthly_ghi); })
+      .then(d => {
+        if (d?.monthly_ghi?.length      === 12) setMonthlyGhi(d.monthly_ghi);
+        if (d?.monthly_temp?.length     === 12) setMonthlyTemp(d.monthly_temp);
+        if (d?.monthly_wind?.length     === 12) setMonthlyWind(d.monthly_wind);
+        if (d?.monthly_humidity?.length === 12) setMonthlyHumidity(d.monthly_humidity);
+      })
       .catch(() => {});
   }, [state.address?.lat, state.address?.lng]);
 
-  const r: ComputedResults = useMemo(() => computeResults(state, monthlyGhi ?? undefined), [state, monthlyGhi]);
+  const r: ComputedResults = useMemo(
+    () => computeResults(state, monthlyGhi ?? undefined, monthlyTemp ?? undefined, monthlyWind ?? undefined),
+    [state, monthlyGhi, monthlyTemp, monthlyWind],
+  );
   const [tab, setTab] = useState<'generation' | 'investment'>('generation');
   const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
   const [assessmentStored, setAssessmentStored] = useState(false);
@@ -527,6 +539,66 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         )}
       </div>
 
+      {/* 氣候適宜性卡片 (Han et al. 2026 ADR model) */}
+      {(() => {
+        const suitMap = {
+          good: { label: '優良', color: 'var(--green-700)', bg: '#F0F9F2', border: 'var(--green-300)' },
+          fair: { label: '尚可', color: '#C8861E',          bg: '#FFF8EE', border: '#E8A53C' },
+          poor: { label: '偏低', color: '#B02424',          bg: '#FFF1F1', border: '#F5ACAC' },
+        } as const;
+        const s = suitMap[r.suitability];
+        const avgPR = r.monthlyPR.reduce((a, b) => a + b, 0) / 12;
+        const prDeltaPct = ((avgPR - 0.78) / 0.78 * 100).toFixed(1);
+        const prSign = avgPR >= 0.78 ? '+' : '';
+        const twAvg = Math.round(417 / 0.325); // 1283 kWh/kWp (paper value ÷ 0.325 kWp/panel)
+        const yieldDiff = r.pvYieldPerKwp - twAvg;
+        const yieldSign = yieldDiff >= 0 ? '+' : '';
+        return (
+          <div style={{
+            marginBottom: 20, padding: '16px 20px',
+            background: s.bg, border: `1px solid ${s.border}`, borderRadius: 12,
+            display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 20,
+          }}>
+            <div style={{ flex: '0 0 auto' }}>
+              <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  padding: '3px 10px', borderRadius: 6, fontSize: 13, fontWeight: 700,
+                  background: s.color, color: '#fff',
+                }}>{s.label}</span>
+              </div>
+            </div>
+
+            <div style={{ flex: '0 0 auto' }}>
+              <div className="caption" style={{ marginBottom: 2 }}>年發電效率</div>
+              <div>
+                <span className="num" style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{r.pvYieldPerKwp}</span>
+                <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 4 }}>kWh/kWp</span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                台灣均值 {twAvg} · <span style={{ color: s.color }}>{yieldSign}{yieldDiff.toFixed(0)} kWh/kWp</span>
+              </div>
+            </div>
+
+            <div style={{ flex: '0 0 auto' }}>
+              <div className="caption" style={{ marginBottom: 2 }}>
+                溫度效率修正
+              </div>
+              <div>
+                <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-700)' }}>{prSign}{prDeltaPct}%</span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>相對固定 PR=0.78 的月均修正</div>
+            </div>
+
+            <div style={{ flex: '1 1 200px', borderTop: 'none', alignSelf: 'center' }}>
+              <div style={{ fontSize: 11, color: 'var(--ink-400)', lineHeight: 1.5 }}>
+                依 Han et al. (2026) Faiman T<sub>cell</sub> 模型計算，考量月均溫度與風速對電池片效率之影響
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Headline numbers */}
       <div className="card elevated results-kpi-card" style={{ marginBottom: 28, background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
         <div className="results-kpi-grid">
@@ -655,7 +727,142 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </div>
           </div>
         </div>
-      </div>
+
+        {/* Climate parameters card — inside generation tab */}
+        {(() => {
+        const dispGhi      = monthlyGhi      ?? TW_IRRADIANCE[r.region];
+        const dispTemp     = monthlyTemp     ?? DEFAULT_TEMP[r.region];
+        const dispWind     = monthlyWind     ?? DEFAULT_WIND[r.region];
+        const fromApi      = !!(monthlyGhi && monthlyTemp && monthlyWind);
+
+        type ClimateRow = { label: string; unit: string; data: number[]; fmt: (v: number) => string; colorScale: (v: number, arr: number[]) => string };
+        const rows: ClimateRow[] = [
+          {
+            label: '日射量', unit: 'kWh/m²/d', data: dispGhi,
+            fmt: v => v.toFixed(1),
+            colorScale: (v, arr) => {
+              const norm = (v - Math.min(...arr)) / (Math.max(...arr) - Math.min(...arr) || 1);
+              return `rgba(64, 145, 108, ${0.1 + norm * 0.55})`;
+            },
+          },
+          {
+            label: '月均氣溫', unit: '°C', data: dispTemp,
+            fmt: v => v.toFixed(0),
+            colorScale: (v, arr) => {
+              const norm = (v - Math.min(...arr)) / (Math.max(...arr) - Math.min(...arr) || 1);
+              return `rgba(220, 80, 60, ${0.08 + norm * 0.45})`;
+            },
+          },
+          {
+            label: '風速', unit: 'm/s', data: dispWind,
+            fmt: v => v.toFixed(1),
+            colorScale: (v, arr) => {
+              const norm = (v - Math.min(...arr)) / (Math.max(...arr) - Math.min(...arr) || 1);
+              return `rgba(59, 130, 190, ${0.08 + norm * 0.45})`;
+            },
+          },
+          ...(monthlyHumidity ? [{
+            label: '相對濕度', unit: '%', data: monthlyHumidity,
+            fmt: (v: number) => v.toFixed(0),
+            colorScale: (v: number, arr: number[]) => {
+              const norm = (v - Math.min(...arr)) / (Math.max(...arr) - Math.min(...arr) || 1);
+              return `rgba(100, 160, 220, ${0.08 + norm * 0.45})`;
+            },
+          }] as ClimateRow[] : []),
+        ];
+
+        return (
+          <div className="card" style={{ padding: 24, marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 className="h-section" style={{ margin: 0 }}>氣候輸入參數</h3>
+                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>
+                  用於 Faiman T<sub>cell</sub> 模型計算月動態 PR
+                </div>
+              </div>
+              <span style={{
+                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                background: fromApi ? 'var(--green-100)' : 'var(--ink-100)',
+                color: fromApi ? 'var(--green-800)' : 'var(--ink-500)',
+              }}>
+                {fromApi ? 'NASA POWER' : '台灣氣候均值（fallback）'}
+              </span>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'var(--font-num)' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', color: 'var(--ink-500)', fontWeight: 600, whiteSpace: 'nowrap', borderBottom: '1px solid var(--ink-150)' }}>
+                      指標
+                    </th>
+                    {MONTHS.map(m => (
+                      <th key={m} style={{ textAlign: 'center', padding: '6px 4px', color: 'var(--ink-400)', fontWeight: 500, borderBottom: '1px solid var(--ink-150)', minWidth: 36 }}>
+                        {m}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.label}>
+                      <td style={{ padding: '6px 10px', whiteSpace: 'nowrap', color: 'var(--ink-700)', fontWeight: 500, fontFamily: 'inherit' }}>
+                        {row.label}
+                        <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--ink-400)' }}>({row.unit})</span>
+                      </td>
+                      {row.data.map((v, i) => (
+                        <td key={i} style={{
+                          textAlign: 'center', padding: '5px 4px',
+                          background: row.colorScale(v, row.data),
+                          color: 'var(--ink-800)', fontWeight: 500, borderRadius: 4,
+                        }}>
+                          {row.fmt(v)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  <tr>
+                    <td style={{ padding: '6px 10px', whiteSpace: 'nowrap', color: 'var(--ink-700)', fontWeight: 500, fontFamily: 'inherit' }}>
+                      動態 PR
+                      <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--ink-400)' }}>(—)</span>
+                    </td>
+                    {r.monthlyPR.map((v, i) => (
+                      <td key={i} style={{
+                        textAlign: 'center', padding: '5px 4px',
+                        background: (() => {
+                          const base = 0.78;
+                          const diff = (v - base) / base;
+                          if (diff >= 0) return `rgba(64, 145, 108, ${Math.min(0.6, diff * 6 + 0.1)})`;
+                          return `rgba(220, 80, 60, ${Math.min(0.5, Math.abs(diff) * 6 + 0.1)})`;
+                        })(),
+                        color: 'var(--ink-800)', fontWeight: 500, borderRadius: 4,
+                      }}>
+                        {v.toFixed(3)}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-400)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <span>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(64,145,108,0.5)', marginRight: 4, verticalAlign: 'middle' }} />
+                高值
+              </span>
+              <span>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(220,80,60,0.4)', marginRight: 4, verticalAlign: 'middle' }} />
+                動態 PR 低於基準 0.78（熱衰減）
+              </span>
+              <span>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(64,145,108,0.45)', marginRight: 4, verticalAlign: 'middle' }} />
+                動態 PR 高於基準 0.78（冷卻效果）
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+      </div>{/* end generation tab-panel */}
 
       {/* Investment panel — always in DOM; hidden via CSS when inactive tab */}
       <div className={tab !== 'investment' ? 'tab-panel tab-panel--hidden' : 'tab-panel'}>
