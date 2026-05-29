@@ -182,7 +182,6 @@ async def precompute(req: ShadowFromFeaturesRequest):
 
 class UsableFractionRequest(BaseModel):
     target_footprint: List[List[float]]  # [[lng, lat], ...] EPSG:4326
-    buildings: List[BuildingFeature]     # viewport buildings including neighbours
     lat: float
     lng: float
 
@@ -191,9 +190,12 @@ class UsableFractionRequest(BaseModel):
 async def usable_fraction_endpoint(req: UsableFractionRequest):
     """
     Calculate usable roof fraction for the target building.
+    Fetches neighbouring buildings from GBA DB (radius ~200 m) rather than
+    relying on whatever the frontend happens to have rendered.
     Returns usable_fraction (0–1) and setback_area_m2.
     """
-    buildings = [{'footprint': b.footprint, 'height': b.height} for b in req.buildings]
+    D = 0.002  # ~200 m radius in degrees (Taiwan latitude)
+    buildings = await get_buildings(req.lng - D, req.lat - D, req.lng + D, req.lat + D)
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         None,

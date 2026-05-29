@@ -575,10 +575,12 @@ def compute_usable_roof_fraction(
     usable_area = usable_poly.area
 
     # ── Neighbour polygons (skip the target building itself) ──────────────────
+    target_elev = get_elevation(lat, lng)
     neighbour_polys: list[tuple] = []
     for b in buildings:
         try:
-            poly = Polygon([to_3857.transform(p[0], p[1]) for p in b['footprint']])
+            fp = b.get('footprint', [])
+            poly = Polygon([to_3857.transform(p[0], p[1]) for p in fp])
             if not poly.is_valid:
                 poly = poly.buffer(0)
             if poly.area < 1:
@@ -586,7 +588,17 @@ def compute_usable_roof_fraction(
             # Skip if this polygon overlaps the target by > 50% (= it IS the target)
             if target_3857.area > 0 and poly.intersection(target_3857).area / target_3857.area > 0.5:
                 continue
-            neighbour_polys.append((poly, float(b.get('height') or 10)))
+            # DEM 地形修正：鄰棟比目標屋頂低時，有效遮蔽高度縮短
+            if fp:
+                cx = sum(p[0] for p in fp) / len(fp)
+                cy = sum(p[1] for p in fp) / len(fp)
+                n_elev = get_elevation(cy, cx)
+            else:
+                n_elev = 0.0
+            eff_h = float(b.get('height') or 10) + (n_elev - target_elev)
+            if eff_h <= 0:
+                continue  # 鄰棟地面比目標屋頂低，遮不到
+            neighbour_polys.append((poly, eff_h))
         except Exception:
             continue
 
