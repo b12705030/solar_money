@@ -140,8 +140,12 @@ async function refreshAllShadows(
     const data: HourData = await r.json();
     if (signal.aborted) return;
     _applyHourData(map, data);
-    if (!signal.aborted) setLoading?.(false);
-  }).catch(() => {});
+    // 等 Mapbox idle（terrain tiles 渲染完）才關 spinner，避免陰影還沒出現就消失
+    if (!signal.aborted) {
+      const done = () => { if (!signal.aborted) setLoading?.(false); };
+      if (map.loaded()) { done(); } else { map.once('idle', done); }
+    }
+  }).catch(() => { setLoading?.(false); });
 
   // Phase 2 — all 14 hours (2–5 s, or instant on DB cache hit): fills cacheRef for slider
   const phase2 = fetch(`${API_URL}/api/shadows/precompute`, {
