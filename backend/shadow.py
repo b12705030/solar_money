@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
@@ -119,6 +120,92 @@ def _make_timestamp(local_hour: int) -> pd.Timestamp:
     today = date.today()
     return pd.Timestamp(year=today.year, month=today.month, day=today.day,
                         hour=local_hour, tz='Asia/Taipei')
+
+
+# ─── Optimal tilt calculation ────────────────────────────────────────────────
+
+@lru_cache(maxsize=512)
+def _compute_poa_ratio(lat: float, lon: float, tilt: int) -> tuple:
+    """
+    Monthly POA/GHI ratio for a south-facing panel at integer tilt (degrees).
+    Uses Ineichen clearsky model — ratio depends only on solar geometry, not
+    actual cloud cover, so it can be safely cached per (lat, lon, tilt).
+    Returns a 12-tuple (Jan→Dec).
+    """
+    loc = pvlib.location.Location(lat, lon, tz='Asia/Taipei')
+    ratios = []
+    for month in range(1, 13):
+        times = pd.date_range(f'2024-{month:02d}-15', periods=24, freq='1h', tz='Asia/Taipei')
+        solpos = loc.get_solarposition(times)
+        cs = loc.get_clearsky(times)
+        mask = (solpos['apparent_elevation'] > 2) & (cs['ghi'] > 0)
+        if not mask.any():
+            ratios.append(1.0)
+            continue
+        poa = pvlib.irradiance.get_total_irradiance(
+            surface_tilt=float(tilt),
+            surface_azimuth=180.0,
+            solar_zenith=solpos.loc[mask, 'apparent_zenith'],
+            solar_azimuth=solpos.loc[mask, 'azimuth'],
+            dni=cs.loc[mask, 'dni'],
+            ghi=cs.loc[mask, 'ghi'],
+            dhi=cs.loc[mask, 'dhi'],
+        )
+        ghi_sum = float(cs.loc[mask, 'ghi'].sum())
+        ratios.append(float(poa['poa_global'].sum()) / ghi_sum if ghi_sum > 0 else 1.0)
+    return tuple(ratios)
+
+
+# Monthly weights per goal: which months matter most for optimisation
+_GOAL_WEIGHTS: dict[str, list[float]] = {
+    'annual': [1.0] * 12,
+    'summer': [0.0, 0.0, 0.2, 0.5, 1.0, 1.0, 1.0, 1.0, 0.5, 0.2, 0.0, 0.0],
+    'winter': [1.0, 1.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 1.0],
+    'peak':   [0.5, 0.5, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0, 0.5, 0.5],
+    'match':  [1.1, 1.0, 0.9, 0.9, 1.0, 1.3, 1.4, 1.3, 1.0, 0.9, 0.9, 1.1],
+    'roi':    [1.0] * 12,
+}
+
+
+def compute_optimal_tilt(
+    lat: float,
+    lon: float,
+    monthly_ghi: list[float],
+    goal: str,
+) -> dict:
+    """
+    Find the south-facing tilt (0–60°) that maximises goal-weighted annual POA.
+
+    POA/GHI ratios are computed from clearsky geometry (lru_cache'd), then
+    scored against actual monthly GHI so the result reflects real local
+    irradiance distribution.
+
+    Returns {'best_angle': int, 'goal_adj': [12 floats]}
+    where goal_adj[i] = POA/GHI ratio at best_angle for month i.
+    In compute.ts: monthlyKwh = capacity × ghi[i] × goal_adj[i] × days × PR
+    """
+    lat_r = round(lat, 3)
+    lon_r = round(lon, 3)
+    weights = _GOAL_WEIGHTS.get(goal, _GOAL_WEIGHTS['annual'])
+
+    best_score = -1.0
+    best_tilt = 20
+    best_ratios: tuple = (1.0,) * 12
+
+    for tilt in range(0, 61, 2):  # coarse: every 2°
+        ratios = _compute_poa_ratio(lat_r, lon_r, tilt)
+        score = sum(monthly_ghi[i] * ratios[i] * weights[i] for i in range(12))
+        if score > best_score:
+            best_score, best_tilt, best_ratios = score, tilt, ratios
+
+    for tilt in [best_tilt - 1, best_tilt + 1]:  # fine: ±1° refinement
+        if 0 <= tilt <= 60:
+            ratios = _compute_poa_ratio(lat_r, lon_r, tilt)
+            score = sum(monthly_ghi[i] * ratios[i] * weights[i] for i in range(12))
+            if score > best_score:
+                best_score, best_tilt, best_ratios = score, tilt, ratios
+
+    return {'best_angle': best_tilt, 'goal_adj': [round(r, 4) for r in best_ratios]}
 
 
 # ─── Single-building shadow (used by /api/shadow) ────────────────────────────

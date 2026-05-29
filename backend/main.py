@@ -42,7 +42,8 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
                  update_vendor_logo, update_vendor_profile)
 from .mada import topsis
-from .shadow import (compute_bbox_shadows, compute_shadows_from_features,
+from .shadow import (compute_bbox_shadows, compute_optimal_tilt,
+                     compute_shadows_from_features,
                      compute_usable_roof_fraction, get_buildings, load_dem,
                      precompute_shadows_all_hours, project_shadow)
 from .dem_tiles import render_dem_tile
@@ -325,15 +326,21 @@ async def clear_buildings_cache(
 
 
 @app.get('/api/township')
-async def get_township_climate(lat: float = Query(...), lng: float = Query(...)):
+async def get_township_climate(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    goal: str = Query('annual'),
+):
     """
-    依座標查詢最近鄉鎮市的 12 個月 NASA POWER 氣候資料。
-    前端 Results.tsx 用此取代靜態 TW_IRRADIANCE 三區常數。
+    依座標查詢最近鄉鎮市的 12 個月 NASA POWER 氣候資料，並以 pvlib 計算最佳仰角。
+    前端 Results.tsx 用此取代靜態 TW_IRRADIANCE 三區常數與硬編碼 GOAL_ADJ。
     回傳：{
       township_code, county_name,
       monthly_ghi:  [12 floats, kWh/m²/day],
       monthly_temp: [12 floats, °C],
       monthly_wind: [12 floats, m/s],
+      best_angle:   int  (pvlib 最佳仰角，南向),
+      goal_adj:     [12 floats]  (POA/GHI ratio，乘上 monthly_ghi 得有效輻照)
     }
     """
     from .shadow import _get_township_info
@@ -346,13 +353,23 @@ async def get_township_climate(lat: float = Query(...), lng: float = Query(...))
         raise HTTPException(status_code=404,
                             detail=f'鄉鎮市 {township_code} 氣候資料不完整，請重新執行 import_climate.py')
     rows = sorted(monthly, key=lambda r: r['month'])
+    ghi_list = [row['ghi'] for row in rows]
+
+    loop = asyncio.get_event_loop()
+    tilt = await loop.run_in_executor(
+        None,
+        lambda: compute_optimal_tilt(lat, lng, ghi_list, goal),
+    )
+
     return {
         'township_code': township_code,
-        'county_name': county_name,
-        'monthly_ghi':      [row['ghi']         for row in rows],
+        'county_name':   county_name,
+        'monthly_ghi':      ghi_list,
         'monthly_temp':     [row['temperature']  for row in rows],
         'monthly_wind':     [row['wind_speed']   for row in rows],
         'monthly_humidity': [row['humidity']     for row in rows],
+        'best_angle': tilt['best_angle'],
+        'goal_adj':   tilt['goal_adj'],
     }
 
 
