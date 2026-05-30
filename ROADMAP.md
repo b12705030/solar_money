@@ -1,6 +1,6 @@
 # Solar Money — 功能路線圖
 
-> 更新：2026-05-28  
+> 更新：2026-05-31  
 > 新 branch 一律從 `main` 建立：`git checkout main && git pull && git checkout -b feature/X`
 
 ---
@@ -37,7 +37,10 @@
 | P7 | NLSC LoD1 官方建物資料整合 | `feature/lod1-tmy-dem` | ❌ 已移除（被 GBA DB 取代） |
 | P7 | DEM 數值地形模型（100m，RAM 常駐） | `feature/lod1-tmy-dem` | ✅ 已完成 |
 | P7 | NASA POWER 13 年氣候月典型值（TMY） | `feature/lod1-tmy-dem` | ✅ 已完成（匯入 DB） |
-| P7 | 前端整合月均 GHI 取代靜態 TW_IRRADIANCE | `feature/lod1-tmy-dem` | ⬜ 未開始 |
+| P7 | 前端整合月均 GHI 取代靜態 TW_IRRADIANCE | `feature/lod1-tmy-dem` | ✅ 已完成（`TW_IRRADIANCE` 降為 fallback） |
+| P7 | selfUseHabit 日間用電習慣選項（Step 2） | `dev` | ✅ 已完成 |
+| P7 | TPC 月別六段累進收益計算 | `dev` | ✅ 已完成 |
+| P7 | ROI 目標動態 TPC 邊際費率 pvlib 權重 | `dev` | ✅ 已完成 |
 | P8 | GBA 離線建物 DB（510K 棟，全台主島） | `master` | ✅ 已完成 |
 | P8 | 台灣離島建物補全（澎湖 / 金門 / 馬祖） | `master` | ✅ 已完成 |
 | P8 | Polygon 離線 fallback（2.56M 棟，167 MB） | `master` | ✅ 已完成 |
@@ -220,8 +223,11 @@
 - [x] `scripts/import_climate.py` — 匯入 `taiwan_climate_annual.csv`（368 筆）+ `nasa_power_monthly_raw.csv`（groupby 13 年月均）
 - [x] `backend/db.py` — `climate_annual`（368 筆）、`climate_monthly`（4,416 筆）
 - [x] `backend/main.py` — `GET /api/climate/{township_code}` 提供年均 + 12 月典型值
-- [ ] `src/lib/compute.ts` — 改用 API 鄉鎮月均 GHI 取代靜態 `TW_IRRADIANCE` 常數
+- [x] `src/lib/compute.ts` — 改用 API 鄉鎮月均 GHI 取代靜態 `TW_IRRADIANCE` 常數（`/api/township` 回傳 `monthly_ghi/temp/wind`，Results.tsx 優先使用；`TW_IRRADIANCE` 降為 API 失敗 fallback）
 - [ ] 前端快取 `/api/climate` 回應，避免每次 Step 3 重複請求
+- [x] `selfUseHabit` 日間用電習慣選項 — Step 2 新增三段選擇（白天在家/一般作息/白天外出）；`SELF_USE_CAP = {home: 0.88, normal: 0.75, away: 0.42}` 限制自用比例上限
+- [x] TPC 月別六段累進收益 — 月別自用省電費改以台電 115年度 累進費率差額計算（`calcTpcBill`），取代原本 kWh × 固定費率
+- [x] ROI 動態 TPC 邊際費率權重 — pvlib 仰角搜尋依使用者月消費量對應台電邊際費率為最佳化權重；靜態 fallback 更新為 `[0.77 × 5, 1.30 × 4, 1.07 × 2, 0.77]`
 
 ---
 
@@ -267,8 +273,8 @@
 | Email 通知 | 廠商收到新詢價 / 用戶收到回覆時發 Email |
 | 分享連結 | 產生可分享連結，方便傳給家人討論 |
 | 碳減排計算 | 年發電量 × 0.495 kgCO₂/度，顯示在 Results |
-| FIT 費率對照表 | 各容量級距費率 tooltip，取代 hardcode 5.7 元 |
-| 年衰退率 UI | 目前 hardcode 0.5%，開放用戶調整 |
+| ~~FIT 費率對照表~~ | ✅ `getFitRateForCapacity()` 115年度六段費率已實作，Results.tsx 自動帶入對應費率；hardcode 5.7 已取代 |
+| ~~年衰退率 UI~~ | ✅ 以 `DEFAULT_DEGRADATION_RATE = 0.005` 常數實作，Results 頁加說明文字；無 UI 輸入框（`computeResults` 保留 `degradationRateOverride` 參數，日後可直接接上輸入框）；民眾端初步評估不需用戶調整 |
 | 推薦廠商入 PDF | 評估報告末頁附推薦廠商聯絡資訊 |
 | Google OAuth | 降低用戶註冊門檻 |
 | 付款串接 | ECPay / Stripe 廠商訂閱付款 |
