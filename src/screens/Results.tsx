@@ -745,7 +745,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                   {(() => {
                     const ang = r.bestAngle * Math.PI / 180;
                     // Layout: ground at y=100, viewBox 240×120, panel base at bx=44
-                    const bx = 44, by = 100, L = 90, T = 10;
+                    const bx = 75, by = 100, L = 90, T = 10;
 
                     // Panel face normal = (−sinθ, −cosθ): points upper-LEFT (south in this
                     // east-view cross-section). Sun must be on the left so rays hit the front face.
