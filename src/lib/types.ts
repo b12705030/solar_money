@@ -31,6 +31,8 @@ export interface SolarState {
   usableFraction?: number;
   /** 使用者自訂 12 個月用電量 (kWh)，供 match 目標個人化優化與收益計算 */
   monthlyUsage?: number[];
+  /** 日間用電習慣，決定自用比例上限 */
+  selfUseHabit?: 'home' | 'normal' | 'away';
 }
 
 export type Theme = 'forest' | 'ocean' | 'earth';

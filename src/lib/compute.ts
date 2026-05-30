@@ -81,6 +81,13 @@ export function getFitRateForCapacity(kw: number): number {
 
 export const DEFAULT_FIT_RATE = 5.6279; // 最小級距費率（供 UI 顯示用）
 
+// 日間用電習慣對應的自用比例上限（無電池儲能）
+export const SELF_USE_CAP: Record<string, number> = {
+  home:   0.88, // 白天在家：發電高峰與用電高峰大量重疊
+  normal: 0.75, // 一般作息：業界通用預設估值
+  away:   0.42, // 白天外出：夜間用電為主，自用率低
+};
+
 export function computeResults(
   state: SolarState,
   monthlyGhi?: number[],
@@ -124,8 +131,9 @@ export function computeResults(
   const selfSufficiency = Math.min(100, Math.round((annualKwh / annualUsageTotal) * 100));
 
   // selfUseRatio：受實際用電量上限約束（不可能自用超過消費量）
-  // 上限 0.75：日夜錯開約損失 25% 的潛在自用量（無電池儲能）
-  const selfUseRatio = Math.min(0.75, annualUsageTotal / annualKwh);
+  // 上限依用電習慣：0.88 在宅 / 0.75 一般 / 0.42 外出（無電池儲能）
+  const selfUseCapMax = SELF_USE_CAP[state.selfUseHabit ?? 'normal'];
+  const selfUseRatio = Math.min(selfUseCapMax, annualUsageTotal / annualKwh);
   const selfUsedKwh = annualKwh * selfUseRatio;
   const soldKwh = annualKwh - selfUsedKwh;
   const fitRate = fitRateOverride ?? getFitRateForCapacity(capacity);
@@ -136,7 +144,7 @@ export function computeResults(
   monthlyKwh.forEach((kwh, i) => {
     const monthUsage = monthlyUsageArr[i];
     const monthSelfUseRatio = monthUsage > 0
-      ? Math.min(0.75, monthUsage / kwh)
+      ? Math.min(selfUseCapMax, monthUsage / kwh)
       : selfUseRatio;
     const selfUsed = kwh * monthSelfUseRatio;
     const isSummer = SUMMER_MONTH_IDX.has(i);
