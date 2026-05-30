@@ -40,6 +40,23 @@ const BEST_ANGLE: Record<string, number> = {
   annual: 22, summer: 10, winter: 45, peak: 18, match: 20, roi: 22,
 };
 
+// 台電住宅月別避免電費費率（元/kWh）
+// 非夏月（1–5、10–12 月）：~2.50 元；夏月（6–9 月）：~3.50 元
+// 夏月費率較高：夏季冷氣用量大推入較高費率級距，加上台電夏月加成
+// 資料依據：台電 2025 年電燈費率（一般家庭月均 350 kWh 估算）
+const MONTHLY_GRID_AVOID_RATE = [
+  2.50, 2.50, 2.50, 2.50, 2.70,
+  3.50, 3.50, 3.50, 3.50,
+  2.70, 2.50, 2.50,
+];
+
+// 台電住宅月別用電正規化曲線（來源：台電電燈月別售電量，夏季單峰，9 月最高）
+// 用於 match 目標 fallback 權重，以及 StepUsage 12 月展開預設值
+export const TEPCO_MONTHLY_NORM = [
+  0.82, 0.77, 0.84, 0.81, 0.87, 0.97,
+  1.14, 1.21, 1.26, 1.25, 1.19, 0.88,
+];
+
 export function computeResults(
   state: SolarState,
   monthlyGhi?: number[],
@@ -75,12 +92,29 @@ export function computeResults(
   const annualUse = monthlyUse * 12;
   const selfSufficiency = Math.min(100, Math.round((annualKwh / annualUse) * 100));
 
-  const selfUseRatio = 0.4;
+  // selfUseRatio：受實際用電量上限約束（不可能自用超過消費量）
+  // 上限 0.75：日夜錯開約損失 25% 的潛在自用量（無電池儲能）
+  const selfUseRatio = Math.min(0.75, annualUse / annualKwh);
   const selfUsedKwh = annualKwh * selfUseRatio;
   const soldKwh = annualKwh - selfUsedKwh;
   const fitRate = 5.7;
-  const gridAvoidRate = 2.5;
-  const annualRevenue = Math.round(selfUsedKwh * gridAvoidRate + soldKwh * fitRate);
+
+  // 月別收益：每月自用電以對應月份的台電費率計算省電效益
+  const monthlyUsageArr = (state.monthlyUsage?.length === 12)
+    ? state.monthlyUsage
+    : TEPCO_MONTHLY_NORM.map(w => monthlyUse * w);
+  const annualUsageTotal = monthlyUsageArr.reduce((a, b) => a + b, 0);
+
+  const annualRevenue = Math.round(
+    monthlyKwh.reduce((sum, kwh, i) => {
+      const monthSelfUseRatio = annualUsageTotal > 0
+        ? Math.min(0.75, monthlyUsageArr[i] / kwh)
+        : selfUseRatio;
+      const selfUsed = kwh * monthSelfUseRatio;
+      const sold = kwh - selfUsed;
+      return sum + selfUsed * MONTHLY_GRID_AVOID_RATE[i] + sold * fitRate;
+    }, 0)
+  );
 
   const outOfPocket = state.outOfPocket ?? 400000;
   const paybackYears = parseFloat((outOfPocket / annualRevenue).toFixed(1));

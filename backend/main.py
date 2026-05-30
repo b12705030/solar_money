@@ -330,6 +330,7 @@ async def get_township_climate(
     lat: float = Query(...),
     lng: float = Query(...),
     goal: str = Query('annual'),
+    monthly_use: Optional[str] = Query(None),
 ):
     """
     依座標查詢最近鄉鎮市的 12 個月 NASA POWER 氣候資料，並以 pvlib 計算最佳仰角。
@@ -355,10 +356,19 @@ async def get_township_climate(
     rows = sorted(monthly, key=lambda r: r['month'])
     ghi_list = [row['ghi'] for row in rows]
 
+    monthly_use_list: list[float] | None = None
+    if monthly_use:
+        try:
+            vals = [float(x) for x in monthly_use.split(',')]
+            if len(vals) == 12:
+                monthly_use_list = vals
+        except ValueError:
+            pass
+
     loop = asyncio.get_event_loop()
     tilt = await loop.run_in_executor(
         None,
-        lambda: compute_optimal_tilt(lat, lng, ghi_list, goal),
+        lambda: compute_optimal_tilt(lat, lng, ghi_list, goal, monthly_use_list),
     )
 
     return {

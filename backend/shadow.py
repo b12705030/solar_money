@@ -212,13 +212,19 @@ def compute_optimal_tilt(
     lon: float,
     monthly_ghi: list[float],
     goal: str,
+    monthly_use: list[float] | None = None,
 ) -> dict:
     """
     Find the south-facing tilt (0–60°) that maximises goal-weighted annual POA.
 
-    peak goal uses noon-only POA ratios (_compute_noon_poa_ratio, elevation > 55°)
+    peak goal uses noon-only POA ratios (_compute_noon_poa_ratio, 11–13 h window)
     with uniform monthly weights to select the tilt best suited for midday users.
     All other goals use full-day POA ratios weighted by _GOAL_WEIGHTS.
+
+    match goal: if monthly_use (12 floats, kWh) is provided, those values are
+    normalised to mean=1 and used as weights, personalising the tilt to the
+    user's actual consumption pattern. Falls back to _GOAL_WEIGHTS['match']
+    (台電 residential average) when monthly_use is not supplied.
 
     goal_adj returned is always the full-day POA/GHI ratio at best_angle,
     so that monthlyKwh = capacity × ghi[i] × goal_adj[i] × days × PR is
@@ -232,6 +238,10 @@ def compute_optimal_tilt(
     if goal == 'peak':
         ratio_fn = _compute_noon_poa_ratio
         weights = [1.0] * 12
+    elif goal == 'match' and monthly_use and len(monthly_use) == 12:
+        ratio_fn = _compute_poa_ratio
+        avg = sum(monthly_use) / 12
+        weights = [u / avg for u in monthly_use] if avg > 0 else [1.0] * 12
     else:
         ratio_fn = _compute_poa_ratio
         weights = _GOAL_WEIGHTS.get(goal, _GOAL_WEIGHTS['annual'])

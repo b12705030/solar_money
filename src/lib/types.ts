@@ -29,6 +29,8 @@ export interface SolarState {
   townshipCode?: string;
   townshipName?: string;
   usableFraction?: number;
+  /** 使用者自訂 12 個月用電量 (kWh)，供 match 目標個人化優化與收益計算 */
+  monthlyUsage?: number[];
 }
 
 export type Theme = 'forest' | 'ocean' | 'earth';

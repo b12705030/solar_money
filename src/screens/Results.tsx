@@ -297,7 +297,10 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
     if (!lat || !lng) { setTiltLoading(false); return; }
     const goal = state.goal ?? 'annual';
     setTiltLoading(true);
-    fetch(`${API_URL}/api/township?lat=${lat}&lng=${lng}&goal=${goal}`)
+    const monthlyUseParam = (goal === 'match' && state.monthlyUsage?.length === 12)
+      ? `&monthly_use=${state.monthlyUsage.join(',')}`
+      : '';
+    fetch(`${API_URL}/api/township?lat=${lat}&lng=${lng}&goal=${goal}${monthlyUseParam}`)
       .then(res => res.ok ? res.json() : null)
       .then(d => {
         if (d?.monthly_ghi?.length      === 12) setMonthlyGhi(d.monthly_ghi);
