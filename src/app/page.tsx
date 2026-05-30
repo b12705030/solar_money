@@ -38,6 +38,20 @@ export default function App() {
   useEffect(() => { applyDensity(tweaks.density); }, [tweaks.density]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shareData = params.get('share');
+    if (!shareData) return;
+    try {
+      const decoded = JSON.parse(decodeURIComponent(shareData)) as SolarState;
+      setState({ ...DEFAULT_STATE, ...decoded });
+      setStep(4);
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch {
+      // 無效的分享連結，靜默忽略
+    }
+  }, []);
+
+  useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (!e.data) return;
       if (e.data.type === '__activate_edit_mode') setTweaksOpen(true);

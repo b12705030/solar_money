@@ -17,7 +17,7 @@
 | P3 | 帳號角色基礎 | `feature/auth` | ✅ 已完成 |
 | P3 | 歷史評估 UI + 帳號綁定 | `feature/auth` | ✅ 已完成 |
 | P3 | 並排比較 | `feature/auth` | ✅ 已完成 |
-| P3 | 分享連結 | — | ⬜ 未開始 |
+| P3 | 分享連結 | `dev` | ✅ 已完成 |
 | P4 | 廠商系統基礎版 | `feature/vendor-system` | ✅ 已完成 |
 | P4 | 廠商 Logo 上傳 | `feature/vendor-system` | ✅ 已完成 |
 | P4 | 廠商重新申請（被拒後） | `feature/vendor-system` | ✅ 已完成 |
@@ -98,7 +98,7 @@
 - [x] 最多選 2 筆評估，左右欄對照關鍵指標（地址 / 縣市 / 容量 / 年發電量 / 回本 / 自付）
 
 ### 分享連結
-- [ ] 產生可分享連結，方便傳給家人討論
+- [x] 產生可分享連結，方便傳給家人討論（Results CTA「分享連結」按鈕 → URL 編碼 state → 開啟連結直接跳 Results）
 
 ---
 
@@ -271,7 +271,7 @@
 | 項目 | 說明 |
 |------|------|
 | Email 通知 | 廠商收到新詢價 / 用戶收到回覆時發 Email |
-| 分享連結 | 產生可分享連結，方便傳給家人討論 |
+| ~~分享連結~~ | ✅ 已完成（Results CTA 按鈕，URL 編碼 state，開啟後直接顯示同一份結果） |
 | 碳減排計算 | 年發電量 × 0.495 kgCO₂/度，顯示在 Results |
 | ~~FIT 費率對照表~~ | ✅ `getFitRateForCapacity()` 115年度六段費率已實作，Results.tsx 自動帶入對應費率；hardcode 5.7 已取代 |
 | ~~年衰退率 UI~~ | ✅ 以 `DEFAULT_DEGRADATION_RATE = 0.005` 常數實作，Results 頁加說明文字；無 UI 輸入框（`computeResults` 保留 `degradationRateOverride` 參數，日後可直接接上輸入框）；民眾端初步評估不需用戶調整 |

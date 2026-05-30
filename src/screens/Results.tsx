@@ -351,6 +351,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [inquiryVendor, setInquiryVendor] = useState<VendorRecommendation | null>(null);
   const [inquirySent, setInquirySent] = useState<string | null>(null);
   const [claimError, setClaimError] = useState(false);
+  const [shareToast, setShareToast] = useState(false);
   const loginTimerRef = useRef<number | null>(null);
   const vendorSectionRef = useRef<HTMLDivElement | null>(null);
   const pendingContactVendorRef = useRef<VendorRecommendation | null>(null);
@@ -477,6 +478,23 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       return;
     }
     setInquiryVendor(vendor);
+  };
+
+  const handleShare = async () => {
+    const encoded = encodeURIComponent(JSON.stringify(state));
+    const url = `${window.location.origin}/?share=${encoded}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = url;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setShareToast(true);
+    setTimeout(() => setShareToast(false), 3000);
   };
 
   const handleFindVendors = () => {
@@ -1173,6 +1191,17 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </button>
           )}
           <button
+            className="btn btn-secondary"
+            onClick={handleShare}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="13" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="13" cy="13" r="1.5"/>
+              <line x1="4.4" y1="7.1" x2="11.6" y2="4.1"/><line x1="4.4" y1="8.9" x2="11.6" y2="11.9"/>
+            </svg>
+            分享連結
+          </button>
+          <button
             className="btn results-download-btn"
             onClick={() => window.print()}
           >
@@ -1260,6 +1289,11 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       {inquirySent && (
         <div className="results-save-toast" role="status" aria-live="polite">
           詢價已送出給 {inquirySent}，廠商將盡快回覆！
+        </div>
+      )}
+      {shareToast && (
+        <div className="results-save-toast" role="status" aria-live="polite">
+          連結已複製！可直接傳給家人開啟查看同一份評估結果
         </div>
       )}
     </div>
