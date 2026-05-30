@@ -744,12 +744,14 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                     // Layout: ground at y=100, viewBox 240×120, panel base at bx=44
                     const bx = 44, by = 100, L = 90, T = 10;
 
-                    // Sun: along panel face normal (sinθ, −cosθ), clamped so circle never clips top
-                    const faceCX = bx + (L / 2) * Math.cos(ang) - T * Math.sin(ang);
-                    const faceCY = by - (L / 2) * Math.sin(ang) - T * Math.cos(ang);
-                    const D = 60;
-                    const sx = faceCX + D * Math.sin(ang);
-                    const sy = Math.max(14, faceCY - D * Math.cos(ang));
+                    // Sun: placed from panel BASE along the face-normal direction (sinθ, −cosθ).
+                    // Using the base (not face centre) as origin means the sun's visual elevation
+                    // in the diagram = 90°−θ, which IS the optimal solar elevation for this tilt.
+                    // Low tilt (summer, 8°) → sun nearly overhead; high tilt (winter, 42°) → sun
+                    // clearly lower and to the right. The position changes visibly between goals.
+                    const R = 85;
+                    const sx = bx + R * Math.sin(ang);
+                    const sy = Math.max(14, by - R * Math.cos(ang));
 
                     // Panel face corners (sky-facing edge) in SVG space — needed for rays
                     const P4x = bx - T * Math.sin(ang),    P4y = by - T * Math.cos(ang);
