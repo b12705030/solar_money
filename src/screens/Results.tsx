@@ -1065,13 +1065,13 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>自用省電費</div>
                   <div className="num" style={{ fontSize: 18, fontWeight: 700, color: 'var(--green-900)' }}>
-                    NT$ {Math.round(r.selfUsedKwh * 2.5).toLocaleString()}
+                    NT$ {r.selfUseRevenue.toLocaleString()}
                   </div>
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>台電躉購</div>
                   <div className="num" style={{ fontSize: 18, fontWeight: 700, color: 'var(--green-900)' }}>
-                    NT$ {Math.round(r.soldKwh * 5.7).toLocaleString()}
+                    NT$ {(r.annualRevenue - r.selfUseRevenue).toLocaleString()}
                   </div>
                 </div>
               </div>

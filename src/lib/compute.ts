@@ -89,32 +89,36 @@ export function computeResults(
     pvYieldPerKwp >= PV_YIELD_POOR ? 'fair' : 'poor';
 
   const monthlyUse = state.monthlyKwh ?? 350;
-  const annualUse = monthlyUse * 12;
-  const selfSufficiency = Math.min(100, Math.round((annualKwh / annualUse) * 100));
 
-  // selfUseRatio：受實際用電量上限約束（不可能自用超過消費量）
-  // 上限 0.75：日夜錯開約損失 25% 的潛在自用量（無電池儲能）
-  const selfUseRatio = Math.min(0.75, annualUse / annualKwh);
-  const selfUsedKwh = annualKwh * selfUseRatio;
-  const soldKwh = annualKwh - selfUsedKwh;
-  const fitRate = 5.7;
-
-  // 月別收益：每月自用電以對應月份的台電費率計算省電效益
+  // 年用電量：優先用使用者輸入的 12 月明細總和，否則 monthlyKwh × 12
   const monthlyUsageArr = (state.monthlyUsage?.length === 12)
     ? state.monthlyUsage
     : TEPCO_MONTHLY_NORM.map(w => monthlyUse * w);
   const annualUsageTotal = monthlyUsageArr.reduce((a, b) => a + b, 0);
 
-  const annualRevenue = Math.round(
-    monthlyKwh.reduce((sum, kwh, i) => {
-      const monthSelfUseRatio = annualUsageTotal > 0
-        ? Math.min(0.75, monthlyUsageArr[i] / kwh)
-        : selfUseRatio;
-      const selfUsed = kwh * monthSelfUseRatio;
-      const sold = kwh - selfUsed;
-      return sum + selfUsed * MONTHLY_GRID_AVOID_RATE[i] + sold * fitRate;
-    }, 0)
-  );
+  const selfSufficiency = Math.min(100, Math.round((annualKwh / annualUsageTotal) * 100));
+
+  // selfUseRatio：受實際用電量上限約束（不可能自用超過消費量）
+  // 上限 0.75：日夜錯開約損失 25% 的潛在自用量（無電池儲能）
+  const selfUseRatio = Math.min(0.75, annualUsageTotal / annualKwh);
+  const selfUsedKwh = annualKwh * selfUseRatio;
+  const soldKwh = annualKwh - selfUsedKwh;
+  const fitRate = 5.7;
+
+  // 月別收益：每月自用電以對應月份的台電費率計算省電效益
+  let selfUseRevenue = 0;
+  let fitRevenue = 0;
+  monthlyKwh.forEach((kwh, i) => {
+    const monthSelfUseRatio = annualUsageTotal > 0
+      ? Math.min(0.75, monthlyUsageArr[i] / kwh)
+      : selfUseRatio;
+    const selfUsed = kwh * monthSelfUseRatio;
+    const sold = kwh - selfUsed;
+    selfUseRevenue += selfUsed * MONTHLY_GRID_AVOID_RATE[i];
+    fitRevenue += sold * fitRate;
+  });
+  selfUseRevenue = Math.round(selfUseRevenue);
+  const annualRevenue = Math.round(selfUseRevenue + fitRevenue);
 
   const outOfPocket = state.outOfPocket ?? 400000;
   const paybackYears = parseFloat((outOfPocket / annualRevenue).toFixed(1));
@@ -129,7 +133,7 @@ export function computeResults(
   return {
     region, annualKwh, selfSufficiency, paybackYears, total20yr,
     monthlyKwh, annualRevenue, outOfPocket, bestAngle, recommendedAngle,
-    selfUsedKwh, soldKwh,
+    selfUsedKwh, soldKwh, selfUseRevenue,
     monthlyPR, pvYieldPerKwp, suitability,
   };
 }

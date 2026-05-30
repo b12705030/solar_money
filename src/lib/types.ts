@@ -54,6 +54,7 @@ export interface ComputedResults {
   recommendedAngle: string;
   selfUsedKwh: number;
   soldKwh: number;
+  selfUseRevenue: number;
   /** 每月動態 Performance Ratio（Faiman T_cell 模型，考量溫度與風速） */
   monthlyPR: number[];
   /** 年發電效率 kWh/kWp，用於 Han et al. (2026) ±σ 適宜性分類 */
