@@ -494,9 +494,9 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
     annual: '全年均衡最佳化，穩定長期發電收益',
     summer: '夏季日照角高，仰角較低讓面板正對夏季太陽',
     winter: '冬季日照角低，仰角較高讓面板直對冬季陽光',
-    peak:   '優化春秋日照，每日正午發電效率最高',
-    match:  '配合夏季冷氣尖峰用電，降低買電支出',
-    roi:    '全年均衡最佳化，回收週期最短',
+    peak:   '以全年正午（11–13 時）為基準最佳化，最大化午間自用發電量',
+    match:  '配合台灣住宅夏季冷氣尖峰用電，降低每月買電支出',
+    roi:    '夏季電費較高，優先最大化夏季發電，加速投資回收',
   };
   const goalLabel = GOAL_LABELS[state.goal ?? 'annual'] ?? '全年總發電量最高';
   const goalTiltInsight = GOAL_TILT_INSIGHT[state.goal ?? 'annual'] ?? '';

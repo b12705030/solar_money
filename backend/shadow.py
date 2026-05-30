@@ -156,14 +156,54 @@ def _compute_poa_ratio(lat: float, lon: float, tilt: int) -> tuple:
     return tuple(ratios)
 
 
-# Monthly weights per goal: which months matter most for optimisation
+@lru_cache(maxsize=512)
+def _compute_noon_poa_ratio(lat: float, lon: float, tilt: int) -> tuple:
+    """
+    Monthly POA/GHI ratio using only the three noon hours (11:00–13:00 Taiwan time).
+    Used by 'peak' goal to select the tilt that maximises midday generation across
+    all 12 months. Using a fixed time window instead of an elevation cutoff ensures
+    winter months (noon elevation ~43° in Taiwan) still contribute to the search
+    and differentiate between tilt angles — giving a balanced year-round noon tilt
+    rather than a tilt driven only by summer.
+    Returns a 12-tuple (Jan→Dec).
+    """
+    loc = pvlib.location.Location(lat, lon, tz='Asia/Taipei')
+    ratios = []
+    for month in range(1, 13):
+        times = pd.date_range(f'2024-{month:02d}-15', periods=24, freq='1h', tz='Asia/Taipei')
+        solpos = loc.get_solarposition(times)
+        cs = loc.get_clearsky(times)
+        mask = times.hour.isin([11, 12, 13]) & (cs['ghi'] > 0)
+        if not mask.any():
+            ratios.append(1.0)
+            continue
+        poa = pvlib.irradiance.get_total_irradiance(
+            surface_tilt=float(tilt),
+            surface_azimuth=180.0,
+            solar_zenith=solpos.loc[mask, 'apparent_zenith'],
+            solar_azimuth=solpos.loc[mask, 'azimuth'],
+            dni=cs.loc[mask, 'dni'],
+            ghi=cs.loc[mask, 'ghi'],
+            dhi=cs.loc[mask, 'dhi'],
+        )
+        ghi_sum = float(cs.loc[mask, 'ghi'].sum())
+        ratios.append(float(poa['poa_global'].sum()) / ghi_sum if ghi_sum > 0 else 1.0)
+    return tuple(ratios)
+
+
+# Monthly weights per goal: which months matter most for tilt optimisation.
+# peak is handled separately via _compute_noon_poa_ratio (no weights needed).
+# match: normalised Taiwan residential electricity consumption (台電 電燈月別,
+#        single summer peak; Sep highest). Source: 台電 年度售電統計.
+# roi:   normalised monthly avoided-cost weight based on Taiwan residential
+#        tariff tiers — summer months (Jun–Sep) attract higher marginal rates
+#        due to AC load pushing households into upper tiers (~+20 % vs winter).
 _GOAL_WEIGHTS: dict[str, list[float]] = {
     'annual': [1.0] * 12,
     'summer': [0.0, 0.0, 0.2, 0.5, 1.0, 1.0, 1.0, 1.0, 0.5, 0.2, 0.0, 0.0],
     'winter': [1.0, 1.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 1.0],
-    'peak':   [0.5, 0.5, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0, 0.5, 0.5],
-    'match':  [1.1, 1.0, 0.9, 0.9, 1.0, 1.3, 1.4, 1.3, 1.0, 0.9, 0.9, 1.1],
-    'roi':    [1.0] * 12,
+    'match':  [0.82, 0.77, 0.84, 0.81, 0.87, 0.97, 1.14, 1.21, 1.26, 1.25, 1.19, 0.88],
+    'roi':    [0.91, 0.91, 0.99, 0.99, 0.99, 1.11, 1.11, 1.11, 1.11, 0.99, 0.99, 0.91],
 }
 
 
@@ -176,36 +216,47 @@ def compute_optimal_tilt(
     """
     Find the south-facing tilt (0–60°) that maximises goal-weighted annual POA.
 
-    POA/GHI ratios are computed from clearsky geometry (lru_cache'd), then
-    scored against actual monthly GHI so the result reflects real local
-    irradiance distribution.
+    peak goal uses noon-only POA ratios (_compute_noon_poa_ratio, elevation > 55°)
+    with uniform monthly weights to select the tilt best suited for midday users.
+    All other goals use full-day POA ratios weighted by _GOAL_WEIGHTS.
+
+    goal_adj returned is always the full-day POA/GHI ratio at best_angle,
+    so that monthlyKwh = capacity × ghi[i] × goal_adj[i] × days × PR is
+    physically consistent (ghi is a full-day quantity).
 
     Returns {'best_angle': int, 'goal_adj': [12 floats]}
-    where goal_adj[i] = POA/GHI ratio at best_angle for month i.
-    In compute.ts: monthlyKwh = capacity × ghi[i] × goal_adj[i] × days × PR
     """
     lat_r = round(lat, 3)
     lon_r = round(lon, 3)
-    weights = _GOAL_WEIGHTS.get(goal, _GOAL_WEIGHTS['annual'])
+
+    if goal == 'peak':
+        ratio_fn = _compute_noon_poa_ratio
+        weights = [1.0] * 12
+    else:
+        ratio_fn = _compute_poa_ratio
+        weights = _GOAL_WEIGHTS.get(goal, _GOAL_WEIGHTS['annual'])
 
     best_score = -1.0
     best_tilt = 20
     best_ratios: tuple = (1.0,) * 12
 
     for tilt in range(0, 61, 2):  # coarse: every 2°
-        ratios = _compute_poa_ratio(lat_r, lon_r, tilt)
+        ratios = ratio_fn(lat_r, lon_r, tilt)
         score = sum(monthly_ghi[i] * ratios[i] * weights[i] for i in range(12))
         if score > best_score:
             best_score, best_tilt, best_ratios = score, tilt, ratios
 
     for tilt in [best_tilt - 1, best_tilt + 1]:  # fine: ±1° refinement
         if 0 <= tilt <= 60:
-            ratios = _compute_poa_ratio(lat_r, lon_r, tilt)
+            ratios = ratio_fn(lat_r, lon_r, tilt)
             score = sum(monthly_ghi[i] * ratios[i] * weights[i] for i in range(12))
             if score > best_score:
                 best_score, best_tilt, best_ratios = score, tilt, ratios
 
-    return {'best_angle': best_tilt, 'goal_adj': [round(r, 4) for r in best_ratios]}
+    # goal_adj must be full-day ratios regardless of which ratio_fn was used
+    # for the search, because ghi in compute.ts is a full-day quantity.
+    full_ratios = _compute_poa_ratio(lat_r, lon_r, best_tilt) if goal == 'peak' else best_ratios
+    return {'best_angle': best_tilt, 'goal_adj': [round(r, 4) for r in full_ratios]}
 
 
 # ─── Single-building shadow (used by /api/shadow) ────────────────────────────
