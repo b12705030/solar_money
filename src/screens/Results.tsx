@@ -1124,7 +1124,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                 依面板年衰退率 {(DEFAULT_DEGRADATION_RATE * 100).toFixed(1)}% 估算（矽晶太陽能板業界標準，每年輸出功率微幅下降）
               </div>
             </div>
-            <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} degradationRate={degradationRate} />
+            <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} />
 
             <div className="results-inv-summary">
               <div>
