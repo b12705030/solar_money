@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { MapPin } from 'lucide-react';
 import { Info } from '@/components/ui';
-import { computeResults, DEFAULT_FIT_RATE, getFitRateForCapacity } from '@/lib/compute';
+import { computeResults, DEFAULT_FIT_RATE, getFitRateForCapacity, TEPCO_MONTHLY_NORM } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
 import InquiryModal from '@/components/InquiryModal';
@@ -299,9 +299,15 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
     if (!lat || !lng) { setTiltLoading(false); return; }
     const goal = state.goal ?? 'annual';
     setTiltLoading(true);
-    const monthlyUseParam = (goal === 'match' && state.monthlyUsage?.length === 12)
-      ? `&monthly_use=${state.monthlyUsage.join(',')}`
-      : '';
+    const monthlyUseParam = (() => {
+      if ((goal === 'match' || goal === 'roi') && state.monthlyUsage?.length === 12)
+        return `&monthly_use=${state.monthlyUsage.join(',')}`;
+      if (goal === 'roi') {
+        const avg = state.monthlyKwh ?? 350;
+        return `&monthly_use=${TEPCO_MONTHLY_NORM.map(w => Math.round(avg * w)).join(',')}`;
+      }
+      return '';
+    })();
     fetch(`${API_URL}/api/township?lat=${lat}&lng=${lng}&goal=${goal}${monthlyUseParam}`)
       .then(res => res.ok ? res.json() : null)
       .then(d => {

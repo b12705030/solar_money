@@ -195,16 +195,30 @@ def _compute_noon_poa_ratio(lat: float, lon: float, tilt: int) -> tuple:
 # peak is handled separately via _compute_noon_poa_ratio (no weights needed).
 # match: normalised Taiwan residential electricity consumption (台電 電燈月別,
 #        single summer peak; Sep highest). Source: 台電 年度售電統計.
-# roi:   normalised monthly avoided-cost weight based on Taiwan residential
-#        tariff tiers — summer months (Jun–Sep) attract higher marginal rates
-#        due to AC load pushing households into upper tiers (~+20 % vs winter).
+# roi:   dynamic — computed from user's actual marginal TPC rate per month.
+#        Falls back to static weights when monthly_use is not supplied.
 _GOAL_WEIGHTS: dict[str, list[float]] = {
     'annual': [1.0] * 12,
     'summer': [0.0, 0.0, 0.2, 0.5, 1.0, 1.0, 1.0, 1.0, 0.5, 0.2, 0.0, 0.0],
     'winter': [1.0, 1.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 1.0],
     'match':  [0.82, 0.77, 0.84, 0.81, 0.87, 0.97, 1.14, 1.21, 1.26, 1.25, 1.19, 0.88],
-    'roi':    [0.91, 0.91, 0.99, 0.99, 0.99, 1.11, 1.11, 1.11, 1.11, 0.99, 0.99, 0.91],
+    'roi':    [0.77, 0.77, 0.77, 0.77, 0.77, 1.30, 1.30, 1.30, 1.30, 1.07, 1.07, 0.77],
 }
+
+# 台電住宅用表燈六段累進費率（115年度）— 用於 roi 邊際費率計算
+# 格式：(上限 kWh, 費率 NT$/kWh)；最後一段上限設 inf
+_TPC_SUMMER_TIERS:     list[tuple[float, float]] = [(120, 1.78), (330, 2.55), (500, 3.80), (700, 5.14), (1000, 6.44), (float('inf'), 8.86)]
+_TPC_NON_SUMMER_TIERS: list[tuple[float, float]] = [(120, 1.78), (330, 2.26), (500, 3.13), (700, 4.24), (1000, 5.27), (float('inf'), 7.03)]
+_SUMMER_MONTH_IDX: frozenset[int] = frozenset([5, 6, 7, 8])  # 0-indexed: Jun–Sep
+
+
+def _marginal_tpc_rate(kwh: float, is_summer: bool) -> float:
+    """Return the marginal TPC tier rate (NT$/kWh) for the tier that kwh falls into."""
+    tiers = _TPC_SUMMER_TIERS if is_summer else _TPC_NON_SUMMER_TIERS
+    for limit, rate in tiers:
+        if kwh <= limit:
+            return rate
+    return tiers[-1][1]
 
 
 def compute_optimal_tilt(
@@ -226,6 +240,13 @@ def compute_optimal_tilt(
     user's actual consumption pattern. Falls back to _GOAL_WEIGHTS['match']
     (台電 residential average) when monthly_use is not supplied.
 
+    roi goal: if monthly_use is provided (either user-supplied or derived from
+    TEPCO monthly norm × avg on the frontend), the weight for each month is the
+    marginal TPC tier rate the user pays that month, normalised to mean=1.
+    This makes the optimiser prefer tilts that generate more in months where
+    electricity is expensive (summer tier-3 at 3.80 vs winter tier-2 at 2.26).
+    Falls back to _GOAL_WEIGHTS['roi'] when monthly_use is absent.
+
     goal_adj returned is always the full-day POA/GHI ratio at best_angle,
     so that monthlyKwh = capacity × ghi[i] × goal_adj[i] × days × PR is
     physically consistent (ghi is a full-day quantity).
@@ -242,6 +263,11 @@ def compute_optimal_tilt(
         ratio_fn = _compute_poa_ratio
         avg = sum(monthly_use) / 12
         weights = [u / avg for u in monthly_use] if avg > 0 else [1.0] * 12
+    elif goal == 'roi' and monthly_use and len(monthly_use) == 12:
+        ratio_fn = _compute_poa_ratio
+        rates = [_marginal_tpc_rate(monthly_use[i], i in _SUMMER_MONTH_IDX) for i in range(12)]
+        avg_rate = sum(rates) / 12
+        weights = [r / avg_rate for r in rates] if avg_rate > 0 else [1.0] * 12
     else:
         ratio_fn = _compute_poa_ratio
         weights = _GOAL_WEIGHTS.get(goal, _GOAL_WEIGHTS['annual'])
