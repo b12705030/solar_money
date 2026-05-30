@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { MapPin } from 'lucide-react';
 import { Info } from '@/components/ui';
-import { computeResults } from '@/lib/compute';
+import { computeResults, DEFAULT_FIT_RATE, getFitRateForCapacity } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
 import InquiryModal from '@/components/InquiryModal';
@@ -291,6 +291,8 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [apiGoalAdj,      setApiGoalAdj]      = useState<number[] | null>(null);
   const [apiBestAngle,    setApiBestAngle]    = useState<number | null>(null);
   const [tiltLoading,     setTiltLoading]     = useState(!!(state.address?.lat && state.address?.lng));
+  const autoFitRate = getFitRateForCapacity(state.capacity ?? 7.7);
+  const [fitRate,         setFitRate]         = useState(autoFitRate);
   useEffect(() => {
     const lat = state.address?.lat;
     const lng = state.address?.lng;
@@ -322,8 +324,9 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       monthlyWind  ?? undefined,
       apiGoalAdj   ?? undefined,
       apiBestAngle ?? undefined,
+      fitRate,
     ),
-    [state, monthlyGhi, monthlyTemp, monthlyWind, apiGoalAdj, apiBestAngle],
+    [state, monthlyGhi, monthlyTemp, monthlyWind, apiGoalAdj, apiBestAngle, fitRate],
   );
   const [tab, setTab] = useState<'generation' | 'investment'>('generation');
   const [anonymousUserId, setAnonymousUserId] = useState<string | null>(null);
@@ -1075,7 +1078,32 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                   </div>
                 </div>
               </div>
-              <div className="caption" style={{ marginTop: 10 }}>FIT 收購費率 5.7 元/度 · 保障 20 年</div>
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span className="caption">FIT 躉購費率</span>
+                <input
+                  type="number" min="1" max="10" step="0.0001"
+                  value={fitRate}
+                  onChange={e => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v) && v > 0) setFitRate(v);
+                  }}
+                  style={{
+                    width: '5.5ch', fontSize: 12, fontFamily: 'var(--font-num)', fontWeight: 600,
+                    border: '1px solid var(--ink-200)', borderRadius: 4, padding: '1px 4px',
+                    background: fitRate !== DEFAULT_FIT_RATE ? 'var(--amber-50, #fffbeb)' : 'white',
+                  }}
+                />
+                <span className="caption">元/度 · 保障 20 年</span>
+                {fitRate !== autoFitRate && (
+                  <button onClick={() => setFitRate(autoFitRate)}
+                    style={{ fontSize: 11, color: 'var(--ink-400)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                    重設
+                  </button>
+                )}
+              </div>
+              <div className="caption" style={{ marginTop: 4, color: 'var(--ink-400)' }}>
+                依裝置容量 {(state.capacity ?? 7.7).toFixed(1)} kWp 自動套入 {autoFitRate} 元/度（能源局 115 年度公告費率）
+              </div>
             </div>
           </div>
 

@@ -57,6 +57,22 @@ export const TEPCO_MONTHLY_NORM = [
   1.14, 1.21, 1.26, 1.25, 1.19, 0.88,
 ];
 
+// 115年度屋頂型躉購費率（能源局公告）— 依裝置容量級距
+const FIT_RATE_TABLE: { maxKw: number; rate: number }[] = [
+  { maxKw: 10,  rate: 5.6279 },
+  { maxKw: 20,  rate: 5.3819 },
+  { maxKw: 50,  rate: 4.2505 },
+  { maxKw: 100, rate: 4.0459 },
+  { maxKw: 500, rate: 3.7152 },
+  { maxKw: Infinity, rate: 3.6236 },
+];
+
+export function getFitRateForCapacity(kw: number): number {
+  return FIT_RATE_TABLE.find(t => kw < t.maxKw)?.rate ?? 3.6236;
+}
+
+export const DEFAULT_FIT_RATE = 5.6279; // 最小級距費率（供 UI 顯示用）
+
 export function computeResults(
   state: SolarState,
   monthlyGhi?: number[],
@@ -64,6 +80,7 @@ export function computeResults(
   monthlyWind?: number[],
   apiGoalAdj?: number[],
   apiBestAngle?: number,
+  fitRateOverride?: number,
 ): ComputedResults {
   const region = (state.address?.region ?? '北部') as Region;
   const irr  = (monthlyGhi  && monthlyGhi.length  === 12) ? monthlyGhi  : TW_IRRADIANCE[region];
@@ -103,7 +120,7 @@ export function computeResults(
   const selfUseRatio = Math.min(0.75, annualUsageTotal / annualKwh);
   const selfUsedKwh = annualKwh * selfUseRatio;
   const soldKwh = annualKwh - selfUsedKwh;
-  const fitRate = 5.7;
+  const fitRate = fitRateOverride ?? getFitRateForCapacity(capacity);
 
   // 月別收益：每月自用電以對應月份的台電費率計算省電效益
   let selfUseRevenue = 0;
