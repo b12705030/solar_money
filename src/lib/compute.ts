@@ -80,6 +80,7 @@ export function getFitRateForCapacity(kw: number): number {
 }
 
 export const DEFAULT_FIT_RATE = 5.6279; // 最小級距費率（供 UI 顯示用）
+export const DEFAULT_DEGRADATION_RATE = 0.005; // 0.5%/年，c-Si 面板業界標準保固值
 
 // 日間用電習慣對應的自用比例上限（無電池儲能）
 export const SELF_USE_CAP: Record<string, number> = {
@@ -96,6 +97,7 @@ export function computeResults(
   apiGoalAdj?: number[],
   apiBestAngle?: number,
   fitRateOverride?: number,
+  degradationRateOverride?: number,
 ): ComputedResults {
   const region = (state.address?.region ?? '北部') as Region;
   const irr  = (monthlyGhi  && monthlyGhi.length  === 12) ? monthlyGhi  : TW_IRRADIANCE[region];
@@ -158,8 +160,9 @@ export function computeResults(
   const outOfPocket = state.outOfPocket ?? 400000;
   const paybackYears = parseFloat((outOfPocket / annualRevenue).toFixed(1));
 
+  const degradationRate = degradationRateOverride ?? DEFAULT_DEGRADATION_RATE;
   const total20yr = Array.from({ length: 20 }, (_, y) =>
-    Math.round(annualRevenue * Math.pow(0.995, y))
+    Math.round(annualRevenue * Math.pow(1 - degradationRate, y))
   ).reduce((a, b) => a + b, 0);
 
   const bestAngle = apiBestAngle ?? BEST_ANGLE[state.goal ?? 'summer'];

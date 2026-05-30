@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { MapPin } from 'lucide-react';
 import { Info } from '@/components/ui';
-import { computeResults, DEFAULT_FIT_RATE, getFitRateForCapacity, TEPCO_MONTHLY_NORM } from '@/lib/compute';
+import { computeResults, DEFAULT_FIT_RATE, getFitRateForCapacity, TEPCO_MONTHLY_NORM, DEFAULT_DEGRADATION_RATE } from '@/lib/compute';
 import PrintReport from '@/components/PrintReport';
 import { useAuth } from '@/contexts/AuthContext';
 import InquiryModal from '@/components/InquiryModal';
@@ -78,7 +78,7 @@ function MonthlyChart({ data, highlight }: { data: number[]; highlight?: string 
 function RevenueChart({ annualRevenue, outOfPocket, paybackYears }: { annualRevenue: number; outOfPocket: number; paybackYears: number }) {
   const years = 20;
   const points = Array.from({ length: years + 1 }, (_, y) => {
-    const revenue = Array.from({ length: y }, (_, i) => annualRevenue * Math.pow(0.995, i)).reduce((a, b) => a + b, 0);
+    const revenue = Array.from({ length: y }, (_, i) => annualRevenue * Math.pow(1 - DEFAULT_DEGRADATION_RATE, i)).reduce((a, b) => a + b, 0);
     return { y, net: revenue - outOfPocket };
   });
   const maxNet = points[points.length - 1].net;
@@ -1118,11 +1118,13 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
           {/* Revenue curve */}
           <div className="card" style={{ padding: 28 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-              <h3 className="h-section" style={{ margin: 0 }}>20 年累計淨收益</h3>
-              <span className="body-sm">含衰退率 0.5%/年</span>
+            <div style={{ marginBottom: 12 }}>
+              <h3 className="h-section" style={{ margin: '0 0 4px' }}>20 年累計淨收益</h3>
+              <div className="caption" style={{ color: 'var(--ink-400)' }}>
+                依面板年衰退率 {(DEFAULT_DEGRADATION_RATE * 100).toFixed(1)}% 估算（矽晶太陽能板業界標準，每年輸出功率微幅下降）
+              </div>
             </div>
-            <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} />
+            <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} degradationRate={degradationRate} />
 
             <div className="results-inv-summary">
               <div>
