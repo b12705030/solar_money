@@ -634,7 +634,15 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       <div className="card elevated results-kpi-card" style={{ marginBottom: 28, background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
         <div className="results-kpi-grid">
           <div>
-            <div className="caption" style={{ marginBottom: 10 }}>年發電量</div>
+            <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              年發電量
+              {tiltLoading && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
+                  計算中
+                </span>
+              )}
+            </div>
             <div>
               <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
                 {r.annualKwh.toLocaleString()}
@@ -645,8 +653,14 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           </div>
 
           <div className="results-kpi-item--divided">
-            <div className="caption" style={{ marginBottom: 10 }}>
+            <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
               能源自給率<Info tip="自發電量 ÷ 總用電量" />
+              {tiltLoading && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
+                  計算中
+                </span>
+              )}
             </div>
             <div>
               <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>{r.selfSufficiency}</span>
@@ -658,7 +672,15 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           </div>
 
           <div className="results-kpi-item--divided">
-            <div className="caption" style={{ marginBottom: 10 }}>預估回本年限</div>
+            <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              預估回本年限
+              {tiltLoading && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
+                  計算中
+                </span>
+              )}
+            </div>
             <div>
               <span className="num" style={{ fontSize: 48, fontWeight: 700, color: '#C8861E', lineHeight: 1 }}>{r.paybackYears}</span>
               <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>年</span>
@@ -667,7 +689,15 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           </div>
 
           <div className="results-kpi-item--divided">
-            <div className="caption" style={{ marginBottom: 10 }}>20 年總收益</div>
+            <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              20 年總收益
+              {tiltLoading && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
+                  計算中
+                </span>
+              )}
+            </div>
             <div>
               <span className="num" style={{ fontSize: 34, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
                 NT$ {Math.round(r.total20yr / 10000)}
