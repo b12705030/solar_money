@@ -823,14 +823,20 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
                         {/* Sun */}
                         <circle cx={sx.toFixed(1)} cy={sy.toFixed(1)} r="8"
-                          fill="var(--amber)" opacity="0.9" />
-                        {[0, 60, 120, 180, 240, 300].map((deg, i) => {
+                          fill="var(--amber)" opacity="0.95" />
+                        {/* 12 rays: alternating long (every 60°) and short (every 60°, offset 30°) */}
+                        {[0,30,60,90,120,150,180,210,240,270,300,330].map((deg, i) => {
                           const rd = deg * Math.PI / 180;
+                          const isLong = i % 2 === 0;
+                          const r1 = 11, r2 = isLong ? 19 : 14;
                           return (
                             <line key={i}
-                              x1={(sx + 11 * Math.cos(rd)).toFixed(1)} y1={(sy + 11 * Math.sin(rd)).toFixed(1)}
-                              x2={(sx + 17 * Math.cos(rd)).toFixed(1)} y2={(sy + 17 * Math.sin(rd)).toFixed(1)}
-                              stroke="var(--amber)" strokeWidth="1.5" strokeLinecap="round" opacity="0.75" />
+                              x1={(sx + r1 * Math.cos(rd)).toFixed(1)} y1={(sy + r1 * Math.sin(rd)).toFixed(1)}
+                              x2={(sx + r2 * Math.cos(rd)).toFixed(1)} y2={(sy + r2 * Math.sin(rd)).toFixed(1)}
+                              stroke="var(--amber)"
+                              strokeWidth={isLong ? '2' : '1.2'}
+                              strokeLinecap="round"
+                              opacity={isLong ? '0.85' : '0.5'} />
                           );
                         })}
                       </svg>
