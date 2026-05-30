@@ -3,19 +3,34 @@ import { useState } from 'react';
 import { Badge, SunIcon } from '@/components/ui';
 import { Slider } from '@/components/Slider';
 import type { SolarState } from '@/lib/types';
-import { TEPCO_MONTHLY_NORM } from '@/lib/compute';
+import { TEPCO_MONTHLY_NORM, SELF_USE_CAP } from '@/lib/compute';
 
 const MONTH_LABELS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
-function tariffLabel(kwh: number): string {
-  if (kwh <= 330) return '非夏月 1.63 元/度';
-  if (kwh <= 500) return '第二級 2.10 元/度';
-  return '第三級 2.89 元/度';
+const HABITS = [
+  { id: 'home'   as const, label: '白天在家',  desc: 'WFH・退休・長時在宅' },
+  { id: 'normal' as const, label: '一般作息',  desc: '早出晚歸・預設值'     },
+  { id: 'away'   as const, label: '白天外出',  desc: '夜間用電為主'         },
+];
+
+// 非夏月累進費率（115年度），用於估算年電費（顯示用，非精確計費）
+function calcApproxBill(kwh: number): number {
+  const tiers: [number, number][] = [[120, 1.78], [330, 2.26], [500, 3.13], [700, 4.24], [1000, 5.27], [Infinity, 7.03]];
+  let bill = 0, prev = 0;
+  for (const [l, r] of tiers) {
+    if (kwh <= prev) break;
+    bill += (Math.min(kwh, l) - prev) * r;
+    prev = l;
+  }
+  return bill;
 }
 
-function annualCost(kwh: number): number {
-  const rate = kwh <= 330 ? 1.63 : kwh <= 500 ? 2.1 : 2.89;
-  return Math.round(kwh * 12 * rate);
+function tariffLabel(kwh: number): string {
+  if (kwh <= 120) return '第一段 1.78 元/度';
+  if (kwh <= 330) return '第二段 2.26 元/度';
+  if (kwh <= 500) return '第三段 3.13 元/度';
+  if (kwh <= 700) return '第四段 4.24 元/度';
+  return '第五段以上 5.27+ 元/度';
 }
 
 export default function StepUsage({
@@ -25,6 +40,7 @@ export default function StepUsage({
   update: (patch: Partial<SolarState>) => void;
 }) {
   const kwh = state.monthlyKwh ?? 350;
+  const habit = state.selfUseHabit ?? 'normal';
   const [expanded, setExpanded] = useState(false);
 
   // 展開時顯示的 12 月數值：優先用使用者已輸入的，否則以台電曲線 × 月均值預填
@@ -180,7 +196,7 @@ export default function StepUsage({
               <div className="caption">年電費支出</div>
               <div>
                 <span className="num" style={{ fontSize: 28, fontWeight: 700 }}>
-                  NT$ {annualCost(kwh).toLocaleString()}
+                  NT$ {Math.round(calcApproxBill(kwh) * 12).toLocaleString()}
                 </span>
               </div>
             </div>
@@ -192,6 +208,39 @@ export default function StepUsage({
             </div>
           </div>
         </div>
+      </div>
+
+      <div style={{ maxWidth: 720, marginTop: 36 }}>
+        <div className="eyebrow" style={{ marginBottom: 6 }}>日間用電習慣</div>
+        <p className="body-sm" style={{ color: 'var(--ink-500)', marginBottom: 12 }}>
+          未加裝儲能設備時，太陽能只能在發電當下即時使用；白天越常在家，能直接消費的發電比例越高
+        </p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {HABITS.map(h => {
+            const active = habit === h.id;
+            return (
+              <button key={h.id} onClick={() => update({ selfUseHabit: h.id })}
+                style={{
+                  flex: 1, textAlign: 'left', padding: '14px 16px',
+                  background: active ? 'var(--green-700)' : 'var(--white)',
+                  color: active ? 'var(--white)' : 'var(--ink-900)',
+                  border: `1.5px solid ${active ? 'var(--green-700)' : 'var(--ink-200)'}`,
+                  borderRadius: 'var(--radius-lg)',
+                  cursor: 'pointer', transition: 'all 0.2s var(--ease-out)',
+                  boxShadow: active ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+                }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{h.label}</div>
+                <div style={{ fontSize: 12, color: active ? 'rgba(255,255,255,0.75)' : 'var(--ink-500)', marginBottom: 8 }}>{h.desc}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: active ? 'rgba(255,255,255,0.6)' : 'var(--ink-400)', fontFamily: 'var(--font-num)' }}>
+                  自用上限 {Math.round(SELF_USE_CAP[h.id] * 100)}%
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="caption" style={{ marginTop: 8, color: 'var(--ink-400)' }}>
+          以上估算均假設未安裝電池儲能；加裝後自用比例可提升至 80–95%
+        </p>
       </div>
     </div>
   );
