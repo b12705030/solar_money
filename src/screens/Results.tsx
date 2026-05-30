@@ -1078,6 +1078,9 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                   </div>
                 </div>
               </div>
+              <div className="caption" style={{ marginTop: 8, color: 'var(--ink-400)' }}>
+                自用省電費依台電住宅用表燈累進電價計費
+              </div>
               <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span className="caption">FIT 躉購費率</span>
                 <input

@@ -40,15 +40,23 @@ const BEST_ANGLE: Record<string, number> = {
   annual: 22, summer: 10, winter: 45, peak: 18, match: 20, roi: 22,
 };
 
-// 台電住宅月別避免電費費率（元/kWh）
-// 非夏月（1–5、10–12 月）：~2.50 元；夏月（6–9 月）：~3.50 元
-// 夏月費率較高：夏季冷氣用量大推入較高費率級距，加上台電夏月加成
-// 資料依據：台電 2025 年電燈費率（一般家庭月均 350 kWh 估算）
-const MONTHLY_GRID_AVOID_RATE = [
-  2.50, 2.50, 2.50, 2.50, 2.70,
-  3.50, 3.50, 3.50, 3.50,
-  2.70, 2.50, 2.50,
-];
+// 台電住宅用電累進費率（115年度公告）
+// 夏月：6/1–9/30；非夏月：其餘
+const TPC_SUMMER_TIERS     = [{l:120,r:1.78},{l:330,r:2.55},{l:500,r:3.80},{l:700,r:5.14},{l:1000,r:6.44},{l:Infinity,r:8.86}];
+const TPC_NON_SUMMER_TIERS = [{l:120,r:1.78},{l:330,r:2.26},{l:500,r:3.13},{l:700,r:4.24},{l:1000,r:5.27},{l:Infinity,r:7.03}];
+// 0-indexed: Jun=5, Jul=6, Aug=7, Sep=8
+const SUMMER_MONTH_IDX = new Set([5, 6, 7, 8]);
+
+function calcTpcBill(kwh: number, isSummer: boolean): number {
+  const tiers = isSummer ? TPC_SUMMER_TIERS : TPC_NON_SUMMER_TIERS;
+  let bill = 0, prev = 0;
+  for (const {l, r} of tiers) {
+    if (kwh <= prev) break;
+    bill += (Math.min(kwh, l) - prev) * r;
+    prev = l;
+  }
+  return bill;
+}
 
 // 台電住宅月別用電正規化曲線（來源：台電電燈月別售電量，夏季單峰，9 月最高）
 // 用於 match 目標 fallback 權重，以及 StepUsage 12 月展開預設值
@@ -122,17 +130,19 @@ export function computeResults(
   const soldKwh = annualKwh - selfUsedKwh;
   const fitRate = fitRateOverride ?? getFitRateForCapacity(capacity);
 
-  // 月別收益：每月自用電以對應月份的台電費率計算省電效益
+  // 月別收益：自用電 = 月帳單差額（台電六段累進）；餘電賣台電 FIT
   let selfUseRevenue = 0;
   let fitRevenue = 0;
   monthlyKwh.forEach((kwh, i) => {
-    const monthSelfUseRatio = annualUsageTotal > 0
-      ? Math.min(0.75, monthlyUsageArr[i] / kwh)
+    const monthUsage = monthlyUsageArr[i];
+    const monthSelfUseRatio = monthUsage > 0
+      ? Math.min(0.75, monthUsage / kwh)
       : selfUseRatio;
     const selfUsed = kwh * monthSelfUseRatio;
-    const sold = kwh - selfUsed;
-    selfUseRevenue += selfUsed * MONTHLY_GRID_AVOID_RATE[i];
-    fitRevenue += sold * fitRate;
+    const isSummer = SUMMER_MONTH_IDX.has(i);
+    selfUseRevenue += calcTpcBill(monthUsage, isSummer)
+                    - calcTpcBill(Math.max(0, monthUsage - selfUsed), isSummer);
+    fitRevenue += (kwh - selfUsed) * fitRate;
   });
   selfUseRevenue = Math.round(selfUseRevenue);
   const annualRevenue = Math.round(selfUseRevenue + fitRevenue);
