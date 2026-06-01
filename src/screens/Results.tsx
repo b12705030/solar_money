@@ -980,8 +980,16 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <h3 className="h-section" style={{ margin: 0 }}>氣候輸入參數<Info tip="NASA POWER 月均資料（GHI、氣溫、風速、濕度），用於 Faiman T_cell 模型計算各月動態PR" /></h3>
-                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>
+                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3, lineHeight: 1.7 }}>
                   用於 Faiman T<sub>cell</sub> 模型計算月動態 PR
+                  {fromApi ? (
+                    <>
+                      <br />
+                      NASA POWER MERRA-2 · 2013–2025 年均值 · T2M = 月均氣溫（非日最高溫）· WS10M = 月均風速
+                    </>
+                  ) : (
+                    <> · 來源：CWA 長期月均值（fallback）</>
+                  )}
                 </div>
               </div>
               <span style={{
