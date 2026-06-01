@@ -618,7 +618,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 20,
           }}>
             <div style={{ flex: '0 0 auto' }}>
-              <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性</div>
+              <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性<Info tip="依 Han et al. (2026) Fig.11 ±σ 門檻分類；年效率 = 年發電量(kWh) ÷ 裝置容量(kWp)：≥ 1418 kWh/kWp → 優良；≥ 1148 → 尚可；< 1148 → 偏低（台灣均值 1283 kWh/kWp）" /></div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{
                   padding: '3px 10px', borderRadius: 6, fontSize: 13, fontWeight: 700,
@@ -628,7 +628,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </div>
 
             <div style={{ flex: '0 0 auto' }}>
-              <div className="caption" style={{ marginBottom: 2 }}>年發電效率</div>
+              <div className="caption" style={{ marginBottom: 2 }}>年發電效率<Info tip="年發電量(kWh) ÷ 裝置容量(kWp)；數值越高表示當地氣候對發電越有利" /></div>
               <div>
                 <span className="num" style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{r.pvYieldPerKwp}</span>
                 <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 4 }}>kWh/kWp</span>
@@ -640,7 +640,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
             <div style={{ flex: '0 0 auto' }}>
               <div className="caption" style={{ marginBottom: 2 }}>
-                溫度效率修正
+                溫度效率修正<Info tip="月均動態 PR 與固定基準 PR=0.78 的百分差；高溫導致效率熱衰減（負值），低溫+強風可提升效率（正值）" />
               </div>
               <div>
                 <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-700)' }}>{prSign}{prDeltaPct}%</span>
@@ -662,7 +662,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         <div className="results-kpi-grid">
           <div>
             <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              年發電量
+              年發電量<Info tip="各月：裝置容量(kW) × 日射量(kWh/m²/d) × 月天數 × 動態PR × 目標調整係數，12 月加總" />
               {tiltLoading && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
                   <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
@@ -700,7 +700,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
           <div className="results-kpi-item--divided">
             <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              預估回本年限
+              預估回本年限<Info tip="自付金額 ÷ 年度總收益（自用省電費 + FIT 躉購收入）" />
               {tiltLoading && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
                   <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
@@ -717,7 +717,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
           <div className="results-kpi-item--divided">
             <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              20 年總收益
+              20 年總收益<Info tip="年度收益逐年以 0.5% 衰退並加總（共 20 年）；0.5%/年為 c-Si 面板業界標準功率衰退" />
               {tiltLoading && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
                   <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
@@ -758,7 +758,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         <div className="results-gen-grid">
           <div className="card" style={{ padding: 28 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 24 }}>
-              <h3 className="h-section" style={{ margin: 0 }}>月發電量</h3>
+              <h3 className="h-section" style={{ margin: 0 }}>月發電量<Info tip="裝置容量(kW) × 月日射量(kWh/m²/d) × 月天數 × Faiman 動態PR × 目標月份調整係數" /></h3>
               <span className="body-sm">單位：kWh</span>
             </div>
             <MonthlyChart data={r.monthlyKwh} highlight={state.goal} />
@@ -779,7 +779,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             {/* Best angle */}
             <div className="card" style={{ padding: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <span className="caption">最佳安裝角度</span>
+                <span className="caption">最佳安裝角度<Info tip="依所選目標預設：夏季→10°、冬季→45°、全年/ROI→22°、峰值→18°、匹配→20°；有 pvlib 時依當地緯度精算" /></span>
                 {apiBestAngle != null && (
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -979,7 +979,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           <div className="card" style={{ padding: 24, marginTop: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
-                <h3 className="h-section" style={{ margin: 0 }}>氣候輸入參數</h3>
+                <h3 className="h-section" style={{ margin: 0 }}>氣候輸入參數<Info tip="NASA POWER 月均資料（GHI、氣溫、風速、濕度），用於 Faiman T_cell 模型計算各月動態PR" /></h3>
                 <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>
                   用於 Faiman T<sub>cell</sub> 模型計算月動態 PR
                 </div>
@@ -1050,9 +1050,17 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </div>
 
             <div style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-400)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Info tip="PR = 0.78 × [1 + γ(T_cell − 25°C)]；T_cell = 氣溫 + 日射量 ÷ (25 + 6.84 × 風速)；γ = −0.0045/°C（c-Si，IEC 61215）" />
+                動態 PR 公式
+              </span>
               <span>
                 <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(64,145,108,0.5)', marginRight: 4, verticalAlign: 'middle' }} />
-                高值
+                高值（日射量 / 氣溫）
+              </span>
+              <span>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(59,130,190,0.45)', marginRight: 4, verticalAlign: 'middle' }} />
+                高值（風速 / 濕度）
               </span>
               <span>
                 <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(220,80,60,0.4)', marginRight: 4, verticalAlign: 'middle' }} />
@@ -1090,13 +1098,13 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               <div className="caption" style={{ marginBottom: 6 }}>年度收益來源</div>
               <div style={{ display: 'flex', gap: 16 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>自用省電費</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>自用省電費<Info tip="月電費(原用電量) − 月電費(原用電量 − 自用量)；依台電六段累進費率，夏月(6–9月)費率較高" /></div>
                   <div className="num" style={{ fontSize: 18, fontWeight: 700, color: 'var(--green-900)' }}>
                     NT$ {r.selfUseRevenue.toLocaleString()}
                   </div>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>台電躉購</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>台電躉購<Info tip="餘電(kWh) × FIT費率；115年度屋頂型：≤10kW→5.63元/度，容量越大費率階梯遞減" /></div>
                   <div className="num" style={{ fontSize: 18, fontWeight: 700, color: 'var(--green-900)' }}>
                     NT$ {(r.annualRevenue - r.selfUseRevenue).toLocaleString()}
                   </div>
@@ -1137,7 +1145,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           {/* Revenue curve */}
           <div className="card" style={{ padding: 28 }}>
             <div style={{ marginBottom: 12 }}>
-              <h3 className="h-section" style={{ margin: '0 0 4px' }}>20 年累計淨收益</h3>
+              <h3 className="h-section" style={{ margin: '0 0 4px' }}>20 年累計淨收益<Info tip="年度收益逐年以 0.5% 衰退並加總（20 年），再減去初始自付金額" /></h3>
               <div className="caption" style={{ color: 'var(--ink-400)' }}>
                 依面板年衰退率 {(DEFAULT_DEGRADATION_RATE * 100).toFixed(1)}% 估算（矽晶太陽能板業界標準，每年輸出功率微幅下降）
               </div>
@@ -1146,19 +1154,19 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
             <div className="results-inv-summary">
               <div>
-                <div className="caption">起始投資</div>
+                <div className="caption">起始投資<Info tip="安裝費用 − 政府補助（含地方政府 kW 補貼）" /></div>
                 <div className="num" style={{ fontSize: 16, fontWeight: 600, color: 'var(--danger)', marginTop: 4 }}>
                   −NT$ {Math.round((state.outOfPocket ?? 400000) / 10000)}萬
                 </div>
               </div>
               <div>
-                <div className="caption">年均收益</div>
+                <div className="caption">年均收益<Info tip="自用省電費節省 + FIT 售電收入" /></div>
                 <div className="num" style={{ fontSize: 16, fontWeight: 600, color: 'var(--green-700)', marginTop: 4 }}>
                   +NT$ {Math.round(r.annualRevenue / 1000)}K
                 </div>
               </div>
               <div>
-                <div className="caption">20 年 IRR</div>
+                <div className="caption">20 年 IRR<Info tip="以 20 年現金流估算之內部報酬率（近似值，假設衰退率 0.5%/年）" /></div>
                 <div className="num" style={{ fontSize: 16, fontWeight: 600, color: 'var(--green-900)', marginTop: 4 }}>約 10.5%</div>
               </div>
             </div>

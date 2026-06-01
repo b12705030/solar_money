@@ -264,9 +264,11 @@ a { text-decoration: none; }
   position: absolute;
   bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
   background: var(--ink-900); color: var(--white);
-  font-size: 12px; font-weight: 400;
+  font-size: 12px; font-weight: 400; line-height: 1.55;
   padding: 8px 12px; border-radius: 8px;
-  white-space: nowrap; z-index: 100;
+  white-space: normal; word-break: break-word;
+  width: max-content; max-width: min(320px, 90vw);
+  z-index: 100;
   box-shadow: var(--shadow-md);
   pointer-events: none;
 }
