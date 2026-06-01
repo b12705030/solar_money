@@ -11,6 +11,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 type Props = {
   selectedAddress?: AddressOption | null;
   onBuildingFound?: (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => void;
+  onDetectionStart?: () => void;
   sunHour?: number; // local Taiwan time (UTC+8), 0–23
 };
 
@@ -87,11 +88,14 @@ async function refreshAllShadows(
   cacheRef: React.MutableRefObject<Map<number, HourData>>,
   buildingsRef: React.MutableRefObject<{ footprint: [number, number][]; height: number }[]>,
   setLoading?: (v: boolean) => void,
+  setBuildingLoading?: (v: boolean) => void,
 ): Promise<void> {
   _shadowFetchCtrl?.abort();
   _shadowFetchCtrl = new AbortController();
   const { signal } = _shadowFetchCtrl;
-  setLoading?.(true);
+  // Phase 1: show "building data loading" spinner, ensure shadow spinner is off
+  setBuildingLoading?.(true);
+  setLoading?.(false);
 
   const center = map.getCenter();
   const bounds = map.getBounds();
@@ -111,7 +115,7 @@ async function refreshAllShadows(
 
   console.log('[Shadow] buildings:', buildings.length);
 
-  // 更新自訂 3D 建物 layer（GBA 資料）
+  // 更新自訂 3D 建物 layer（GBA 資料）— buildings now visible on map
   const bldgSource3d = map.getSource('api-buildings-3d') as mapboxgl.GeoJSONSource | undefined;
   if (bldgSource3d && !signal.aborted) {
     const bldgFeats: GeoJSON.Feature[] = buildings.map(b => ({
@@ -121,9 +125,12 @@ async function refreshAllShadows(
     }));
     bldgSource3d.setData({ type: 'FeatureCollection', features: bldgFeats });
   }
+  // Buildings written to map — switch from building spinner to shadow spinner
+  setBuildingLoading?.(false);
 
   const source = map.getSource('all-shadows') as mapboxgl.GeoJSONSource | undefined;
   if (!source || signal.aborted || buildings.length === 0) { setLoading?.(false); return; }
+  setLoading?.(true);
 
   const bodyBase = { buildings, lat: center.lat, lng: center.lng };
 
@@ -245,14 +252,16 @@ async function fetchUsableFractionForBuilding(
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12 }: Props) {
+export default function MapView({ selectedAddress, onBuildingFound, onDetectionStart, sunHour = 12 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [buildingDataLoading, setBuildingDataLoading] = useState(false);
   const [shadowLoading, setShadowLoading] = useState(false);
   const [terrainEnabled, setTerrainEnabled] = useState(true);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const onBuildingFoundRef = useRef(onBuildingFound);
+  const onDetectionStartRef = useRef(onDetectionStart);
   const buildingCacheRef = useRef<BuildingCache | null>(null);
   const sunHourRef = useRef(sunHour);
   const moveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -260,6 +269,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
   const buildingsRef = useRef<{ footprint: [number, number][]; height: number }[]>([]);
 
   useEffect(() => { onBuildingFoundRef.current = onBuildingFound; });
+  useEffect(() => { onDetectionStartRef.current = onDetectionStart; });
   useEffect(() => { sunHourRef.current = sunHour; }, [sunHour]);
 
   // Map init — also adds the persistent all-shadows source/layer
@@ -396,6 +406,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
           properties: { height: primary.height },
         };
         const areaPing = Math.max(1, Math.round(polygonAreaM2(primary.footprint) * PING_PER_M2));
+        onDetectionStartRef.current?.();
         showHighlight(map, [primaryFeat]);
 
         const usableFraction = await fetchUsableFractionForBuilding(
@@ -405,11 +416,10 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
       });
 
       setMapLoaded(true);
-      setShadowLoading(true); // show spinner immediately; cleared when first idle calculation completes
 
       // style.load fires before building tiles are downloaded.
       // Wait for the first idle (all tiles loaded + rendered) before querying features.
-      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading));
+      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading));
     });
 
     // After panning, refresh shadows once tiles are settled.
@@ -418,8 +428,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
     map.on('moveend', () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       moveDebounceRef.current = setTimeout(() => {
-        setShadowLoading(true); // spinner only when calculation is actually about to start
-        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading);
+        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading);
         if (map.loaded()) {
           doRefresh();
         } else {
@@ -475,12 +484,33 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
   // Address change → detect building → show amber highlight
   useEffect(() => {
     if (!mapLoaded || !mapInstance) return;
+
+    if (!selectedAddress?.lat || !selectedAddress?.lng) {
+      if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
+      clearHighlight(mapInstance);
+      buildingCacheRef.current = null;
+      return;
+    }
+
+    const lngLat: [number, number] = [selectedAddress.lng, selectedAddress.lat];
+
+    // If the address came from our own detection callback (same lat/lng as cached building),
+    // just restore the highlight without re-running detection — avoids the flash where
+    // clearHighlight() removes the orange that showHighlight() just painted.
+    const cached = buildingCacheRef.current;
+    if (
+      cached &&
+      Math.abs(cached.lat - lngLat[1]) < 1e-6 &&
+      Math.abs(cached.lng - lngLat[0]) < 1e-6
+    ) {
+      showHighlight(mapInstance, cached.features);
+      return;
+    }
+
+    onDetectionStartRef.current?.();
     if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
     clearHighlight(mapInstance);
     buildingCacheRef.current = null;
-    if (!selectedAddress?.lat || !selectedAddress?.lng) return;
-
-    const lngLat: [number, number] = [selectedAddress.lng, selectedAddress.lat];
     markerRef.current = new mapboxgl.Marker({ color: '#2D6A4F' }).setLngLat(lngLat).addTo(mapInstance);
     mapInstance.flyTo({ center: lngLat, zoom: 17, pitch: 45, duration: 1500 });
 
@@ -543,7 +573,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {shadowLoading && (
+      {(buildingDataLoading || shadowLoading) && (
         <div style={{
           position: 'absolute', top: 10, left: 10, zIndex: 10,
           background: 'rgba(255,255,255,0.88)', borderRadius: 8,
@@ -556,7 +586,7 @@ export default function MapView({ selectedAddress, onBuildingFound, sunHour = 12
             border: '2px solid #ddd', borderTopColor: '#2D6A4F',
             animation: 'spin 0.6s linear infinite',
           }} />
-          計算陰影中…
+          {buildingDataLoading ? '正在載入建物資料…' : '計算陰影中…'}
         </div>
       )}
       {mapLoaded && (

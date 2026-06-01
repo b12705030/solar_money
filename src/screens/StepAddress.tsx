@@ -43,6 +43,7 @@ export default function StepAddress({
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [buildingInfo, setBuildingInfo] = useState<{ height: number; areaPing: number; usableFraction?: number } | null>(null);
+  const [buildingLoading, setBuildingLoading] = useState(false);
   const [sunHour, setSunHour] = useState<number>(() => {
     const h = new Date().getHours(); // local hour
     return h >= 6 && h <= 18 ? h : 12;
@@ -57,6 +58,7 @@ export default function StepAddress({
       setSuggestions([]);
       setShowSuggestions(false);
       setBuildingInfo(null);
+      setBuildingLoading(false);
     }
   }, [state.address, state.addressQuery]);
 
@@ -148,6 +150,7 @@ export default function StepAddress({
       const township = await fetchTownshipCode(info.lat, info.lng);
       if (township) update({ townshipCode: township.townshipCode, townshipName: township.townshipName });
     }
+    setBuildingLoading(false);
   };
 
   const a = state.address;
@@ -234,12 +237,34 @@ export default function StepAddress({
           {a && (
             <div style={{ marginTop: 28, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="body-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green-500)' }} />
-                已定位{buildingInfo ? '，偵測到建物資訊' : '，正在偵測建物…'}
+                {buildingLoading ? (
+                  <>
+                    <div style={{
+                      width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+                      border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-600)',
+                      animation: 'spin 0.6s linear infinite',
+                    }} />
+                    正在載入建物資料…
+                  </>
+                ) : (
+                  <>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: buildingInfo ? 'var(--green-500)' : 'var(--ink-300)' }} />
+                    {buildingInfo ? '已定位，偵測到建物資訊' : '已定位，正在偵測建物…'}
+                  </>
+                )}
               </div>
 
               {/* Building info row */}
-              {buildingInfo && (
+              {buildingLoading ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {[0, 1].map(i => (
+                    <div key={i} className="card" style={{ padding: '14px 18px', minHeight: 66 }}>
+                      <div style={{ height: 10, width: '45%', borderRadius: 4, background: 'var(--ink-100)', marginBottom: 10 }} />
+                      <div style={{ height: 22, width: '60%', borderRadius: 4, background: 'var(--ink-100)' }} />
+                    </div>
+                  ))}
+                </div>
+              ) : buildingInfo ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div className="card" style={{ padding: '14px 18px' }}>
                     <div className="caption" style={{ marginBottom: 4 }}>建物高度</div>
@@ -259,7 +284,7 @@ export default function StepAddress({
                     </div>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Roof area slider */}
               <div className="card" style={{ padding: 20 }}>
@@ -290,7 +315,12 @@ export default function StepAddress({
             borderRadius: 'var(--radius-lg)', overflow: 'hidden',
             border: '1px solid var(--ink-100)',
           }}>
-            <MapView selectedAddress={a} onBuildingFound={handleBuildingFound} sunHour={sunHour} />
+            <MapView
+              selectedAddress={a}
+              onBuildingFound={handleBuildingFound}
+              onDetectionStart={() => { setBuildingLoading(true); setBuildingInfo(null); }}
+              sunHour={sunHour}
+            />
           </div>
 
           {/* Shadow time slider — always visible, below the map */}
@@ -315,6 +345,27 @@ export default function StepAddress({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* GBA data source disclaimer — always visible, above footer nav */}
+      <div style={{
+        marginTop: 24, padding: '10px 14px', borderRadius: 10,
+        background: 'var(--ink-50)', border: '1px solid var(--ink-150)',
+        fontSize: 11, color: 'var(--ink-500)', lineHeight: 1.6,
+      }}>
+        <span style={{ fontWeight: 600, color: 'var(--ink-600)' }}>
+          建物資料來源：GlobalBuildingAtlas（機器學習衍生產品）
+        </span>
+        　建物形狀、高度與面積為機器學習模型推估值，可能存在誤差；部分建築物可能未收錄。
+        This is a machine-learning–derived product — errors may occur. Please refer to the{' '}
+        <a
+          href="https://github.com/zhu-xlab/GlobalBuildingAtlas"
+          target="_blank" rel="noopener noreferrer"
+          style={{ color: 'var(--green-700)', textDecoration: 'underline' }}
+        >
+          publication
+        </a>
+        {' '}for validation results and further details.
       </div>
     </div>
   );
