@@ -4,10 +4,13 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import pickle
 import uuid
 from datetime import date
 from pathlib import Path
 from typing import Optional
+
+import numpy as np
 
 import asyncpg
 
@@ -1280,19 +1283,22 @@ async def get_gba_buildings_from_db(
 # ─── GBA Polygon fallback（本地 NDJSON.gz 檔，DB miss 時使用）──────────────────
 
 # 位於 solar_money/data/taiwan_polygon_fallback.ndjson.gz
-_FALLBACK_PATH = Path(__file__).parent.parent / "data" / "taiwan_polygon_fallback.ndjson.gz"
+_FALLBACK_PATH     = Path(__file__).parent.parent / 'data' / 'taiwan_polygon_fallback.ndjson.gz'
+_FALLBACK_NPY_PATH = Path(__file__).parent.parent / 'data' / 'taiwan_polygon_fallback_bbox.npy'
+_FALLBACK_PKL_PATH = Path(__file__).parent.parent / 'data' / 'taiwan_polygon_fallback_data.pkl.gz'
 
-# 模組級單例快取：None = 未載入；[] = 檔案不存在/為空
+# 模組級單例快取
 _fallback_buildings: Optional[list] = None
+_fallback_bbox_arr: 'np.ndarray | None' = None   # float32 (N, 4): [min_lon, max_lon, min_lat, max_lat]
 
 
 def _load_polygon_fallback() -> list:
     """
-    首次呼叫時讀入 taiwan_polygon_fallback.ndjson.gz 至記憶體。
-    後續呼叫直接回傳快取（module-level singleton）。
-    若檔案不存在則靜默回傳空 list。
+    首次呼叫時載入 GBA fallback 資料：
+    - 快取存在且比來源 gz 新 → 從 .npy + .pkl.gz 快速載入（< 3 s）
+    - 否則 → 解析 NDJSON.gz → 建 numpy 陣列 → 寫入快取（一次性，10–30 s）
     """
-    global _fallback_buildings
+    global _fallback_buildings, _fallback_bbox_arr
     if _fallback_buildings is not None:
         return _fallback_buildings
 
@@ -1301,26 +1307,67 @@ def _load_polygon_fallback() -> list:
         _fallback_buildings = []
         return _fallback_buildings
 
-    size_mb = _FALLBACK_PATH.stat().st_size // 1024 // 1024
-    print(f'[DB] Loading Polygon fallback ({size_mb} MB gz)...', flush=True)
+    gz_mtime = _FALLBACK_PATH.stat().st_mtime
 
-    buildings = []
+    # ── Fast path: binary cache ─────────────────────────────────────────────────
+    if (
+        _FALLBACK_NPY_PATH.exists() and _FALLBACK_PKL_PATH.exists()
+        and _FALLBACK_NPY_PATH.stat().st_mtime >= gz_mtime
+        and _FALLBACK_PKL_PATH.stat().st_mtime >= gz_mtime
+    ):
+        try:
+            print('[DB] Loading Polygon fallback from binary cache...', flush=True)
+            _fallback_bbox_arr = np.load(str(_FALLBACK_NPY_PATH))
+            with gzip.open(_FALLBACK_PKL_PATH, 'rb') as f:
+                _fallback_buildings = pickle.load(f)
+            print(f'[DB] Polygon fallback ready: {len(_fallback_buildings):,} buildings (cached)', flush=True)
+            return _fallback_buildings
+        except Exception as e:
+            print(f'[DB] Cache load failed ({e}), rebuilding...', flush=True)
+            _fallback_buildings = None
+            _fallback_bbox_arr  = None
+
+    # ── Slow path: parse NDJSON.gz ──────────────────────────────────────────────
+    size_mb = _FALLBACK_PATH.stat().st_size // 1024 // 1024
+    print(f'[DB] Building Polygon fallback cache ({size_mb} MB gz, one-time)...', flush=True)
+
+    buildings: list = []
     try:
         with gzip.open(_FALLBACK_PATH, 'rt', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                obj = json.loads(line)
-                buildings.append(obj)
+                buildings.append(json.loads(line))
     except Exception as e:
         print(f'[DB] Polygon fallback load error: {e}', flush=True)
         _fallback_buildings = []
         return _fallback_buildings
 
+    # Build numpy bbox array (float32 saves ~50% vs float64, sufficient precision)
+    bbox_arr = np.array(
+        [[b['min_lon'], b['max_lon'], b['min_lat'], b['max_lat']] for b in buildings],
+        dtype=np.float32,
+    )
+
+    # Write binary cache
+    try:
+        np.save(str(_FALLBACK_NPY_PATH), bbox_arr)
+        with gzip.open(_FALLBACK_PKL_PATH, 'wb', compresslevel=1) as f:
+            pickle.dump(buildings, f, protocol=4)
+        print('[DB] Polygon fallback binary cache written.', flush=True)
+    except Exception as e:
+        print(f'[DB] Cache write failed (non-fatal): {e}', flush=True)
+
     _fallback_buildings = buildings
-    print(f'[DB] Polygon fallback loaded: {len(buildings):,} buildings', flush=True)
+    _fallback_bbox_arr  = bbox_arr
+    print(f'[DB] Polygon fallback ready: {len(buildings):,} buildings', flush=True)
     return _fallback_buildings
+
+
+def preload_polygon_fallback() -> None:
+    """公開預載函式，供 lifespan 在伺服器啟動時呼叫（run_in_executor）。"""
+    _load_polygon_fallback()
 
 
 def get_gba_buildings_from_fallback(
@@ -1329,25 +1376,29 @@ def get_gba_buildings_from_fallback(
 ) -> list[dict]:
     """
     從本地 NDJSON.gz fallback 以 bbox 查詢 Polygon 建物。
-    同步函式（已預載入記憶體，無 I/O）。
+    使用 numpy 向量化比較取代 Python for 迴圈，256 萬筆約 10 ms。
     回傳格式與 get_gba_buildings_from_db 相同。
     """
     all_buildings = _load_polygon_fallback()
-    if not all_buildings:
+    if not all_buildings or _fallback_bbox_arr is None:
         return []
 
-    results = []
-    for b in all_buildings:
-        # bbox overlap test: b.min_lon < max_lon AND b.max_lon > min_lon
-        #                    b.min_lat < max_lat AND b.max_lat > min_lat
-        if (b['min_lon'] < max_lon and b['max_lon'] > min_lon and
-                b['min_lat'] < max_lat and b['max_lat'] > min_lat):
-            results.append({
-                'build_id': b['id'],
-                'footprint': b['footprint'],
-                'height': float(b.get('height') or 10.0),
-            })
-    return results
+    arr = _fallback_bbox_arr
+    mask = (
+        (arr[:, 0] < max_lon) &   # min_lon < query max_lon
+        (arr[:, 1] > min_lon) &   # max_lon > query min_lon
+        (arr[:, 2] < max_lat) &   # min_lat < query max_lat
+        (arr[:, 3] > min_lat)     # max_lat > query min_lat
+    )
+    indices = np.where(mask)[0]
+    return [
+        {
+            'build_id': all_buildings[i]['id'],
+            'footprint': all_buildings[i]['footprint'],
+            'height': float(all_buildings[i].get('height') or 10.0),
+        }
+        for i in indices
+    ]
 
 
 # ─── 氣候資料查詢 ─────────────────────────────────────────────────────────────
