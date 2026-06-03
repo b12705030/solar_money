@@ -1,5 +1,5 @@
 import type { SolarState, ComputedResults, Region } from './types';
-import { TW_IRRADIANCE, DEFAULT_TEMP, DEFAULT_WIND } from './constants';
+import { TW_IRRADIANCE, DEFAULT_TEMP, DEFAULT_WIND, PANEL_GRADES } from './constants';
 
 // ─── Faiman (2008) T_cell model, as cited by Han et al. (2026) Eq.(13) ────────
 // T_cell = T_a + I_total / (U0 + U1·WS)
@@ -18,12 +18,12 @@ const FAIMAN = {
 const PV_YIELD_GOOD = Math.round(461 / 0.325);  // 1418 kWh/kWp/yr  (+1σ)
 const PV_YIELD_POOR = Math.round(373 / 0.325);  // 1148 kWh/kWp/yr  (−1σ)
 
-function calcMonthlyPR(ghiArr: number[], tempArr: number[], windArr: number[]): number[] {
+function calcMonthlyPR(ghiArr: number[], tempArr: number[], windArr: number[], basePR = FAIMAN.base_PR): number[] {
   return ghiArr.map((ghi, i) => {
     const T_cell = tempArr[i] + ghi / (FAIMAN.U0 + FAIMAN.U1 * windArr[i]);
     const eta = 1 + FAIMAN.gamma * (T_cell - FAIMAN.T_ref);
     // Clamp: physically reasonable range 0.50–1.00
-    return Math.min(1.0, Math.max(0.50, FAIMAN.base_PR * eta));
+    return Math.min(1.0, Math.max(0.50, basePR * eta));
   });
 }
 
@@ -89,6 +89,55 @@ export const SELF_USE_CAP: Record<string, number> = {
   away:   0.42, // 白天外出：夜間用電為主，自用率低
 };
 
+/**
+ * Scales down capacity so that out-of-pocket cost (after subsidy) stays within maxBudget.
+ * outOfPocket = capacity × (costPerKw − subsidyPerKw) ≤ maxBudget
+ */
+export function capCapacityToMaxBudget(
+  capacityFromRoof: number,
+  costPerKw: number,
+  subsidyPerKw: number,
+  maxBudget: number,
+): number {
+  const netCostPerKw = costPerKw - subsidyPerKw;
+  if (netCostPerKw <= 0) return capacityFromRoof;
+  const budgetCap = parseFloat((maxBudget / netCostPerKw).toFixed(1));
+  return Math.min(capacityFromRoof, budgetCap);
+}
+
+/** Forward: monthly kWh → monthly bill (NT$) using TPC tiered rates. */
+export function computeMonthlyBill(kwh: number, isSummer: boolean): number {
+  return Math.round(calcTpcBill(kwh, isSummer));
+}
+
+/**
+ * Inverse: bi-monthly bill (NT$) → monthly kWh.
+ * Taipower bills every 2 months, so divide by 2 to get the single-month amount,
+ * then walk the progressive tiers to find the corresponding kWh.
+ */
+export function convertBillToMonthlyKwh(biMonthlyBill: number, isSummer: boolean): number {
+  let remaining = biMonthlyBill / 2;
+  const tiers = isSummer ? TPC_SUMMER_TIERS : TPC_NON_SUMMER_TIERS;
+  let kwh = 0;
+  let prev = 0;
+  for (const {l, r} of tiers) {
+    if (l === Infinity) {
+      kwh += remaining / r;
+      break;
+    }
+    const band = l - prev;
+    const tierCost = band * r;
+    if (remaining <= tierCost) {
+      kwh += remaining / r;
+      break;
+    }
+    kwh += band;
+    remaining -= tierCost;
+    prev = l;
+  }
+  return Math.round(kwh);
+}
+
 export function computeResults(
   state: SolarState,
   monthlyGhi?: number[],
@@ -108,8 +157,12 @@ export function computeResults(
 
   const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
+  // Panel grade sets the base_PR fed into the Faiman model — higher grade = better thermal performance
+  const gradeEntry = PANEL_GRADES.find(g => g.id === (state.panelGrade ?? 'standard'));
+  const gradePerfRatio = gradeEntry?.perfRatio ?? FAIMAN.base_PR;
+
   // Dynamic PR per month via Faiman T_cell model (Han et al. 2026, Eq.13)
-  const monthlyPR = calcMonthlyPR(irr, temp, wind);
+  const monthlyPR = calcMonthlyPR(irr, temp, wind, gradePerfRatio);
 
   const monthlyKwh = irr.map((ghi, i) =>
     Math.round(capacity * ghi * daysInMonth[i] * monthlyPR[i] * goalAdj[i])
