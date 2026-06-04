@@ -44,6 +44,8 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [sendError, setSendError] = useState('');
+  const [reviewError, setReviewError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const authHeader = `Bearer ${user?.token ?? ''}`;
@@ -55,7 +57,17 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
       if (res.ok) {
         const data: UserInquiry[] = await res.json();
         setInquiries(data);
-        setSelected(prev => prev ? (data.find(i => i.id === prev.id) ?? data[0] ?? null) : (data[0] ?? null));
+        setSelected(prev => {
+          const next = prev ? (data.find(i => i.id === prev.id) ?? data[0] ?? null) : (data[0] ?? null);
+          // 自動選到的對話若有未讀，馬上 mark read
+          if (next && !prev) {
+            const lastVendorMsg = [...(next.messages ?? [])].reverse().find(m => m.sender === 'vendor');
+            if (lastVendorMsg && (!next.userLastReadAt || new Date(lastVendorMsg.createdAt) > new Date(next.userLastReadAt))) {
+              fetch(`${API}/api/me/inquiries/${next.id}/read`, { method: 'POST', headers: { Authorization: authHeader } });
+            }
+          }
+          return next;
+        });
       }
     } finally {
       setLoading(false);
@@ -71,6 +83,7 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
   const sendMessage = async () => {
     if (!input.trim() || !selected) return;
     setSending(true);
+    setSendError('');
     try {
       const res = await fetch(`${API}/api/me/inquiries/${selected.id}/message`, {
         method: 'POST',
@@ -84,7 +97,12 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
         ));
         setSelected(prev => prev ? { ...prev, messages: [...prev.messages, msg] } : prev);
         setInput('');
+      } else {
+        const detail = await res.json().catch(() => ({}));
+        setSendError(detail?.detail ?? '訊息傳送失敗，請重試');
       }
+    } catch {
+      setSendError('訊息傳送失敗，請重試');
     } finally {
       setSending(false);
     }
@@ -93,6 +111,7 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
   const submitReview = async () => {
     if (!selected || reviewRating === 0) return;
     setReviewSubmitting(true);
+    setReviewError('');
     try {
       const res = await fetch(`${API}/api/me/inquiries/${selected.id}/review`, {
         method: 'POST',
@@ -106,7 +125,14 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
         setReviewOpen(false);
         setReviewRating(0);
         setReviewComment('');
+      } else if (res.status === 409) {
+        setReviewError('已評價過此廠商');
+      } else {
+        const detail = await res.json().catch(() => ({}));
+        setReviewError(detail?.detail ?? '評價送出失敗，請重試');
       }
+    } catch {
+      setReviewError('評價送出失敗，請重試');
     } finally {
       setReviewSubmitting(false);
     }
@@ -250,7 +276,7 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
                         placeholder="(選填) 留下你的評價..."
                         style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--green-200)', fontSize: 13, boxSizing: 'border-box', background: '#fff', outline: 'none' }}
                       />
-                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                         <button
                           className="btn btn-primary"
                           disabled={reviewRating === 0 || reviewSubmitting}
@@ -259,7 +285,8 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
                         >
                           {reviewSubmitting ? '送出中⋯' : '送出評價'}
                         </button>
-                        <button className="btn-ghost" onClick={() => setReviewOpen(false)} style={{ fontSize: 13 }}>取消</button>
+                        <button className="btn-ghost" onClick={() => { setReviewOpen(false); setReviewError(''); }} style={{ fontSize: 13 }}>取消</button>
+                        {reviewError && <span style={{ fontSize: 12, color: 'var(--red-600, #dc2626)' }}>{reviewError}</span>}
                       </div>
                     </div>
                   )}
@@ -293,22 +320,25 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
                 </div>
 
                 {/* Input */}
-                <div className="inq-input-area">
-                  <textarea
-                    className="inq-textarea form-input"
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="輸入訊息… (Ctrl+Enter 送出)"
-                  />
-                  <button
-                    className="btn btn-primary"
-                    onClick={sendMessage}
-                    disabled={sending || !input.trim()}
-                    style={{ flexShrink: 0, alignSelf: 'center', borderRadius: 12, fontSize: 13, padding: '12px 16px' }}
-                  >
-                    {sending ? '送出中⋯' : '送出'}
-                  </button>
+                <div className="inq-input-area" style={{ flexDirection: 'column', gap: 6 }}>
+                  {sendError && <div style={{ fontSize: 12, color: 'var(--red-600, #dc2626)', paddingLeft: 4 }}>{sendError}</div>}
+                  <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                    <textarea
+                      className="inq-textarea form-input"
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="輸入訊息… (Ctrl+Enter 送出)"
+                    />
+                    <button
+                      className="btn btn-primary"
+                      onClick={sendMessage}
+                      disabled={sending || !input.trim()}
+                      style={{ flexShrink: 0, alignSelf: 'center', borderRadius: 12, fontSize: 13, padding: '12px 16px' }}
+                    >
+                      {sending ? '送出中⋯' : '送出'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

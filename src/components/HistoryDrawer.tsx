@@ -30,7 +30,7 @@ const COMPARE_ROWS: { key: keyof Assessment; label: string; fmt: (v: unknown) =>
   { key: 'roof_area_ping',  label: '屋頂坪數', fmt: v => v != null ? `${v} 坪` : '—' },
   { key: 'capacity_kw',     label: '裝機容量', fmt: v => v != null ? `${v} kWp` : '—' },
   { key: 'annual_kwh',      label: '年發電量', fmt: v => v != null ? `${(v as number).toLocaleString()} kWh` : '—' },
-  { key: 'self_sufficiency',label: '自給率',   fmt: v => v != null ? `${Math.round((v as number) * 100)} %` : '—' },
+  { key: 'self_sufficiency',label: '自給率',   fmt: v => v != null ? `${Math.round(v as number)} %` : '—' },
   { key: 'payback_years',   label: '回本年限', fmt: v => v != null ? `${v} 年` : '—' },
   { key: 'total_20yr',      label: '20年總收益', fmt: v => v != null ? `NT$ ${(v as number).toLocaleString()}` : '—' },
   { key: 'out_of_pocket',   label: '實際自付', fmt: v => v != null ? `NT$ ${(v as number).toLocaleString()}` : '—' },

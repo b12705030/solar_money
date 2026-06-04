@@ -75,7 +75,11 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
           headers: { Authorization: `Bearer ${user.token}` },
           body: form,
         });
-        if (uploadRes.ok) logoUrl = (await uploadRes.json()).url;
+        if (!uploadRes.ok) {
+          const detail = await uploadRes.json().catch(() => ({}));
+          throw new Error(detail?.detail ?? 'Logo 上傳失敗，請重試');
+        }
+        logoUrl = (await uploadRes.json()).url;
       }
 
       const res = await fetch(`${API}/api/vendors/apply`, {
@@ -210,7 +214,11 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
                     type="button"
                     className="btn-ghost"
                     style={{ fontSize: 13, padding: '4px 10px' }}
-                    onClick={() => setLogoPreview(null)}
+                    onClick={() => {
+                      if (logoPreview?.startsWith('blob:')) URL.revokeObjectURL(logoPreview);
+                      setLogoPreview(null);
+                      setLogoFile(null);
+                    }}
                   >
                     重新選擇
                   </button>

@@ -332,6 +332,24 @@ async def init_db() -> None:
             await conn.execute(
                 f"ALTER TABLE vendor_portfolios ADD COLUMN IF NOT EXISTS {col} {definition}"
             )
+        # CHECK constraints（idempotent：constraint 已存在時 DO NOTHING）
+        for stmt in [
+            """DO $$ BEGIN
+               IF NOT EXISTS (
+                 SELECT 1 FROM pg_constraint WHERE conname = 'accounts_role_check'
+               ) THEN
+                 ALTER TABLE accounts ADD CONSTRAINT accounts_role_check
+                   CHECK (role IN ('user', 'admin', 'vendor'));
+               END IF; END $$""",
+            """DO $$ BEGIN
+               IF NOT EXISTS (
+                 SELECT 1 FROM pg_constraint WHERE conname = 'vendors_application_status_check'
+               ) THEN
+                 ALTER TABLE vendors ADD CONSTRAINT vendors_application_status_check
+                   CHECK (application_status IN ('pending', 'approved', 'rejected'));
+               END IF; END $$""",
+        ]:
+            await conn.execute(stmt)
         await seed_vendors(conn)
 
 
@@ -970,21 +988,39 @@ async def update_vendor_profile(vendor_id: str, data: dict) -> bool:
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            result = await conn.execute(
-                '''UPDATE vendors
-                   SET name     = $2,
-                       phone    = $3,
-                       email    = $4,
-                       counties = $5,
-                       tags     = $6
-                   WHERE id = $1''',
-                vendor_id,
-                data.get('name'),
-                data.get('phone'),
-                data.get('email'),
-                data.get('counties') or [],
-                data.get('tags') or [],
-            )
+            if data.get('remove_logo'):
+                result = await conn.execute(
+                    '''UPDATE vendors
+                       SET name     = $2,
+                           phone    = $3,
+                           email    = $4,
+                           counties = $5,
+                           tags     = $6,
+                           logo_url = NULL
+                       WHERE id = $1''',
+                    vendor_id,
+                    data.get('name'),
+                    data.get('phone'),
+                    data.get('email'),
+                    data.get('counties') or [],
+                    data.get('tags') or [],
+                )
+            else:
+                result = await conn.execute(
+                    '''UPDATE vendors
+                       SET name     = $2,
+                           phone    = $3,
+                           email    = $4,
+                           counties = $5,
+                           tags     = $6
+                       WHERE id = $1''',
+                    vendor_id,
+                    data.get('name'),
+                    data.get('phone'),
+                    data.get('email'),
+                    data.get('counties') or [],
+                    data.get('tags') or [],
+                )
             return result.endswith('1')
     except Exception:
         return False
@@ -1049,22 +1085,37 @@ async def save_inquiry(vendor_id: str, account_id: str | None, data: dict) -> st
         return inquiry_id
 
 
-async def add_inquiry_message(inquiry_id: str, sender: str, content: str) -> dict:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            '''INSERT INTO inquiry_messages (inquiry_id, sender, content)
-               VALUES ($1::uuid, $2, $3) RETURNING id, created_at''',
-            inquiry_id, sender, content,
-        )
-        return {'id': str(row['id']), 'sender': sender, 'content': content,
-                'createdAt': row['created_at'].isoformat()}
-
-
-async def get_inquiry_messages(inquiry_id: str) -> list[dict]:
+async def add_user_inquiry_message(inquiry_id: str, account_id: str, content: str) -> dict | None:
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
+            inquiry = await conn.fetchrow(
+                'SELECT id FROM inquiries WHERE id = $1::uuid AND account_id = $2::uuid',
+                inquiry_id, account_id,
+            )
+            if not inquiry:
+                return None
+            row = await conn.fetchrow(
+                '''INSERT INTO inquiry_messages (inquiry_id, sender, content)
+                   VALUES ($1::uuid, $2, $3) RETURNING id, created_at''',
+                inquiry_id, 'user', content,
+            )
+            return {'id': str(row['id']), 'sender': 'user', 'content': content,
+                    'createdAt': row['created_at'].isoformat()}
+    except Exception:
+        return None
+
+
+async def get_user_inquiry_messages(inquiry_id: str, account_id: str) -> list[dict] | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            inquiry = await conn.fetchrow(
+                'SELECT id FROM inquiries WHERE id = $1::uuid AND account_id = $2::uuid',
+                inquiry_id, account_id,
+            )
+            if not inquiry:
+                return None
             rows = await conn.fetch(
                 'SELECT id, sender, content, created_at FROM inquiry_messages WHERE inquiry_id = $1::uuid ORDER BY created_at',
                 inquiry_id,
@@ -1072,7 +1123,7 @@ async def get_inquiry_messages(inquiry_id: str) -> list[dict]:
             return [{'id': str(r['id']), 'sender': r['sender'], 'content': r['content'],
                      'createdAt': r['created_at'].isoformat()} for r in rows]
     except Exception:
-        return []
+        return None
 
 
 async def get_vendor_inquiries_by_account(account_id: str, limit: int = 50) -> list[dict]:
@@ -1306,26 +1357,29 @@ async def mark_user_inquiry_read(inquiry_id: str, account_id: str) -> bool:
 
 async def add_vendor_review(
     inquiry_id: str, account_id: str, vendor_id: str, rating: int, comment: str | None
-) -> bool:
-    """新增評價，同時更新廠商平均評分。"""
+) -> str:
+    """新增評價，同時更新廠商平均評分。
+    回傳 'ok'、'not_found'（詢價不存在/不屬於此帳號）、'duplicate'（已評價過）。
+    """
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
-                # Verify the inquiry belongs to this account and vendor
                 inq = await conn.fetchrow(
                     'SELECT id FROM inquiries WHERE id = $1::uuid AND account_id = $2::uuid AND vendor_id = $3',
                     inquiry_id, account_id, vendor_id,
                 )
                 if not inq:
-                    return False
-                await conn.execute(
+                    return 'not_found'
+                row = await conn.fetchrow(
                     '''INSERT INTO vendor_reviews (vendor_id, inquiry_id, account_id, rating, comment)
                        VALUES ($1, $2::uuid, $3::uuid, $4, $5)
-                       ON CONFLICT (inquiry_id) DO NOTHING''',
+                       ON CONFLICT (inquiry_id) DO NOTHING
+                       RETURNING id''',
                     vendor_id, inquiry_id, account_id, rating, comment,
                 )
-                # Recalculate vendor average rating
+                if not row:
+                    return 'duplicate'
                 await conn.execute(
                     '''UPDATE vendors v
                        SET rating       = sub.avg_rating,
@@ -1339,9 +1393,9 @@ async def add_vendor_review(
                        WHERE v.id = $1''',
                     vendor_id,
                 )
-        return True
+        return 'ok'
     except Exception:
-        return False
+        return 'not_found'
 
 
 async def update_vendor_logo(vendor_id: str, logo_url: str) -> bool:

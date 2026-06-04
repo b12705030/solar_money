@@ -128,6 +128,11 @@ export default function VendorPage() {
               onStatusChange={(id, s) =>
                 setInquiries(prev => prev.map(i => i.id === id ? { ...i, caseStatus: s } : i))
               }
+              onMessageSent={(id, msg) =>
+                setInquiries(prev => prev.map(i =>
+                  i.id === id ? { ...i, messages: [...(i.messages ?? []), msg] } : i
+                ))
+              }
               onMarkRead={(id) => {
                 setInquiries(prev => prev.map(i =>
                   i.id === id ? { ...i, vendorLastReadAt: new Date().toISOString() } : i
@@ -274,6 +279,7 @@ function ProfileEditForm({
   const [tags,        setTags]        = useState(vendor.tags.join('、'));
   const [logoPreview, setLogoPreview] = useState<string | null>(vendor.logoUrl);
   const [logoFile,    setLogoFile]    = useState<File | null>(null);
+  const [removeLogo,  setRemoveLogo]  = useState(false);
   const [saving,      setSaving]      = useState(false);
   const [msg,         setMsg]         = useState('');
 
@@ -285,6 +291,7 @@ function ProfileEditForm({
     if (!file) return;
     setLogoFile(file);
     setLogoPreview(URL.createObjectURL(file));
+    setRemoveLogo(false);
   };
 
   const save = async () => {
@@ -306,6 +313,7 @@ function ProfileEditForm({
         headers: authHeaders,
         body: JSON.stringify({
           name, phone, email, counties,
+          remove_logo: removeLogo,
           tags: tags.split(/[、,，\s]+/).map(t => t.trim()).filter(Boolean),
         }),
       });
@@ -345,7 +353,12 @@ function ProfileEditForm({
               <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleLogoChange} style={{ display: 'none' }} />
             </label>
             {logoPreview && (
-              <button type="button" className="btn-ghost" style={{ fontSize: 13, padding: '4px 10px' }} onClick={() => setLogoPreview(null)}>
+              <button type="button" className="btn-ghost" style={{ fontSize: 13, padding: '4px 10px' }} onClick={() => {
+                if (logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview);
+                setLogoPreview(null);
+                setLogoFile(null);
+                setRemoveLogo(true);
+              }}>
                 移除
               </button>
             )}
@@ -567,7 +580,11 @@ function AddPortfolioForm({
           headers: { Authorization: authHeaders.Authorization },
           body: form,
         });
-        if (uploadRes.ok) photoUrl = (await uploadRes.json()).url;
+        if (!uploadRes.ok) {
+          const detail = await uploadRes.json().catch(() => ({}));
+          throw new Error(detail?.detail ?? '照片上傳失敗，請重試');
+        }
+        photoUrl = (await uploadRes.json()).url;
       }
       const res = await fetch(`${API}/api/me/vendor/portfolios`, {
         method: 'POST',
@@ -612,7 +629,11 @@ function AddPortfolioForm({
               <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} style={{ display: 'none' }} />
             </label>
             {photo && (
-              <button type="button" className="btn-ghost" style={{ fontSize: 13 }} onClick={() => setPhoto(null)}>移除</button>
+              <button type="button" className="btn-ghost" style={{ fontSize: 13 }} onClick={() => {
+                URL.revokeObjectURL(photo);
+                setPhoto(null);
+                setPhotoFile(null);
+              }}>移除</button>
             )}
           </div>
         </div>
@@ -654,11 +675,12 @@ function AddPortfolioForm({
 // ── Inquiries Tab — chat-style ───────────────────────────────────────────────
 
 function InquiriesTab({
-  inquiries, authHeaders, onStatusChange, onMarkRead,
+  inquiries, authHeaders, onStatusChange, onMessageSent, onMarkRead,
 }: {
   inquiries: Inquiry[];
   authHeaders: Record<string, string>;
   onStatusChange: (id: string, s: CaseStatus) => void;
+  onMessageSent: (id: string, msg: InquiryMessage) => void;
   onMarkRead: (id: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -747,9 +769,10 @@ function InquiriesTab({
               inquiry={selected}
               authHeaders={authHeaders}
               onStatusChange={(s) => onStatusChange(selected.id, s)}
-              onReplySent={(reply) =>
-                onStatusChange(selected.id, selected.caseStatus === 'new' ? 'contacted' : selected.caseStatus)
-              }
+              onReplySent={(msg) => {
+                onMessageSent(selected.id, msg);
+                if (selected.caseStatus === 'new') onStatusChange(selected.id, 'contacted');
+              }}
             />
           ) : (
             <div className="inq-chat-empty">選擇左側聯絡人查看對話</div>
@@ -766,7 +789,7 @@ function ChatWindow({
   inquiry: Inquiry;
   authHeaders: Record<string, string>;
   onStatusChange: (s: CaseStatus) => void;
-  onReplySent: (reply: string) => void;
+  onReplySent: (msg: InquiryMessage) => void;
 }) {
   const [replyText,    setReplyText]    = useState('');
   const [localMessages, setLocalMessages] = useState<import('@/lib/types').InquiryMessage[]>(inquiry.messages ?? []);
@@ -788,7 +811,7 @@ function ChatWindow({
       const newMsg: InquiryMessage = data;
       setLocalMessages(prev => [...prev, newMsg]);
       setReplyText('');
-      onReplySent(replyText.trim());
+      onReplySent(newMsg);
       // auto-advance status
       if (localStatus === 'new') {
         await updateStatus('contacted');
@@ -801,13 +824,21 @@ function ChatWindow({
   };
 
   const updateStatus = async (s: CaseStatus) => {
+    const prev = localStatus;
     setLocalStatus(s);
     onStatusChange(s);
-    await fetch(`${API}/api/me/vendor/inquiries/${inquiry.id}/status`, {
-      method: 'PATCH',
-      headers: authHeaders,
-      body: JSON.stringify({ status: s }),
-    }).catch(() => {});
+    try {
+      const res = await fetch(`${API}/api/me/vendor/inquiries/${inquiry.id}/status`, {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify({ status: s }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setLocalStatus(prev);
+      onStatusChange(prev);
+      setErr('狀態更新失敗，請重試');
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

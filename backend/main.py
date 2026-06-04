@@ -26,7 +26,8 @@ from botocore.config import Config
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+import re as _re
+from pydantic import BaseModel, field_validator
 
 def _r2_client():
     return boto3.client(
@@ -38,14 +39,34 @@ def _r2_client():
         region_name='auto',
     )
 
-async def upload_logo_to_r2(file: UploadFile) -> str:
-    ext = (file.filename or 'logo').rsplit('.', 1)[-1].lower() or 'png'
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+_IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
+    (b'\xff\xd8\xff', 'image/jpeg'),
+    (b'\x89PNG',      'image/png'),
+    (b'RIFF',         'image/webp'),
+]
+
+
+async def _read_and_validate_image(file: UploadFile) -> tuple[bytes, str]:
+    """Read upload, enforce size limit and magic-byte check. Returns (data, mime)."""
+    data = await file.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail='檔案超過 5 MB 上限')
+    for magic, mime in _IMAGE_SIGNATURES:
+        if data[:len(magic)] == magic:
+            if mime == 'image/webp' and data[8:12] != b'WEBP':
+                continue
+            return data, mime
+    raise HTTPException(status_code=415, detail='僅接受 JPEG、PNG、WebP 圖片')
+
+
+async def upload_logo_to_r2(data: bytes, mime: str) -> str:
+    ext = mime.split('/')[-1].replace('jpeg', 'jpg')
     key = f'logos/{uuid.uuid4().hex}.{ext}'
     bucket = os.environ['R2_BUCKET_NAME']
-    data = await file.read()
     loop = __import__('asyncio').get_event_loop()
     await loop.run_in_executor(None, lambda: _r2_client().put_object(
-        Bucket=bucket, Key=key, Body=data, ContentType=file.content_type or 'image/png',
+        Bucket=bucket, Key=key, Body=data, ContentType=mime,
     ))
     return f'{os.environ["R2_PUBLIC_URL"].rstrip("/")}/{key}'
 
@@ -67,7 +88,7 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
                  update_vendor_logo, update_vendor_profile,
-                 add_inquiry_message, get_inquiry_messages, mark_user_inquiry_read,
+                 add_user_inquiry_message, get_user_inquiry_messages, mark_user_inquiry_read,
                  mark_vendor_inquiry_read)
 from .mada import topsis
 from .shadow import (compute_bbox_shadows, compute_optimal_tilt,
@@ -105,9 +126,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title='Solar Money API', version='0.1.0', lifespan=lifespan)
 
-_ADMIN_SECRET = os.environ.get('ADMIN_SECRET', 'dev-admin-secret')
-if _ADMIN_SECRET == 'dev-admin-secret':
-    print('[Admin] 警告：ADMIN_SECRET 未設定，使用開發預設值 dev-admin-secret')
+_ADMIN_SECRET = os.environ.get('ADMIN_SECRET', '')
+if not _ADMIN_SECRET:
+    if os.environ.get('ALLOW_DEV_ADMIN_SECRET') == '1':
+        _ADMIN_SECRET = 'dev-admin-secret'
+        print('[Admin] 警告：ADMIN_SECRET 未設定，使用開發預設值（ALLOW_DEV_ADMIN_SECRET=1）')
+    else:
+        raise RuntimeError(
+            'ADMIN_SECRET 環境變數未設定。'
+            '若為本地開發，請設定 ALLOW_DEV_ADMIN_SECRET=1 以使用預設值。'
+        )
 
 _CORS_ORIGINS_ENV = os.environ.get('CORS_ORIGINS', '')
 _CORS_ORIGINS = (
@@ -150,18 +178,25 @@ def compute_shadow(req: ShadowRequest):
 
 # ─── All-buildings shadow for a bounding box ─────────────────────────────────
 
+_SHADOW_MAX_BUILDINGS = 500
+_SHADOW_MAX_BBOX_DEG = 2000 / 111_320 * 2  # 與 /api/buildings 對齊
+
 @app.get('/api/shadows')
 async def get_all_shadows(
     min_lon: float = Query(...),
     min_lat: float = Query(...),
     max_lon: float = Query(...),
     max_lat: float = Query(...),
-    local_hour: int = Query(...),
+    local_hour: int = Query(..., ge=0, le=23),
 ):
     """
     Fetch OSM buildings inside the bbox, compute their shadow polygons via pvlib,
     and return a GeoJSON FeatureCollection.
     """
+    if max_lon <= min_lon or max_lat <= min_lat:
+        raise HTTPException(status_code=400, detail='bbox 座標順序錯誤')
+    if (max_lon - min_lon) > _SHADOW_MAX_BBOX_DEG or (max_lat - min_lat) > _SHADOW_MAX_BBOX_DEG:
+        raise HTTPException(status_code=400, detail='bbox 範圍過大')
     center_lat = (min_lat + max_lat) / 2
     center_lon = (min_lon + max_lon) / 2
 
@@ -184,9 +219,23 @@ class BuildingFeature(BaseModel):
 
 class ShadowFromFeaturesRequest(BaseModel):
     buildings: List[BuildingFeature]
-    lat: float   # viewport center, for solar position
+    lat: float
     lng: float
     local_hour: int
+
+    @field_validator('buildings')
+    @classmethod
+    def buildings_limit(cls, v: List[BuildingFeature]) -> List[BuildingFeature]:
+        if len(v) > _SHADOW_MAX_BUILDINGS:
+            raise ValueError(f'buildings 最多 {_SHADOW_MAX_BUILDINGS} 筆')
+        return v
+
+    @field_validator('local_hour')
+    @classmethod
+    def hour_range(cls, v: int) -> int:
+        if not (0 <= v <= 23):
+            raise ValueError('local_hour 需在 0–23 之間')
+        return v
 
 
 @app.post('/api/shadows/precompute')
@@ -334,6 +383,11 @@ async def api_get_buildings(
     - 點+半徑：?lat=...&lng=...&radius_m=...（預設 300m）
     """
     if min_lon is not None and min_lat is not None and max_lon is not None and max_lat is not None:
+        if max_lon <= min_lon or max_lat <= min_lat:
+            raise HTTPException(status_code=400, detail='bbox 座標順序錯誤（max 必須大於 min）')
+        _MAX_BBOX_DEG = 2000 / 111_320 * 2  # 與 radius_m 上限對齊（直徑 ~0.036°）
+        if (max_lon - min_lon) > _MAX_BBOX_DEG or (max_lat - min_lat) > _MAX_BBOX_DEG:
+            raise HTTPException(status_code=400, detail='bbox 範圍過大，請縮小視口')
         bbox = (min_lon, min_lat, max_lon, max_lat)
     elif lat is not None and lng is not None:
         pad = radius_m / 111_320
@@ -730,6 +784,35 @@ class VendorUpdateRequest(BaseModel):
     email: str
     counties: List[str]
     tags: List[str]
+    remove_logo: bool = False
+
+    @field_validator('name')
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('公司名稱不可空白')
+        return v.strip()
+
+    @field_validator('email')
+    @classmethod
+    def email_format(cls, v: str) -> str:
+        if v and not _re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', v):
+            raise ValueError('Email 格式不正確')
+        return v
+
+    @field_validator('counties')
+    @classmethod
+    def at_least_one_county(cls, v: List[str]) -> List[str]:
+        if not v:
+            raise ValueError('至少需選擇一個服務縣市')
+        return v
+
+    @field_validator('tags')
+    @classmethod
+    def tags_limit(cls, v: List[str]) -> List[str]:
+        if len(v) > 10:
+            raise ValueError('標籤最多 10 個')
+        return [t[:20] for t in v]  # 單標籤最長 20 字
 
 
 class PortfolioCreateRequest(BaseModel):
@@ -739,6 +822,27 @@ class PortfolioCreateRequest(BaseModel):
     completedYear: Optional[int] = None
     photoUrl: Optional[str] = None
     description: Optional[str] = None
+
+    @field_validator('title', 'meta')
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('不可空白')
+        return v.strip()
+
+    @field_validator('capacityKw')
+    @classmethod
+    def capacity_non_negative(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
+            raise ValueError('容量不可為負數')
+        return v
+
+    @field_validator('completedYear')
+    @classmethod
+    def year_range(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and not (1990 <= v <= 2035):
+            raise ValueError('完工年份需在 1990–2035 之間')
+        return v
 
 
 class InquiryStatusRequest(BaseModel):
@@ -763,9 +867,6 @@ class ReviewRequest(BaseModel):
     rating: int
     comment: Optional[str] = None
 
-
-class LogoUploadRequest(BaseModel):
-    logo_url: str  # base64 data URL
 
 
 @app.get('/api/me/vendor')
@@ -838,6 +939,9 @@ async def vendor_inquire(
             account_id = decode_token(creds.credentials)
         except ValueError:
             pass
+    vendor = await get_vendor_detail(vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='找不到廠商或廠商尚未通過審核')
     inquiry_id = await save_inquiry(vendor_id, account_id, req.model_dump())
     return {'id': inquiry_id}
 
@@ -861,7 +965,8 @@ async def me_upload_logo(
     vendor = await get_my_vendor(account_id)
     if not vendor:
         raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
-    logo_url = await upload_logo_to_r2(file)
+    data, mime = await _read_and_validate_image(file)
+    logo_url = await upload_logo_to_r2(data, mime)
     ok = await update_vendor_logo(vendor['id'], logo_url)
     if not ok:
         raise HTTPException(status_code=500, detail='上傳失敗')
@@ -873,10 +978,13 @@ async def me_upload_image(
     file: UploadFile = File(...),
     account_id: str = Depends(current_user_id),
 ):
-    """通用圖片上傳（logo、作品集照片等），回傳 R2 公開 URL。"""
+    """通用圖片上傳（logo、作品集照片等），回傳 R2 公開 URL。
+    此端點供申請流程使用，申請提交前即需上傳 logo，故不要求已有申請記錄。
+    防濫用依賴 file 驗證（5 MB 上限 + magic bytes）。"""
     if not os.environ.get('R2_ACCOUNT_ID'):
         raise HTTPException(status_code=503, detail='圖片儲存服務未設定')
-    url = await upload_logo_to_r2(file)
+    data, mime = await _read_and_validate_image(file)
+    url = await upload_logo_to_r2(data, mime)
     return {'url': url}
 
 
@@ -898,6 +1006,8 @@ async def me_vendor_inquiry_status(
     return {'ok': True, 'status': req.status}
 
 
+_FREE_LEADS_LIMIT = 3  # free 方案最多預覽筆數
+
 @app.get('/api/me/vendor/leads')
 async def me_vendor_leads(
     account_id: str = Depends(current_user_id),
@@ -908,7 +1018,16 @@ async def me_vendor_leads(
         raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
     if not vendor.get('counties'):
         return []
-    return await get_potential_leads(vendor['id'], vendor['counties'], limit)
+    is_paid = vendor.get('subscriptionStatus') not in (None, 'free', 'mock')
+    fetch_limit = limit if is_paid else _FREE_LEADS_LIMIT
+    leads = await get_potential_leads(vendor['id'], vendor['counties'], fetch_limit)
+    if not is_paid:
+        # free 方案：遮蔽個資，只留技術參數讓廠商評估是否升級
+        leads = [
+            {**lead, 'accountEmail': None, 'address': lead.get('county')}
+            for lead in leads
+        ]
+    return leads
 
 
 @app.post('/api/me/vendor/inquiries/{inquiry_id}/reply')
@@ -945,9 +1064,11 @@ async def me_add_review(
 ):
     if not (1 <= req.rating <= 5):
         raise HTTPException(status_code=422, detail='評分需介於 1 到 5 之間')
-    ok = await add_vendor_review(inquiry_id, account_id, req.vendor_id, req.rating, req.comment)
-    if not ok:
-        raise HTTPException(status_code=404, detail='找不到詢價記錄，或已評價過')
+    result = await add_vendor_review(inquiry_id, account_id, req.vendor_id, req.rating, req.comment)
+    if result == 'not_found':
+        raise HTTPException(status_code=404, detail='找不到詢價記錄')
+    if result == 'duplicate':
+        raise HTTPException(status_code=409, detail='已評價過此廠商')
     return {'ok': True}
 
 
@@ -962,7 +1083,12 @@ async def me_add_inquiry_message(
     account_id: str = Depends(current_user_id),
 ):
     """用戶對已有詢價追加訊息。"""
-    msg = await add_inquiry_message(inquiry_id, 'user', req.content.strip())
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(status_code=422, detail='訊息內容不可為空')
+    msg = await add_user_inquiry_message(inquiry_id, account_id, content)
+    if msg is None:
+        raise HTTPException(status_code=404, detail='找不到詢價或無權限')
     return msg
 
 
@@ -971,7 +1097,10 @@ async def me_inquiry_messages(
     inquiry_id: str,
     account_id: str = Depends(current_user_id),
 ):
-    return await get_inquiry_messages(inquiry_id)
+    messages = await get_user_inquiry_messages(inquiry_id, account_id)
+    if messages is None:
+        raise HTTPException(status_code=404, detail='找不到詢價或無權限')
+    return messages
 
 
 @app.post('/api/me/inquiries/{inquiry_id}/read', status_code=204)
