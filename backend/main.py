@@ -566,9 +566,10 @@ class AccountRoleRequest(BaseModel):
 @app.get('/api/vendors', response_model=List[VendorResponse])
 async def vendors(
     county: Optional[str] = Query(None),
-    limit: int = Query(3, le=10),
+    limit: int = Query(3, le=50),
+    offset: int = Query(0, ge=0),
 ):
-    return await list_vendors(county, limit)
+    return await list_vendors(county, limit, offset)
 
 
 @app.post('/api/vendors/apply', status_code=201)

@@ -40,6 +40,7 @@ export default function TopBar({ onHome, onLoginClick, onHistoryClick, onInboxCl
         <Link href="/map" className="topbar-map-link" style={{ fontSize: 13, color: 'var(--ink-600)', textDecoration: 'none', padding: '4px 8px' }}>
           <Map size={13} strokeWidth={1.8} style={{ verticalAlign: 'middle', marginRight: 4 }} />地區分析
         </Link>
+        <Link href="/vendors" className="btn-outline-sm" style={{ textDecoration: 'none' }}>找廠商</Link>
         {/* 只有未登入或 user 角色才顯示廠商入駐 */}
         {(!user || user.role === 'user') && (
           <button className="btn-outline-sm" onClick={onVendorApplyClick}>廠商入駐</button>

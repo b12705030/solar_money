@@ -564,7 +564,8 @@ async def get_account_assessments(account_id: str, limit: int = 20) -> list[dict
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 '''SELECT id, address, county, annual_kwh, payback_years,
-                          out_of_pocket, capacity_kw, created_at
+                          out_of_pocket, capacity_kw, created_at,
+                          roof_area_ping, self_sufficiency, total_20yr, goal
                    FROM assessments
                    WHERE account_id = $1::uuid
                    ORDER BY created_at DESC LIMIT $2''',
@@ -614,7 +615,7 @@ async def get_user_assessments(user_id: str, limit: int = 10) -> list[dict]:
 
 # ─── 廠商推薦 ────────────────────────────────────────────────────────────────
 
-async def list_vendors(county: str | None = None, limit: int = 3) -> list[dict]:
+async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 0) -> list[dict]:
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -635,9 +636,10 @@ async def list_vendors(county: str | None = None, limit: int = 3) -> list[dict]:
                        ) p ON TRUE
                        WHERE v.approved = TRUE AND $1 = ANY(v.counties)
                        ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
-                       LIMIT $2''',
+                       LIMIT $2 OFFSET $3''',
                     county,
                     limit,
+                    offset,
                 )
             else:
                 rows = await conn.fetch(
@@ -656,8 +658,9 @@ async def list_vendors(county: str | None = None, limit: int = 3) -> list[dict]:
                        ) p ON TRUE
                        WHERE v.approved = TRUE
                        ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
-                       LIMIT $1''',
+                       LIMIT $1 OFFSET $2''',
                     limit,
+                    offset,
                 )
             return [
                 {
