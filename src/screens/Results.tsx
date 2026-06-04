@@ -343,7 +343,9 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const [vendorsVisible, setVendorsVisible] = useState(false);
   const [recommendedVendors, setRecommendedVendors] = useState<VendorRecommendation[]>([]);
   const [vendorsLoading, setVendorsLoading] = useState(false);
+  const [vendorsLoadingMore, setVendorsLoadingMore] = useState(false);
   const [vendorsError, setVendorsError] = useState(false);
+  const [vendorsHasMore, setVendorsHasMore] = useState(false);
   const [vendorDetailOpen, setVendorDetailOpen] = useState(false);
   const [vendorDetail, setVendorDetail] = useState<VendorDetail | null>(null);
   const [vendorDetailLoading, setVendorDetailLoading] = useState(false);
@@ -403,13 +405,15 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
   useEffect(() => {
     const controller = new AbortController();
-    const params = state.county ? `?county=${encodeURIComponent(state.county)}&limit=3` : '?limit=3';
+    const county = state.county ? `&county=${encodeURIComponent(state.county)}` : '';
     setVendorsLoading(true);
     setVendorsError(false);
-    fetch(`${API_URL}/api/vendors${params}`, { signal: controller.signal })
+    fetch(`${API_URL}/api/vendors?limit=3${county}`, { signal: controller.signal })
       .then(res => (res.ok ? res.json() : Promise.reject(new Error('vendors request failed'))))
       .then((vendors: VendorRecommendation[]) => {
-        setRecommendedVendors(Array.isArray(vendors) ? vendors : []);
+        const list = Array.isArray(vendors) ? vendors : [];
+        setRecommendedVendors(list);
+        setVendorsHasMore(list.length === 3);
       })
       .catch(err => {
         if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -422,6 +426,21 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
     return () => controller.abort();
   }, [state.county]);
+
+  const loadMoreVendors = () => {
+    const county = state.county ? `&county=${encodeURIComponent(state.county)}` : '';
+    const offset = recommendedVendors.length;
+    setVendorsLoadingMore(true);
+    fetch(`${API_URL}/api/vendors?limit=9&offset=${offset}${county}`)
+      .then(res => (res.ok ? res.json() : Promise.reject()))
+      .then((more: VendorRecommendation[]) => {
+        const list = Array.isArray(more) ? more : [];
+        setRecommendedVendors(prev => [...prev, ...list]);
+        setVendorsHasMore(list.length === 9);
+      })
+      .catch(() => {})
+      .finally(() => setVendorsLoadingMore(false));
+  };
 
   useEffect(() => {
     if (!user || !anonymousUserId || !assessmentStored || claimedAccountId === user.id) return;
@@ -1248,16 +1267,36 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             <div className="vendor-state">目前尚無服務 {state.county ?? '你所在地區'} 的廠商。</div>
           )}
           {!vendorsLoading && !vendorsError && recommendedVendors.length > 0 && (
-            <div className="vendor-grid">
-              {recommendedVendors.map(vendor => (
-                <VendorCard
-                  key={vendor.id}
-                  vendor={vendor}
-                  onContact={handleVendorContact}
-                  onDetail={handleVendorDetail}
-                />
-              ))}
-            </div>
+            <>
+              <div className="vendor-grid">
+                {recommendedVendors.map(vendor => (
+                  <VendorCard
+                    key={vendor.id}
+                    vendor={vendor}
+                    onContact={handleVendorContact}
+                    onDetail={handleVendorDetail}
+                  />
+                ))}
+              </div>
+              {vendorsHasMore && (
+                <button
+                  onClick={loadMoreVendors}
+                  disabled={vendorsLoadingMore}
+                  style={{
+                    display: 'block', width: '100%', marginTop: 12,
+                    padding: '12px 0', borderRadius: 'var(--radius-md)',
+                    border: '1px dashed var(--green-300)',
+                    background: 'transparent', cursor: 'pointer',
+                    fontSize: 13, fontWeight: 500, color: 'var(--green-700)',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--green-50)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  {vendorsLoadingMore ? '載入中…' : '查看更多廠商 ↓'}
+                </button>
+              )}
+            </>
           )}
         </div>
       )}
