@@ -175,28 +175,28 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 {/* Chat header */}
                 <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--ink-100)', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
-                    <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>{selected.vendorName}</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-400)', overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0 }}>
-                      {selected.address && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{selected.address}</span>}
-                      {selected.capacityKw > 0 && <span style={{ flexShrink: 0 }}>{selected.capacityKw} kWp</span>}
-                      {selected.annualKwh > 0 && <span style={{ flexShrink: 0 }}>{Math.round(selected.annualKwh).toLocaleString()} kWh/年</span>}
-                    </span>
-                  </div>
-                  {selected.vendorRating > 0 && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 12 }}>
-                      <span style={{ color: 'var(--ink-400)' }}>廠商評分</span>
-                      <span style={{ display: 'inline-flex', gap: 1 }}>
-                        {[1,2,3,4,5].map(n => (
-                          <Star key={n} size={11} strokeWidth={1.5}
-                            fill={n <= Math.round(selected.vendorRating) ? '#f59e0b' : 'none'}
-                            color={n <= Math.round(selected.vendorRating) ? '#f59e0b' : '#d1d5db'} />
-                        ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{selected.vendorName}</span>
+                    {selected.vendorRating > 0 && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 12, flexShrink: 0 }}>
+                        <span style={{ display: 'inline-flex', gap: 1 }}>
+                          {[1,2,3,4,5].map(n => (
+                            <Star key={n} size={11} strokeWidth={1.5}
+                              fill={n <= Math.round(selected.vendorRating) ? '#f59e0b' : 'none'}
+                              color={n <= Math.round(selected.vendorRating) ? '#f59e0b' : '#d1d5db'} />
+                          ))}
+                        </span>
+                        <span style={{ fontWeight: 600, color: '#f59e0b' }}>{selected.vendorRating.toFixed(1)}</span>
+                        {selected.vendorReviewCount > 0 && <span style={{ color: 'var(--ink-400)' }}>（{selected.vendorReviewCount} 則評價）</span>}
                       </span>
-                      <span style={{ fontWeight: 600, color: '#f59e0b' }}>{selected.vendorRating.toFixed(1)}</span>
-                      {selected.vendorReviewCount > 0 && <span style={{ color: 'var(--ink-400)' }}>（{selected.vendorReviewCount} 則評價）</span>}
-                    </div>
-                  )}
+                    )}
+                  </div>
+                  <div className="inq-house-chips" style={{ marginTop: 6 }}>
+                    {selected.address && <span>{selected.address}</span>}
+                    {selected.capacityKw > 0 && <span>{selected.capacityKw} kWp</span>}
+                    {selected.annualKwh > 0 && <span>{Math.round(selected.annualKwh).toLocaleString()} kWh/年</span>}
+                    {selected.paybackYears > 0 && <span>回本 {selected.paybackYears.toFixed(1)} 年</span>}
+                  </div>
                   {selected.messages.some(m => m.sender === 'vendor') && !selected.reviewId && (
                     <button
                       className="btn-outline-sm"
