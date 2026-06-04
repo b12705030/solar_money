@@ -29,6 +29,7 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
   const [counties, setCounties] = useState<string[]>([]);
   const [licenseNote, setLicenseNote] = useState('');
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoFile,    setLogoFile]    = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -54,9 +55,8 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setLogoPreview(reader.result as string);
-    reader.readAsDataURL(file);
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -65,6 +65,19 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
     setError('');
     setLoading(true);
     try {
+      // Upload logo to R2 first if provided
+      let logoUrl: string | null = null;
+      if (logoFile) {
+        const form = new FormData();
+        form.append('file', logoFile);
+        const uploadRes = await fetch(`${API}/api/me/vendor/upload-image`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${user.token}` },
+          body: form,
+        });
+        if (uploadRes.ok) logoUrl = (await uploadRes.json()).url;
+      }
+
       const res = await fetch(`${API}/api/vendors/apply`, {
         method: 'POST',
         headers: {
@@ -79,7 +92,7 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
           phone,
           counties,
           license_note: licenseNote || null,
-          logo_url: logoPreview || null,
+          logo_url: logoUrl,
         }),
       });
       if (!res.ok) {
