@@ -19,10 +19,35 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / '.env')
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+import uuid
+import boto3
+from botocore.config import Config
+
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+
+def _r2_client():
+    return boto3.client(
+        's3',
+        endpoint_url=f'https://{os.environ["R2_ACCOUNT_ID"]}.r2.cloudflarestorage.com',
+        aws_access_key_id=os.environ['R2_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['R2_SECRET_ACCESS_KEY'],
+        config=Config(signature_version='s3v4'),
+        region_name='auto',
+    )
+
+async def upload_logo_to_r2(file: UploadFile) -> str:
+    ext = (file.filename or 'logo').rsplit('.', 1)[-1].lower() or 'png'
+    key = f'logos/{uuid.uuid4().hex}.{ext}'
+    bucket = os.environ['R2_BUCKET_NAME']
+    data = await file.read()
+    loop = __import__('asyncio').get_event_loop()
+    await loop.run_in_executor(None, lambda: _r2_client().put_object(
+        Bucket=bucket, Key=key, Body=data, ContentType=file.content_type or 'image/png',
+    ))
+    return f'{os.environ["R2_PUBLIC_URL"].rstrip("/")}/{key}'
 
 import numpy as np
 import pandas as pd
@@ -36,7 +61,7 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  get_climate, get_climate_monthly, get_my_vendor, get_pool, get_potential_leads,
                  get_region_potential, get_all_region_potential,
                  get_shadow_cache, get_user_assessments, get_user_inquiries,
-                 get_vendor_detail, get_vendor_inquiries, init_db,
+                 get_vendor_detail, get_vendor_inquiries_by_account, init_db,
                  list_pending_vendor_applications, list_vendors, preload_polygon_fallback,
                  reject_vendor_application,
                  reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
@@ -762,10 +787,7 @@ async def me_vendor_inquiries(
     account_id: str = Depends(current_user_id),
     limit: int = Query(50, le=100),
 ):
-    vendor = await get_my_vendor(account_id)
-    if not vendor:
-        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
-    return await get_vendor_inquiries(vendor['id'], limit)
+    return await get_vendor_inquiries_by_account(account_id, limit)
 
 
 @app.post('/api/vendors/{vendor_id}/inquire', status_code=201)
@@ -795,16 +817,31 @@ async def me_application_status(account_id: str = Depends(current_user_id)):
 
 @app.post('/api/me/vendor/logo')
 async def me_upload_logo(
-    req: LogoUploadRequest,
+    file: UploadFile = File(...),
     account_id: str = Depends(current_user_id),
 ):
+    if not os.environ.get('R2_ACCOUNT_ID'):
+        raise HTTPException(status_code=503, detail='圖片儲存服務未設定')
     vendor = await get_my_vendor(account_id)
     if not vendor:
         raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
-    ok = await update_vendor_logo(vendor['id'], req.logo_url)
+    logo_url = await upload_logo_to_r2(file)
+    ok = await update_vendor_logo(vendor['id'], logo_url)
     if not ok:
         raise HTTPException(status_code=500, detail='上傳失敗')
-    return {'ok': True}
+    return {'url': logo_url}
+
+
+@app.post('/api/me/vendor/upload-image')
+async def me_upload_image(
+    file: UploadFile = File(...),
+    account_id: str = Depends(current_user_id),
+):
+    """通用圖片上傳（logo、作品集照片等），回傳 R2 公開 URL。"""
+    if not os.environ.get('R2_ACCOUNT_ID'):
+        raise HTTPException(status_code=503, detail='圖片儲存服務未設定')
+    url = await upload_logo_to_r2(file)
+    return {'url': url}
 
 
 @app.patch('/api/me/vendor/inquiries/{inquiry_id}/status')

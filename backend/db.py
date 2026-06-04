@@ -211,6 +211,14 @@ async def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS gba_buildings_bbox
                 ON gba_buildings (min_lon, max_lon, min_lat, max_lat);
+            CREATE INDEX IF NOT EXISTS idx_assessments_account_id
+                ON assessments (account_id);
+            CREATE INDEX IF NOT EXISTS idx_vendor_portfolios_vendor_id
+                ON vendor_portfolios (vendor_id);
+            CREATE INDEX IF NOT EXISTS idx_inquiries_vendor_id
+                ON inquiries (vendor_id);
+            CREATE INDEX IF NOT EXISTS idx_inquiries_account_id
+                ON inquiries (account_id);
             CREATE TABLE IF NOT EXISTS climate_monthly (
                 township_code TEXT             NOT NULL,
                 month         INT              NOT NULL,
@@ -900,45 +908,48 @@ async def get_my_vendor(account_id: str) -> dict | None:
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            vendor = await conn.fetchrow(
-                '''SELECT id, name, counties, rating, review_count, phone, email, tags,
-                          application_status, subscription_status, approved, logo_url
-                   FROM vendors WHERE account_id = $1::uuid''',
+            rows = await conn.fetch(
+                '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
+                          v.phone, v.email, v.tags, v.application_status,
+                          v.subscription_status, v.approved, v.logo_url,
+                          p.id AS p_id, p.title, p.meta, p.capacity_kw,
+                          p.completed_year, p.is_featured, p.photo_url, p.description
+                   FROM vendors v
+                   LEFT JOIN vendor_portfolios p ON p.vendor_id = v.id
+                   WHERE v.account_id = $1::uuid
+                   ORDER BY p.is_featured DESC NULLS LAST,
+                            p.completed_year DESC NULLS LAST,
+                            p.created_at DESC NULLS LAST''',
                 account_id,
             )
-            if not vendor:
+            if not rows:
                 return None
-            portfolios = await conn.fetch(
-                '''SELECT id, title, meta, capacity_kw, completed_year, is_featured, photo_url, description
-                   FROM vendor_portfolios WHERE vendor_id = $1
-                   ORDER BY is_featured DESC, completed_year DESC NULLS LAST, created_at DESC''',
-                str(vendor['id']),
-            )
+            v = rows[0]
             return {
-                'id': str(vendor['id']),
-                'name': vendor['name'],
-                'counties': list(vendor['counties'] or []),
-                'rating': float(vendor['rating'] or 0),
-                'reviewCount': int(vendor['review_count'] or 0),
-                'phone': vendor['phone'] or '',
-                'email': vendor['email'] or '',
-                'tags': list(vendor['tags'] or []),
-                'applicationStatus': vendor['application_status'],
-                'subscriptionStatus': vendor['subscription_status'],
-                'approved': bool(vendor['approved']),
-                'logoUrl': vendor['logo_url'],
+                'id': str(v['id']),
+                'name': v['name'],
+                'counties': list(v['counties'] or []),
+                'rating': float(v['rating'] or 0),
+                'reviewCount': int(v['review_count'] or 0),
+                'phone': v['phone'] or '',
+                'email': v['email'] or '',
+                'tags': list(v['tags'] or []),
+                'applicationStatus': v['application_status'],
+                'subscriptionStatus': v['subscription_status'],
+                'approved': bool(v['approved']),
+                'logoUrl': v['logo_url'],
                 'portfolios': [
                     {
-                        'id': str(p['id']),
-                        'title': p['title'],
-                        'meta': p['meta'],
-                        'capacityKw': float(p['capacity_kw'] or 0),
-                        'completedYear': p['completed_year'],
-                        'isFeatured': bool(p['is_featured']),
-                        'photoUrl': p['photo_url'],
-                        'description': p['description'],
+                        'id': str(r['p_id']),
+                        'title': r['title'],
+                        'meta': r['meta'],
+                        'capacityKw': float(r['capacity_kw'] or 0),
+                        'completedYear': r['completed_year'],
+                        'isFeatured': bool(r['is_featured']),
+                        'photoUrl': r['photo_url'],
+                        'description': r['description'],
                     }
-                    for p in portfolios
+                    for r in rows if r['p_id'] is not None
                 ],
             }
     except Exception:
@@ -1021,6 +1032,44 @@ async def save_inquiry(vendor_id: str, account_id: str | None, data: dict) -> st
             data.get('message'),
         )
         return str(row['id'])
+
+
+async def get_vendor_inquiries_by_account(account_id: str, limit: int = 50) -> list[dict]:
+    """廠商查詢自己收到的詢價，直接用 account_id join，省去先查 vendor 的往返。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT i.id, i.address, i.county, i.capacity_kw, i.annual_kwh,
+                          i.payback_years, i.message, i.vendor_reply, i.replied_at,
+                          i.case_status, i.created_at, a.email AS inquirer_email
+                   FROM inquiries i
+                   JOIN vendors v ON v.id = i.vendor_id
+                   LEFT JOIN accounts a ON a.id = i.account_id
+                   WHERE v.account_id = $1::uuid
+                   ORDER BY i.created_at DESC
+                   LIMIT $2''',
+                account_id, limit,
+            )
+            return [
+                {
+                    'id': str(r['id']),
+                    'address': r['address'],
+                    'county': r['county'],
+                    'capacityKw': float(r['capacity_kw'] or 0),
+                    'annualKwh': float(r['annual_kwh'] or 0),
+                    'paybackYears': float(r['payback_years'] or 0),
+                    'message': r['message'],
+                    'vendorReply': r['vendor_reply'],
+                    'repliedAt': r['replied_at'].isoformat() if r['replied_at'] else None,
+                    'caseStatus': r['case_status'] or 'new',
+                    'inquirerEmail': r['inquirer_email'],
+                    'createdAt': r['created_at'].isoformat(),
+                }
+                for r in rows
+            ]
+    except Exception:
+        return []
 
 
 async def get_vendor_inquiries(vendor_id: str, limit: int = 50) -> list[dict]:
