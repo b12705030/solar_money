@@ -38,6 +38,16 @@ export default function StepUsage({
   const defaultBill = computeMonthlyBill(kwh, isSummer) * 2;
   const billAmount  = state.billAmount ?? defaultBill;
 
+  // Local raw string states so the user can clear/type without being snapped to min
+  const [billRaw,   setBillRaw]   = useState(String(Math.round(billAmount)));
+  const [kwhRaw,    setKwhRaw]    = useState(String(kwh));
+  const [billError, setBillError] = useState(false);
+  const [kwhError,  setKwhError]  = useState(false);
+
+  // Keep raw values in sync when external changes happen (season toggle, slider, etc.)
+  useEffect(() => { setBillRaw(String(Math.round(billAmount))); setBillError(false); }, [billAmount]);
+  useEffect(() => { setKwhRaw(String(kwh)); setKwhError(false); }, [kwh]);
+
   // Seed billAmount on first mount so season-change always has a value to invert
   useEffect(() => {
     if (inputMethod === 'bill' && state.billAmount == null) {
@@ -64,10 +74,10 @@ export default function StepUsage({
     update({ monthlyUsage: undefined });
   }
 
-  function onBillChange(value: number) {
-    const safe    = Math.max(50, value || 0);
-    const derived = convertBillToMonthlyKwh(safe, isSummer);
-    update({ billAmount: safe, monthlyKwh: derived });
+  function onBillBlur(value: number) {
+    if (!value || value < 50) { setBillError(true); return; }
+    setBillError(false);
+    update({ billAmount: value, monthlyKwh: convertBillToMonthlyKwh(value, isSummer) });
   }
 
   function onSeasonChange(season: 'summer' | 'nonSummer') {
@@ -152,19 +162,28 @@ export default function StepUsage({
                   <span style={{ fontSize: 24, color: 'var(--ink-500)', fontWeight: 500 }}>NT$</span>
                   <input
                     type="number" min="50" max="50000"
-                    value={billAmount}
-                    onChange={e => onBillChange(+e.target.value)}
+                    value={billRaw}
+                    onChange={e => { setBillRaw(e.target.value); setBillError(false); }}
+                    onBlur={e => onBillBlur(+e.target.value)}
                     className="num"
                     style={{
-                      fontSize: 60, fontWeight: 700, color: 'var(--green-700)',
+                      fontSize: 60, fontWeight: 700,
+                      color: billError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
                       border: 'none', outline: 'none', background: 'transparent',
                       width: 210, padding: 0,
                     }}
                   />
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
-                  每兩個月一張（台電雙月計費）
-                </div>
+                {billError && (
+                  <div style={{ fontSize: 12, color: 'var(--red-600, #dc2626)', marginTop: 4 }}>
+                    最低金額為 NT$50
+                  </div>
+                )}
+                {!billError && (
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
+                    每兩個月一張（台電雙月計費）
+                  </div>
+                )}
               </div>
 
               {/* Derived kWh */}
@@ -189,19 +208,31 @@ export default function StepUsage({
 
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 30 }}>
                 <input
-                  type="number" min="50" max="2000" value={kwh}
-                  onChange={e => update({ monthlyKwh: Math.max(50, Math.min(2000, +e.target.value || 0)) })}
+                  type="number" min="14" max="2000" value={kwhRaw}
+                  onChange={e => { setKwhRaw(e.target.value); setKwhError(false); }}
+                  onBlur={e => {
+                    const v = +e.target.value;
+                    if (!v || v < 14) { setKwhError(true); return; }
+                    setKwhError(false);
+                    update({ monthlyKwh: Math.min(2000, v) });
+                  }}
                   className="num"
                   style={{
-                    fontSize: 72, fontWeight: 700, color: 'var(--green-700)',
+                    fontSize: 72, fontWeight: 700,
+                    color: kwhError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
                     border: 'none', outline: 'none', background: 'transparent',
                     width: `${String(kwh).length + 0.3}ch`, padding: 0,
                   }}
                 />
                 <span style={{ fontSize: 22, color: 'var(--ink-500)', fontWeight: 500 }}>度 / 月</span>
               </div>
+              {kwhError && (
+                <div style={{ fontSize: 12, color: 'var(--red-600, #dc2626)', marginBottom: 8 }}>
+                  最低度數為 14 度
+                </div>
+              )}
 
-              <Slider min={100} max={1200} value={kwh} onChange={v => { update({ monthlyKwh: v }); if (!state.monthlyUsage) return; }} />
+              <Slider min={14} max={1200} value={kwh} onChange={v => { update({ monthlyKwh: v }); if (!state.monthlyUsage) return; }} />
               <div style={{ position: 'relative', height: 36, marginTop: 8 }}>
                 {([
                   { value: 100,  label: '100',    sub: '小家庭',   align: 'left'   },
@@ -209,7 +240,7 @@ export default function StepUsage({
                   { value: 700,  label: '700',    sub: '多人家庭', align: 'center' },
                   { value: 1200, label: '1,200+', sub: '大用電戶', align: 'right'  },
                 ] as const).map(({ value, label, sub, align }) => {
-                  const pct = (value - 100) / (1200 - 100) * 100;
+                  const pct = (value - 14) / (1200 - 14) * 100;
                   const left = `calc(${pct}% + ${(11 - pct * 0.22).toFixed(1)}px)`;
                   const transform = align === 'left' ? 'none' : align === 'right' ? 'translateX(-100%)' : 'translateX(-50%)';
                   return (
