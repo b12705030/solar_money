@@ -132,6 +132,8 @@ async function refreshAllShadows(
     }
   } catch { /* network error; buildings 留空 */ }
 
+  if (signal.aborted) { setBuildingLoading?.(false); setLoading?.(false); return; }
+
   console.log('[Shadow] buildings:', buildings.length);
 
   // 更新自訂 3D 建物 layer（GBA 資料）— buildings now visible on map
@@ -461,6 +463,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     setMapInstance(map);
     return () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
+      _shadowFetchCtrl?.abort();
       map.remove();
       mapDiv.remove();
       setMapInstance(null);
