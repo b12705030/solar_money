@@ -179,11 +179,10 @@ async def init_db() -> None:
                 capacity_kw   DOUBLE PRECISION,
                 annual_kwh    DOUBLE PRECISION,
                 payback_years DOUBLE PRECISION,
-                message       TEXT,
-                vendor_reply  TEXT,
-                replied_at    TIMESTAMPTZ,
-                case_status   TEXT        NOT NULL DEFAULT 'new',
-                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                case_status         TEXT        NOT NULL DEFAULT 'new',
+                user_last_read_at   TIMESTAMPTZ,
+                vendor_last_read_at TIMESTAMPTZ,
+                created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             CREATE TABLE IF NOT EXISTS vendor_reviews (
                 id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -319,10 +318,9 @@ async def init_db() -> None:
                 f"ALTER TABLE vendors ADD COLUMN IF NOT EXISTS {col} {definition}"
             )
         for col, definition in [
-            ('message',      'TEXT'),
-            ('vendor_reply', 'TEXT'),
-            ('replied_at',   'TIMESTAMPTZ'),
-            ('case_status',  "TEXT NOT NULL DEFAULT 'new'"),
+            ('case_status',         "TEXT NOT NULL DEFAULT 'new'"),
+            ('user_last_read_at',   'TIMESTAMPTZ'),
+            ('vendor_last_read_at', 'TIMESTAMPTZ'),
         ]:
             await conn.execute(
                 f"ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS {col} {definition}"
@@ -1031,8 +1029,8 @@ async def save_inquiry(vendor_id: str, account_id: str | None, data: dict) -> st
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             '''INSERT INTO inquiries
-               (vendor_id, account_id, address, county, capacity_kw, annual_kwh, payback_years, message)
-               VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8)
+               (vendor_id, account_id, address, county, capacity_kw, annual_kwh, payback_years)
+               VALUES ($1, $2::uuid, $3, $4, $5, $6, $7)
                RETURNING id''',
             vendor_id,
             account_id,
@@ -1041,10 +1039,8 @@ async def save_inquiry(vendor_id: str, account_id: str | None, data: dict) -> st
             data.get('capacity_kw'),
             data.get('annual_kwh'),
             data.get('payback_years'),
-            data.get('message'),
         )
         inquiry_id = str(row['id'])
-        # Write initial user message into inquiry_messages
         if data.get('message'):
             await conn.execute(
                 'INSERT INTO inquiry_messages (inquiry_id, sender, content) VALUES ($1::uuid, $2, $3)',
@@ -1086,16 +1082,35 @@ async def get_vendor_inquiries_by_account(account_id: str, limit: int = 50) -> l
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 '''SELECT i.id, i.address, i.county, i.capacity_kw, i.annual_kwh,
-                          i.payback_years, i.message, i.vendor_reply, i.replied_at,
-                          i.case_status, i.created_at, a.email AS inquirer_email
+                          i.payback_years, i.case_status, i.created_at, i.vendor_last_read_at,
+                          a.email AS inquirer_email
                    FROM inquiries i
                    JOIN vendors v ON v.id = i.vendor_id
                    LEFT JOIN accounts a ON a.id = i.account_id
                    WHERE v.account_id = $1::uuid
-                   ORDER BY i.created_at DESC
+                   ORDER BY (
+                     SELECT MAX(m.created_at) FROM inquiry_messages m WHERE m.inquiry_id = i.id
+                   ) DESC NULLS LAST, i.created_at DESC
                    LIMIT $2''',
                 account_id, limit,
             )
+            inquiry_ids = [str(r['id']) for r in rows]
+            msg_rows: list = []
+            if inquiry_ids:
+                msg_rows = await conn.fetch(
+                    '''SELECT inquiry_id, id, sender, content, created_at
+                       FROM inquiry_messages
+                       WHERE inquiry_id = ANY($1::uuid[])
+                       ORDER BY created_at''',
+                    inquiry_ids,
+                )
+            msgs_by_inquiry: dict = {}
+            for m in msg_rows:
+                key = str(m['inquiry_id'])
+                msgs_by_inquiry.setdefault(key, []).append({
+                    'id': str(m['id']), 'sender': m['sender'],
+                    'content': m['content'], 'createdAt': m['created_at'].isoformat(),
+                })
             return [
                 {
                     'id': str(r['id']),
@@ -1104,12 +1119,11 @@ async def get_vendor_inquiries_by_account(account_id: str, limit: int = 50) -> l
                     'capacityKw': float(r['capacity_kw'] or 0),
                     'annualKwh': float(r['annual_kwh'] or 0),
                     'paybackYears': float(r['payback_years'] or 0),
-                    'message': r['message'],
-                    'vendorReply': r['vendor_reply'],
-                    'repliedAt': r['replied_at'].isoformat() if r['replied_at'] else None,
                     'caseStatus': r['case_status'] or 'new',
                     'inquirerEmail': r['inquirer_email'],
                     'createdAt': r['created_at'].isoformat(),
+                    'vendorLastReadAt': r['vendor_last_read_at'].isoformat() if r['vendor_last_read_at'] else None,
+                    'messages': msgs_by_inquiry.get(str(r['id']), []),
                 }
                 for r in rows
             ]
@@ -1123,8 +1137,8 @@ async def get_vendor_inquiries(vendor_id: str, limit: int = 50) -> list[dict]:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 '''SELECT i.id, i.address, i.county, i.capacity_kw, i.annual_kwh,
-                          i.payback_years, i.message, i.vendor_reply, i.replied_at,
-                          i.case_status, i.created_at, a.email AS inquirer_email
+                          i.payback_years, i.case_status, i.created_at,
+                          a.email AS inquirer_email
                    FROM inquiries i
                    LEFT JOIN accounts a ON a.id = i.account_id
                    WHERE i.vendor_id = $1
@@ -1157,9 +1171,6 @@ async def get_vendor_inquiries(vendor_id: str, limit: int = 50) -> list[dict]:
                     'capacityKw': float(r['capacity_kw'] or 0),
                     'annualKwh': float(r['annual_kwh'] or 0),
                     'paybackYears': float(r['payback_years'] or 0),
-                    'message': r['message'],
-                    'vendorReply': r['vendor_reply'],
-                    'repliedAt': r['replied_at'].isoformat() if r['replied_at'] else None,
                     'caseStatus': r['case_status'] or 'new',
                     'inquirerEmail': r['inquirer_email'],
                     'createdAt': r['created_at'].isoformat(),
@@ -1176,13 +1187,11 @@ async def reply_to_inquiry(inquiry_id: str, vendor_id: str, reply: str) -> dict 
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            result = await conn.execute(
-                '''UPDATE inquiries
-                   SET vendor_reply = $3, replied_at = NOW()
-                   WHERE id = $1::uuid AND vendor_id = $2''',
-                inquiry_id, vendor_id, reply,
+            exists = await conn.fetchval(
+                'SELECT 1 FROM inquiries WHERE id = $1::uuid AND vendor_id = $2',
+                inquiry_id, vendor_id,
             )
-            if not result.endswith('1'):
+            if not exists:
                 return None
             row = await conn.fetchrow(
                 '''INSERT INTO inquiry_messages (inquiry_id, sender, content)
@@ -1207,7 +1216,7 @@ async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 '''SELECT i.id, i.vendor_id, i.address, i.county, i.capacity_kw,
-                          i.annual_kwh, i.payback_years, i.created_at,
+                          i.annual_kwh, i.payback_years, i.created_at, i.user_last_read_at,
                           v.name AS vendor_name, v.logo_url AS vendor_logo,
                           v.rating AS vendor_rating, v.review_count AS vendor_review_count,
                           r.id AS review_id, r.rating AS review_rating, r.comment AS review_comment
@@ -1215,7 +1224,9 @@ async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
                    JOIN vendors v ON v.id = i.vendor_id
                    LEFT JOIN vendor_reviews r ON r.inquiry_id = i.id
                    WHERE i.account_id = $1::uuid
-                   ORDER BY i.created_at DESC
+                   ORDER BY (
+                     SELECT MAX(m.created_at) FROM inquiry_messages m WHERE m.inquiry_id = i.id
+                   ) DESC NULLS LAST, i.created_at DESC
                    LIMIT $2''',
                 account_id, limit,
             )
@@ -1250,6 +1261,7 @@ async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
                     'annualKwh': float(r['annual_kwh'] or 0),
                     'paybackYears': float(r['payback_years'] or 0),
                     'createdAt': r['created_at'].isoformat(),
+                    'userLastReadAt': r['user_last_read_at'].isoformat() if r['user_last_read_at'] else None,
                     'messages': msgs_by_inquiry.get(str(r['id']), []),
                     'reviewId': str(r['review_id']) if r['review_id'] else None,
                     'reviewRating': r['review_rating'],
@@ -1259,6 +1271,37 @@ async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
             ]
     except Exception:
         return []
+
+
+async def mark_vendor_inquiry_read(inquiry_id: str, account_id: str) -> bool:
+    """更新廠商最後已讀時間（透過 vendor.account_id 驗證權限）。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                '''UPDATE inquiries i SET vendor_last_read_at = NOW()
+                   FROM vendors v
+                   WHERE i.id = $1::uuid AND i.vendor_id = v.id AND v.account_id = $2::uuid''',
+                inquiry_id, account_id,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def mark_user_inquiry_read(inquiry_id: str, account_id: str) -> bool:
+    """更新用戶最後已讀時間。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                '''UPDATE inquiries SET user_last_read_at = NOW()
+                   WHERE id = $1::uuid AND account_id = $2::uuid''',
+                inquiry_id, account_id,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
 
 
 async def add_vendor_review(

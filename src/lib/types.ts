@@ -128,12 +128,10 @@ export interface Inquiry {
   capacityKw: number;
   annualKwh: number;
   paybackYears: number;
-  message: string | null;
-  vendorReply: string | null;
-  repliedAt: string | null;
   caseStatus: CaseStatus;
   inquirerEmail: string | null;
   createdAt: string;
+  vendorLastReadAt: string | null;
   messages: InquiryMessage[];
 }
 
@@ -179,6 +177,7 @@ export interface UserInquiry {
   annualKwh: number;
   paybackYears: number;
   createdAt: string;
+  userLastReadAt: string | null;
   messages: InquiryMessage[];
   reviewId: string | null;
   reviewRating: number | null;

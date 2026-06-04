@@ -67,7 +67,8 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
                  update_vendor_logo, update_vendor_profile,
-                 add_inquiry_message, get_inquiry_messages)
+                 add_inquiry_message, get_inquiry_messages, mark_user_inquiry_read,
+                 mark_vendor_inquiry_read)
 from .mada import topsis
 from .shadow import (compute_bbox_shadows, compute_optimal_tilt,
                      compute_shadows_from_features,
@@ -971,6 +972,22 @@ async def me_inquiry_messages(
     account_id: str = Depends(current_user_id),
 ):
     return await get_inquiry_messages(inquiry_id)
+
+
+@app.post('/api/me/inquiries/{inquiry_id}/read', status_code=204)
+async def me_mark_inquiry_read(
+    inquiry_id: str,
+    account_id: str = Depends(current_user_id),
+):
+    await mark_user_inquiry_read(inquiry_id, account_id)
+
+
+@app.post('/api/me/vendor/inquiries/{inquiry_id}/read', status_code=204)
+async def me_vendor_mark_inquiry_read(
+    inquiry_id: str,
+    account_id: str = Depends(current_user_id),
+):
+    await mark_vendor_inquiry_read(inquiry_id, account_id)
 
 
 # ─── 地區潛力排名（MADA / TOPSIS）────────────────────────────────────────────

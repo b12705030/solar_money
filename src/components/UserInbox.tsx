@@ -116,9 +116,21 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendMessage(); }
   };
 
+  const markRead = async (inq: UserInquiry) => {
+    await fetch(`${API}/api/me/inquiries/${inq.id}/read`, {
+      method: 'POST',
+      headers: { Authorization: authHeader },
+    });
+    const now = new Date().toISOString();
+    setInquiries(prev => prev.map(i => i.id === inq.id ? { ...i, userLastReadAt: now } : i));
+    setSelected(prev => prev?.id === inq.id ? { ...prev, userLastReadAt: now } : prev);
+  };
+
   const unread = (inq: UserInquiry) => {
-    const msgs = inq.messages;
-    return msgs.length > 0 && msgs[msgs.length - 1].sender === 'vendor' && !inq.reviewId;
+    const lastVendorMsg = [...inq.messages].reverse().find(m => m.sender === 'vendor');
+    if (!lastVendorMsg) return false;
+    if (!inq.userLastReadAt) return true;
+    return new Date(lastVendorMsg.createdAt) > new Date(inq.userLastReadAt);
   };
 
   return (
@@ -148,7 +160,7 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
                 return (
                   <div
                     key={inq.id}
-                    onClick={() => setSelected(inq)}
+                    onClick={() => { setSelected(inq); if (unread(inq)) markRead(inq); }}
                     style={{
                       padding: '12px 16px', cursor: 'pointer', display: 'flex', gap: 10, alignItems: 'center',
                       background: active ? 'var(--green-50)' : 'transparent',
@@ -161,9 +173,19 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inq.vendorName}</span>
                         {hasUnread && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--green-700)', flexShrink: 0 }} />}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>
-                        {new Date(inq.createdAt).toLocaleDateString('zh-TW')}
-                      </div>
+                      {(() => {
+                        const last = inq.messages[inq.messages.length - 1];
+                        return (
+                          <>
+                            <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {last ? (last.sender === 'vendor' ? '廠商：' : '') + last.content.slice(0, 28) + (last.content.length > 28 ? '…' : '') : '—'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>
+                              {last ? new Date(last.createdAt).toLocaleDateString('zh-TW') : new Date(inq.createdAt).toLocaleDateString('zh-TW')}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

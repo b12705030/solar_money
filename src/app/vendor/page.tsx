@@ -128,6 +128,12 @@ export default function VendorPage() {
               onStatusChange={(id, s) =>
                 setInquiries(prev => prev.map(i => i.id === id ? { ...i, caseStatus: s } : i))
               }
+              onMarkRead={(id) => {
+                setInquiries(prev => prev.map(i =>
+                  i.id === id ? { ...i, vendorLastReadAt: new Date().toISOString() } : i
+                ));
+                fetch(`${API}/api/me/vendor/inquiries/${id}/read`, { method: 'POST', headers: authHeaders() });
+              }}
             />
           )}
           {tab === 'leads' && (
@@ -648,11 +654,12 @@ function AddPortfolioForm({
 // ── Inquiries Tab — chat-style ───────────────────────────────────────────────
 
 function InquiriesTab({
-  inquiries, authHeaders, onStatusChange,
+  inquiries, authHeaders, onStatusChange, onMarkRead,
 }: {
   inquiries: Inquiry[];
   authHeaders: Record<string, string>;
   onStatusChange: (id: string, s: CaseStatus) => void;
+  onMarkRead: (id: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(
     inquiries.length > 0 ? inquiries[0].id : null,
@@ -690,37 +697,47 @@ function InquiriesTab({
         <div className="inq-shell">
           {/* Left: contact list */}
           <div className="inq-contacts-col">
-            {inquiries.map(inq => (
-              <div
-                key={inq.id}
-                className={`inq-contact-item${selectedId === inq.id ? ' inq-contact-item--active' : ''}`}
-                onClick={() => setSelectedId(inq.id)}
-              >
-                <div className="inq-contact-row">
-                  <div className="inq-contact-avatar">
-                    {inq.inquirerEmail ? inq.inquirerEmail[0].toUpperCase() : '?'}
+            {inquiries.map(inq => {
+              const lastMsg = inq.messages[inq.messages.length - 1];
+              const hasUnread = lastMsg?.sender === 'user' && (
+                !inq.vendorLastReadAt || new Date(lastMsg.createdAt) > new Date(inq.vendorLastReadAt)
+              );
+              const lastDate = lastMsg
+                ? new Date(lastMsg.createdAt).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })
+                : new Date(inq.createdAt).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
+              const preview = lastMsg
+                ? (lastMsg.sender === 'vendor' ? '我：' : '') + lastMsg.content.slice(0, 30) + (lastMsg.content.length > 30 ? '…' : '')
+                : `${inq.county ?? ''} ${inq.capacityKw > 0 ? `· ${inq.capacityKw} kWp` : ''}`.trim() || '詢價';
+              return (
+                <div
+                  key={inq.id}
+                  className={`inq-contact-item${selectedId === inq.id ? ' inq-contact-item--active' : ''}`}
+                  onClick={() => {
+                    setSelectedId(inq.id);
+                    if (hasUnread) onMarkRead(inq.id);
+                  }}
+                >
+                  <div className="inq-contact-row">
+                    <div className="inq-contact-avatar">
+                      {inq.inquirerEmail ? inq.inquirerEmail[0].toUpperCase() : '?'}
+                    </div>
+                    <div className="inq-contact-body">
+                      <div className="inq-contact-email" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>{inq.inquirerEmail ?? '匿名'}</span>
+                        {hasUnread && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--green-700)', flexShrink: 0 }} />}
+                      </div>
+                      <div className="inq-contact-preview">{preview}</div>
+                    </div>
                   </div>
-                  <div className="inq-contact-body">
-                    <div className="inq-contact-email">
-                      {inq.inquirerEmail ?? '匿名'}
-                    </div>
-                    <div className="inq-contact-preview">
-                      {inq.message
-                        ? inq.message.slice(0, 40) + (inq.message.length > 40 ? '…' : '')
-                        : `${inq.county ?? ''} ${inq.capacityKw > 0 ? `· ${inq.capacityKw} kWp` : ''}`.trim() || '詢價'}
-                    </div>
+                  <div className="inq-contact-footer">
+                    <span className={`inq-cs-badge ${CASE_STATUS_CLASS[inq.caseStatus]}`}>
+                      {CASE_STATUS_LABEL[inq.caseStatus]}
+                    </span>
+                    <span className="inq-contact-date">{lastDate}</span>
                   </div>
                 </div>
-                <div className="inq-contact-footer">
-                  <span className={`inq-cs-badge ${CASE_STATUS_CLASS[inq.caseStatus]}`}>
-                    {CASE_STATUS_LABEL[inq.caseStatus]}
-                  </span>
-                  <span className="inq-contact-date">
-                    {new Date(inq.createdAt).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Right: chat window */}
@@ -752,7 +769,7 @@ function ChatWindow({
   onReplySent: (reply: string) => void;
 }) {
   const [replyText,    setReplyText]    = useState('');
-  const [localMessages, setLocalMessages] = useState(inquiry.messages ?? []);
+  const [localMessages, setLocalMessages] = useState<import('@/lib/types').InquiryMessage[]>(inquiry.messages ?? []);
   const [localStatus,  setLocalStatus]  = useState<CaseStatus>(inquiry.caseStatus);
   const [saving,      setSaving]      = useState(false);
   const [err,         setErr]         = useState('');
