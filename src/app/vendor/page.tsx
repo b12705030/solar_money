@@ -83,9 +83,16 @@ export default function VendorPage() {
     } catch { /* ignore */ }
   }, [authHeaders]);
 
-  useEffect(() => { if (user?.role === 'vendor') fetchVendor(); }, [user, fetchVendor]);
-  useEffect(() => { if (tab === 'inquiries') fetchInquiries(); }, [tab, fetchInquiries]);
-  useEffect(() => { if (tab === 'leads') fetchLeads(); }, [tab, fetchLeads]);
+  useEffect(() => {
+    if (user?.role !== 'vendor') return;
+    // Kick off all three in parallel so tab switches are instant
+    fetchVendor();
+    fetchInquiries();
+    fetchLeads();
+  }, [user, fetchVendor, fetchInquiries, fetchLeads]);
+  // Only re-fetch on tab switch if data was cleared (e.g. after a mutation)
+  useEffect(() => { if (tab === 'inquiries' && inquiries.length === 0) fetchInquiries(); }, [tab, fetchInquiries, inquiries.length]);
+  useEffect(() => { if (tab === 'leads'     && leads.length    === 0) fetchLeads();    }, [tab, fetchLeads,    leads.length]);
 
   if (!mounted || !user) return null;
 
@@ -260,6 +267,7 @@ function ProfileEditForm({
   const [counties,    setCounties]    = useState<string[]>(vendor.counties);
   const [tags,        setTags]        = useState(vendor.tags.join('、'));
   const [logoPreview, setLogoPreview] = useState<string | null>(vendor.logoUrl);
+  const [logoFile,    setLogoFile]    = useState<File | null>(null);
   const [saving,      setSaving]      = useState(false);
   const [msg,         setMsg]         = useState('');
 
@@ -269,21 +277,23 @@ function ProfileEditForm({
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setLogoPreview(reader.result as string);
-    reader.readAsDataURL(file);
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
   };
 
   const save = async () => {
     setSaving(true); setMsg('');
     try {
-      // Upload logo if changed
-      if (logoPreview !== vendor.logoUrl) {
-        await fetch(`${API}/api/me/vendor/logo`, {
+      // Upload logo to R2 if a new file was selected
+      if (logoFile) {
+        const form = new FormData();
+        form.append('file', logoFile);
+        const res = await fetch(`${API}/api/me/vendor/logo`, {
           method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({ logo_url: logoPreview }),
+          headers: { Authorization: authHeaders.Authorization },
+          body: form,
         });
+        if (!res.ok) throw new Error('Logo 上傳失敗');
       }
       const res = await fetch(`${API}/api/me/vendor`, {
         method: 'PATCH',
@@ -526,22 +536,33 @@ function AddPortfolioForm({
   const [capKw,   setCapKw]   = useState('');
   const [year,    setYear]    = useState('');
   const [desc,    setDesc]    = useState('');
-  const [photo,   setPhoto]   = useState<string | null>(null);
-  const [adding,  setAdding]  = useState(false);
-  const [err,     setErr]     = useState('');
+  const [photo,      setPhoto]      = useState<string | null>(null);
+  const [photoFile,  setPhotoFile]  = useState<File | null>(null);
+  const [adding,     setAdding]     = useState(false);
+  const [err,        setErr]        = useState('');
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result as string);
-    reader.readAsDataURL(file);
+    setPhotoFile(file);
+    setPhoto(URL.createObjectURL(file));
   };
 
   const add = async () => {
     if (!title.trim() || !meta.trim()) { setErr('請填寫標題與說明'); return; }
     setAdding(true); setErr('');
     try {
+      let photoUrl: string | null = null;
+      if (photoFile) {
+        const form = new FormData();
+        form.append('file', photoFile);
+        const uploadRes = await fetch(`${API}/api/me/vendor/upload-image`, {
+          method: 'POST',
+          headers: { Authorization: authHeaders.Authorization },
+          body: form,
+        });
+        if (uploadRes.ok) photoUrl = (await uploadRes.json()).url;
+      }
       const res = await fetch(`${API}/api/me/vendor/portfolios`, {
         method: 'POST',
         headers: authHeaders,
@@ -549,7 +570,7 @@ function AddPortfolioForm({
           title: title.trim(), meta: meta.trim(),
           capacityKw: capKw ? parseFloat(capKw) : null,
           completedYear: year ? parseInt(year, 10) : null,
-          photoUrl: photo,
+          photoUrl,
           description: desc.trim() || null,
         }),
       });

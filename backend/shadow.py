@@ -644,19 +644,32 @@ async def get_buildings(
           footprint 來自 OSM 向量資料（精確），高度為 ML 估算值。
     OSM：最後手段（離島 / GBA 無覆蓋區域）。
     """
-    # ── 1. GBA DB（直接查詢，footprint 準確）────────────────────────────────
+    # ── 1. GBA DB + fallback ndjson（互補合併）───────────────────────────────
+    # DB 含 OSM-derived 建物；fallback ndjson 含 GBA ML-predicted 建物。
+    # 兩者互補：DB 有覆蓋的區域 fallback 也可能有 DB 沒有的細小建物，
+    # 因此永遠合併兩者，以 build_id 去重（DB 優先）。
     try:
-        gba_result = await get_gba_buildings_from_db(min_lon, min_lat, max_lon, max_lat)
-        if not gba_result:
-            gba_result = get_gba_buildings_from_fallback(min_lon, min_lat, max_lon, max_lat)
-        if gba_result:
-            print(f'[GBA] DB returned {len(gba_result)} buildings for bbox '
-                  f'({min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f})')
-            _log_bldg_sample('GBA', gba_result)
-            return gba_result
-        print(f'[GBA] DB + fallback: 0 buildings, falling through to OSM')
+        gba_db = await get_gba_buildings_from_db(min_lon, min_lat, max_lon, max_lat)
     except Exception as e:
         print(f'[GBA] DB query error: {type(e).__name__}: {e}')
+        gba_db = []
+
+    try:
+        fallback = get_gba_buildings_from_fallback(min_lon, min_lat, max_lon, max_lat)
+    except Exception as e:
+        print(f'[GBA] Fallback query error: {type(e).__name__}: {e}')
+        fallback = []
+
+    db_ids = {b['build_id'] for b in gba_db}
+    extra = [b for b in fallback if b['build_id'] not in db_ids]
+    gba_result = gba_db + extra
+
+    if gba_result:
+        print(f'[GBA] DB={len(gba_db)} fallback_extra={len(extra)} combined={len(gba_result)} '
+              f'bbox=({min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f})')
+        _log_bldg_sample('GBA', gba_result)
+        return gba_result
+    print(f'[GBA] DB + fallback: 0 buildings, falling through to OSM')
 
     # ── 2. OSM Overpass 立即 fallback ─────────────────────────────────────────
     print(f'[OSM] falling back to Overpass for bbox={min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f}')

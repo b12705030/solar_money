@@ -33,6 +33,12 @@ export interface SolarState {
   monthlyUsage?: number[];
   /** 日間用電習慣，決定自用比例上限 */
   selfUseHabit?: 'home' | 'normal' | 'away';
+  /** 帳單輸入模式：'bill' = 輸入帳單金額自動換算，'kwh' = 直接輸入度數 */
+  inputMethod?: 'bill' | 'kwh';
+  /** 台電雙月帳單金額（NT$），bill 模式下使用 */
+  billAmount?: number;
+  /** 帳單所在季節，決定夏月/非夏月費率 */
+  billSeason?: 'summer' | 'nonSummer';
 }
 
 export type Theme = 'forest' | 'ocean' | 'earth';

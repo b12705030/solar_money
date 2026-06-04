@@ -33,6 +33,7 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (!user) return;
+    // Fetch both in parallel on open so switching to inquiries tab is instant
     fetch(`${API}/api/me/assessments`, {
       headers: { Authorization: `Bearer ${user.token}` },
     })
@@ -43,6 +44,15 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
       .then((data: unknown) => setList(Array.isArray(data) ? data as Assessment[] : []))
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    setInquiriesLoading(true);
+    fetch(`${API}/api/me/inquiries`, {
+      headers: { Authorization: `Bearer ${user.token}` },
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: unknown) => setInquiries(Array.isArray(data) ? data as UserInquiry[] : []))
+      .catch(() => {})
+      .finally(() => setInquiriesLoading(false));
   }, [logout, user]);
 
   const toggleSelect = (id: string) =>

@@ -220,6 +220,14 @@ async def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_inquiry_messages_inquiry_id
                 ON inquiry_messages (inquiry_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_assessments_account_id
+                ON assessments (account_id);
+            CREATE INDEX IF NOT EXISTS idx_vendor_portfolios_vendor_id
+                ON vendor_portfolios (vendor_id);
+            CREATE INDEX IF NOT EXISTS idx_inquiries_vendor_id
+                ON inquiries (vendor_id);
+            CREATE INDEX IF NOT EXISTS idx_inquiries_account_id
+                ON inquiries (account_id);
             CREATE TABLE IF NOT EXISTS climate_monthly (
                 township_code TEXT             NOT NULL,
                 month         INT              NOT NULL,
@@ -909,45 +917,48 @@ async def get_my_vendor(account_id: str) -> dict | None:
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            vendor = await conn.fetchrow(
-                '''SELECT id, name, counties, rating, review_count, phone, email, tags,
-                          application_status, subscription_status, approved, logo_url
-                   FROM vendors WHERE account_id = $1::uuid''',
+            rows = await conn.fetch(
+                '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
+                          v.phone, v.email, v.tags, v.application_status,
+                          v.subscription_status, v.approved, v.logo_url,
+                          p.id AS p_id, p.title, p.meta, p.capacity_kw,
+                          p.completed_year, p.is_featured, p.photo_url, p.description
+                   FROM vendors v
+                   LEFT JOIN vendor_portfolios p ON p.vendor_id = v.id
+                   WHERE v.account_id = $1::uuid
+                   ORDER BY p.is_featured DESC NULLS LAST,
+                            p.completed_year DESC NULLS LAST,
+                            p.created_at DESC NULLS LAST''',
                 account_id,
             )
-            if not vendor:
+            if not rows:
                 return None
-            portfolios = await conn.fetch(
-                '''SELECT id, title, meta, capacity_kw, completed_year, is_featured, photo_url, description
-                   FROM vendor_portfolios WHERE vendor_id = $1
-                   ORDER BY is_featured DESC, completed_year DESC NULLS LAST, created_at DESC''',
-                str(vendor['id']),
-            )
+            v = rows[0]
             return {
-                'id': str(vendor['id']),
-                'name': vendor['name'],
-                'counties': list(vendor['counties'] or []),
-                'rating': float(vendor['rating'] or 0),
-                'reviewCount': int(vendor['review_count'] or 0),
-                'phone': vendor['phone'] or '',
-                'email': vendor['email'] or '',
-                'tags': list(vendor['tags'] or []),
-                'applicationStatus': vendor['application_status'],
-                'subscriptionStatus': vendor['subscription_status'],
-                'approved': bool(vendor['approved']),
-                'logoUrl': vendor['logo_url'],
+                'id': str(v['id']),
+                'name': v['name'],
+                'counties': list(v['counties'] or []),
+                'rating': float(v['rating'] or 0),
+                'reviewCount': int(v['review_count'] or 0),
+                'phone': v['phone'] or '',
+                'email': v['email'] or '',
+                'tags': list(v['tags'] or []),
+                'applicationStatus': v['application_status'],
+                'subscriptionStatus': v['subscription_status'],
+                'approved': bool(v['approved']),
+                'logoUrl': v['logo_url'],
                 'portfolios': [
                     {
-                        'id': str(p['id']),
-                        'title': p['title'],
-                        'meta': p['meta'],
-                        'capacityKw': float(p['capacity_kw'] or 0),
-                        'completedYear': p['completed_year'],
-                        'isFeatured': bool(p['is_featured']),
-                        'photoUrl': p['photo_url'],
-                        'description': p['description'],
+                        'id': str(r['p_id']),
+                        'title': r['title'],
+                        'meta': r['meta'],
+                        'capacityKw': float(r['capacity_kw'] or 0),
+                        'completedYear': r['completed_year'],
+                        'isFeatured': bool(r['is_featured']),
+                        'photoUrl': r['photo_url'],
+                        'description': r['description'],
                     }
-                    for p in portfolios
+                    for r in rows if r['p_id'] is not None
                 ],
             }
     except Exception:
@@ -1061,6 +1072,44 @@ async def get_inquiry_messages(inquiry_id: str) -> list[dict]:
             )
             return [{'id': str(r['id']), 'sender': r['sender'], 'content': r['content'],
                      'createdAt': r['created_at'].isoformat()} for r in rows]
+    except Exception:
+        return []
+
+
+async def get_vendor_inquiries_by_account(account_id: str, limit: int = 50) -> list[dict]:
+    """廠商查詢自己收到的詢價，直接用 account_id join，省去先查 vendor 的往返。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT i.id, i.address, i.county, i.capacity_kw, i.annual_kwh,
+                          i.payback_years, i.message, i.vendor_reply, i.replied_at,
+                          i.case_status, i.created_at, a.email AS inquirer_email
+                   FROM inquiries i
+                   JOIN vendors v ON v.id = i.vendor_id
+                   LEFT JOIN accounts a ON a.id = i.account_id
+                   WHERE v.account_id = $1::uuid
+                   ORDER BY i.created_at DESC
+                   LIMIT $2''',
+                account_id, limit,
+            )
+            return [
+                {
+                    'id': str(r['id']),
+                    'address': r['address'],
+                    'county': r['county'],
+                    'capacityKw': float(r['capacity_kw'] or 0),
+                    'annualKwh': float(r['annual_kwh'] or 0),
+                    'paybackYears': float(r['payback_years'] or 0),
+                    'message': r['message'],
+                    'vendorReply': r['vendor_reply'],
+                    'repliedAt': r['replied_at'].isoformat() if r['replied_at'] else None,
+                    'caseStatus': r['case_status'] or 'new',
+                    'inquirerEmail': r['inquirer_email'],
+                    'createdAt': r['created_at'].isoformat(),
+                }
+                for r in rows
+            ]
     except Exception:
         return []
 
@@ -1381,6 +1430,7 @@ _FALLBACK_PKL_PATH = Path(__file__).parent.parent / 'data' / 'taiwan_polygon_fal
 # 模組級單例快取
 _fallback_buildings: Optional[list] = None
 _fallback_bbox_arr: 'np.ndarray | None' = None   # float32 (N, 4): [min_lon, max_lon, min_lat, max_lat]
+_fallback_lock = __import__('threading').Lock()   # prevents double-load when background thread + request thread race
 
 
 def _load_polygon_fallback() -> list:
@@ -1388,72 +1438,77 @@ def _load_polygon_fallback() -> list:
     首次呼叫時載入 GBA fallback 資料：
     - 快取存在且比來源 gz 新 → 從 .npy + .pkl.gz 快速載入（< 3 s）
     - 否則 → 解析 NDJSON.gz → 建 numpy 陣列 → 寫入快取（一次性，10–30 s）
+    使用 threading.Lock + double-check pattern：背景執行緒載入時，若請求執行緒同時呼叫，
+    後者等待 lock 釋放後直接取得結果，不會啟動第二次載入。
     """
     global _fallback_buildings, _fallback_bbox_arr
     if _fallback_buildings is not None:
         return _fallback_buildings
-
-    if not _FALLBACK_PATH.exists():
-        print(f'[DB] Polygon fallback not found: {_FALLBACK_PATH}', flush=True)
-        _fallback_buildings = []
-        return _fallback_buildings
-
-    gz_mtime = _FALLBACK_PATH.stat().st_mtime
-
-    # ── Fast path: binary cache ─────────────────────────────────────────────────
-    if (
-        _FALLBACK_NPY_PATH.exists() and _FALLBACK_PKL_PATH.exists()
-        and _FALLBACK_NPY_PATH.stat().st_mtime >= gz_mtime
-        and _FALLBACK_PKL_PATH.stat().st_mtime >= gz_mtime
-    ):
-        try:
-            print('[DB] Loading Polygon fallback from binary cache...', flush=True)
-            _fallback_bbox_arr = np.load(str(_FALLBACK_NPY_PATH))
-            with gzip.open(_FALLBACK_PKL_PATH, 'rb') as f:
-                _fallback_buildings = pickle.load(f)
-            print(f'[DB] Polygon fallback ready: {len(_fallback_buildings):,} buildings (cached)', flush=True)
+    with _fallback_lock:
+        if _fallback_buildings is not None:   # double-check after acquiring lock
             return _fallback_buildings
+
+        if not _FALLBACK_PATH.exists():
+            print(f'[DB] Polygon fallback not found: {_FALLBACK_PATH}', flush=True)
+            _fallback_buildings = []
+            return _fallback_buildings
+
+        gz_mtime = _FALLBACK_PATH.stat().st_mtime
+
+        # ── Fast path: binary cache ─────────────────────────────────────────────────
+        if (
+            _FALLBACK_NPY_PATH.exists() and _FALLBACK_PKL_PATH.exists()
+            and _FALLBACK_NPY_PATH.stat().st_mtime >= gz_mtime
+            and _FALLBACK_PKL_PATH.stat().st_mtime >= gz_mtime
+        ):
+            try:
+                print('[DB] Loading Polygon fallback from binary cache...', flush=True)
+                _fallback_bbox_arr = np.load(str(_FALLBACK_NPY_PATH))
+                with gzip.open(_FALLBACK_PKL_PATH, 'rb') as f:
+                    _fallback_buildings = pickle.load(f)
+                print(f'[DB] Polygon fallback ready: {len(_fallback_buildings):,} buildings (cached)', flush=True)
+                return _fallback_buildings
+            except Exception as e:
+                print(f'[DB] Cache load failed ({e}), rebuilding...', flush=True)
+                _fallback_buildings = None
+                _fallback_bbox_arr  = None
+
+        # ── Slow path: parse NDJSON.gz ──────────────────────────────────────────────
+        size_mb = _FALLBACK_PATH.stat().st_size // 1024 // 1024
+        print(f'[DB] Building Polygon fallback cache ({size_mb} MB gz, one-time)...', flush=True)
+
+        buildings: list = []
+        try:
+            with gzip.open(_FALLBACK_PATH, 'rt', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    buildings.append(json.loads(line))
         except Exception as e:
-            print(f'[DB] Cache load failed ({e}), rebuilding...', flush=True)
-            _fallback_buildings = None
-            _fallback_bbox_arr  = None
+            print(f'[DB] Polygon fallback load error: {e}', flush=True)
+            _fallback_buildings = []
+            return _fallback_buildings
 
-    # ── Slow path: parse NDJSON.gz ──────────────────────────────────────────────
-    size_mb = _FALLBACK_PATH.stat().st_size // 1024 // 1024
-    print(f'[DB] Building Polygon fallback cache ({size_mb} MB gz, one-time)...', flush=True)
+        # Build numpy bbox array (float32 saves ~50% vs float64, sufficient precision)
+        bbox_arr = np.array(
+            [[b['min_lon'], b['max_lon'], b['min_lat'], b['max_lat']] for b in buildings],
+            dtype=np.float32,
+        )
 
-    buildings: list = []
-    try:
-        with gzip.open(_FALLBACK_PATH, 'rt', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                buildings.append(json.loads(line))
-    except Exception as e:
-        print(f'[DB] Polygon fallback load error: {e}', flush=True)
-        _fallback_buildings = []
+        # Write binary cache
+        try:
+            np.save(str(_FALLBACK_NPY_PATH), bbox_arr)
+            with gzip.open(_FALLBACK_PKL_PATH, 'wb', compresslevel=1) as f:
+                pickle.dump(buildings, f, protocol=4)
+            print('[DB] Polygon fallback binary cache written.', flush=True)
+        except Exception as e:
+            print(f'[DB] Cache write failed (non-fatal): {e}', flush=True)
+
+        _fallback_buildings = buildings
+        _fallback_bbox_arr  = bbox_arr
+        print(f'[DB] Polygon fallback ready: {len(buildings):,} buildings', flush=True)
         return _fallback_buildings
-
-    # Build numpy bbox array (float32 saves ~50% vs float64, sufficient precision)
-    bbox_arr = np.array(
-        [[b['min_lon'], b['max_lon'], b['min_lat'], b['max_lat']] for b in buildings],
-        dtype=np.float32,
-    )
-
-    # Write binary cache
-    try:
-        np.save(str(_FALLBACK_NPY_PATH), bbox_arr)
-        with gzip.open(_FALLBACK_PKL_PATH, 'wb', compresslevel=1) as f:
-            pickle.dump(buildings, f, protocol=4)
-        print('[DB] Polygon fallback binary cache written.', flush=True)
-    except Exception as e:
-        print(f'[DB] Cache write failed (non-fatal): {e}', flush=True)
-
-    _fallback_buildings = buildings
-    _fallback_bbox_arr  = bbox_arr
-    print(f'[DB] Polygon fallback ready: {len(buildings):,} buildings', flush=True)
-    return _fallback_buildings
 
 
 def preload_polygon_fallback() -> None:

@@ -37,6 +37,25 @@ function polygonAreaM2(coords: [number, number][]): number {
   return (Math.abs(area) / 2) * 110540 * (111320 * Math.cos(latRad));
 }
 
+// Squared distance from point to nearest point on a segment (avoids sqrt for comparisons)
+function pointToSegmentDistSq(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return (px - x1) ** 2 + (py - y1) ** 2;
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  return (px - (x1 + t * dx)) ** 2 + (py - (y1 + t * dy)) ** 2;
+}
+
+// Minimum squared distance from a point to any polygon edge
+function minDistSqToPolygon(point: [number, number], ring: [number, number][]): number {
+  let minD = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const d = pointToSegmentDistSq(point[0], point[1], ring[j][0], ring[j][1], ring[i][0], ring[i][1]);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
 function pointInPolygon(point: [number, number], ring: [number, number][]): boolean {
   const [px, py] = point;
   let inside = false;
@@ -390,11 +409,11 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
         let primary: { footprint: [number, number][]; height: number } | null =
           buildings.find(b => pointInPolygon(clickPt, b.footprint)) ?? null;
         if (!primary) {
+          // Fallback: nearest polygon edge distance (handles points in narrow lanes
+          // where the geocoded point is just outside the correct building's footprint)
           let minD = Infinity;
           for (const b of buildings) {
-            const cx = b.footprint.reduce((s, p) => s + p[0], 0) / b.footprint.length;
-            const cy = b.footprint.reduce((s, p) => s + p[1], 0) / b.footprint.length;
-            const d = (cx - clickPt[0]) ** 2 + (cy - clickPt[1]) ** 2;
+            const d = minDistSqToPolygon(clickPt, b.footprint);
             if (d < minD) { minD = d; primary = b; }
           }
         }
@@ -536,15 +555,15 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
         const { buildings: nearby }: { buildings: { footprint: [number, number][]; height: number }[] } = await res.json();
         if (!nearby?.length || abortCtrl.signal.aborted) return;
 
-        // 優先找包含點的建物，其次取最近 centroid
+        // 優先找包含點的建物，其次取最近 polygon 邊緣距離
+        // (polygon edge distance 優於 centroid distance：地理編碼點常落在巷道上，
+        //  狹長建物的邊緣比鄰近大棟建物的 centroid 更近，可避免選到錯誤建物)
         const point: [number, number] = lngLat;
         let primary = nearby.find(b => pointInPolygon(point, b.footprint)) ?? null;
         if (!primary) {
           let minD = Infinity;
           for (const b of nearby) {
-            const cx = b.footprint.reduce((s, p) => s + p[0], 0) / b.footprint.length;
-            const cy = b.footprint.reduce((s, p) => s + p[1], 0) / b.footprint.length;
-            const d = (cx - point[0]) ** 2 + (cy - point[1]) ** 2;
+            const d = minDistSqToPolygon(point, b.footprint);
             if (d < minD) { minD = d; primary = b; }
           }
         }

@@ -19,10 +19,35 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / '.env')
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+import uuid
+import boto3
+from botocore.config import Config
+
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+
+def _r2_client():
+    return boto3.client(
+        's3',
+        endpoint_url=f'https://{os.environ["R2_ACCOUNT_ID"]}.r2.cloudflarestorage.com',
+        aws_access_key_id=os.environ['R2_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['R2_SECRET_ACCESS_KEY'],
+        config=Config(signature_version='s3v4'),
+        region_name='auto',
+    )
+
+async def upload_logo_to_r2(file: UploadFile) -> str:
+    ext = (file.filename or 'logo').rsplit('.', 1)[-1].lower() or 'png'
+    key = f'logos/{uuid.uuid4().hex}.{ext}'
+    bucket = os.environ['R2_BUCKET_NAME']
+    data = await file.read()
+    loop = __import__('asyncio').get_event_loop()
+    await loop.run_in_executor(None, lambda: _r2_client().put_object(
+        Bucket=bucket, Key=key, Body=data, ContentType=file.content_type or 'image/png',
+    ))
+    return f'{os.environ["R2_PUBLIC_URL"].rstrip("/")}/{key}'
 
 import numpy as np
 import pandas as pd
@@ -36,7 +61,7 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  get_climate, get_climate_monthly, get_my_vendor, get_pool, get_potential_leads,
                  get_region_potential, get_all_region_potential,
                  get_shadow_cache, get_user_assessments, get_user_inquiries,
-                 get_vendor_detail, get_vendor_inquiries, init_db,
+                 get_vendor_detail, get_vendor_inquiries_by_account, init_db,
                  list_pending_vendor_applications, list_vendors, preload_polygon_fallback,
                  reject_vendor_application,
                  reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
@@ -62,14 +87,15 @@ async def lifespan(app: FastAPI):
         await load_dem()
     except Exception as e:
         print(f'[DEM] 警告：{e}，地形高程功能停用')
-    # Pre-load GBA polygon fallback only when GBA_PRELOAD=1 (default: skip).
-    # Do NOT enable on Railway free tier (512 MB) — the 2.56M-building list
-    # takes ~800 MB RAM and will OOM the container. Only needed locally when
-    # the gba_buildings DB table is empty and the .gz fallback is the only source.
-    if os.environ.get('GBA_PRELOAD', '0') == '1':
+    # Start GBA polygon fallback loading in a background thread (fire-and-forget).
+    # Server accepts requests immediately; fallback merges into /api/buildings ~3–10 s after start.
+    # Set GBA_DISABLE_FALLBACK=1 on memory-constrained deployments (e.g., Railway free tier, 512 MB)
+    # to skip loading entirely — the 2.56M-building list takes ~800 MB RAM.
+    if os.environ.get('GBA_DISABLE_FALLBACK', '0') != '1':
         try:
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, preload_polygon_fallback)
+            loop.run_in_executor(None, preload_polygon_fallback)   # not awaited — background load
+            print('[GBA] Polygon fallback loading in background...')
         except Exception as e:
             print(f'[GBA] Polygon preload warning: {e}')
     yield
@@ -337,6 +363,66 @@ async def clear_buildings_cache(
     return {'deleted': deleted, 'message': '快取已清除，下次請求將重新抓取'}
 
 
+_bearer = HTTPBearer()
+_optional_bearer = HTTPBearer(auto_error=False)
+_VALID_ROLES = {'user', 'vendor', 'admin'}
+
+
+def current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+    try:
+        return decode_token(creds.credentials)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+
+async def require_admin(
+    x_admin_secret: Optional[str] = Header(None),
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+) -> None:
+    if x_admin_secret == _ADMIN_SECRET:
+        return
+    if creds:
+        try:
+            account_id = decode_token(creds.credentials)
+            account = await get_account_by_id(account_id)
+            if account and account.get('role') == 'admin':
+                return
+        except ValueError:
+            pass
+    raise HTTPException(status_code=401, detail='admin credentials required')
+
+
+@app.post('/api/admin/cache/cleanup')
+async def cleanup_stale_caches(admin=Depends(require_admin)):
+    """
+    清除過期快取與廢棄資料，用於 Neon 免費 512 MB 容量管理。
+    - dem_cache：.npy 已 commit 進 git，DB 備份永遠不需要
+    - shadow_cache：只保留當前版本 (v3_*)，舊版 v1/v2 已失效
+    - osm_cache：刪除超過 7 天（永遠不會再被讀取）
+    - gba_cache：刪除超過 30 天（永遠不會再被讀取）
+    """
+    pool = await get_pool()
+    deleted: dict[str, int] = {}
+    async with pool.acquire() as conn:
+        r = await conn.execute('DELETE FROM dem_cache')
+        deleted['dem_cache'] = int(r.split()[-1])
+
+        r = await conn.execute("DELETE FROM shadow_cache WHERE cache_key NOT LIKE 'v3_%'")
+        deleted['shadow_cache_old_versions'] = int(r.split()[-1])
+
+        r = await conn.execute("DELETE FROM osm_cache WHERE fetched_at < NOW() - INTERVAL '7 days'")
+        deleted['osm_cache_expired'] = int(r.split()[-1])
+
+        r = await conn.execute("DELETE FROM gba_cache WHERE cached_at < NOW() - INTERVAL '30 days'")
+        deleted['gba_cache_expired'] = int(r.split()[-1])
+
+    print(f'[Cache cleanup] {deleted}')
+    return {
+        'deleted': deleted,
+        'note': 'VACUUM 需在 Neon Console 手動執行以立即回收空間',
+    }
+
+
 @app.get('/api/township')
 async def get_township_climate(
     lat: float = Query(...),
@@ -475,34 +561,6 @@ class VendorRejectRequest(BaseModel):
 class AccountRoleRequest(BaseModel):
     role: str
 
-
-_bearer = HTTPBearer()
-_optional_bearer = HTTPBearer(auto_error=False)
-_VALID_ROLES = {'user', 'vendor', 'admin'}
-
-
-def current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
-    try:
-        return decode_token(creds.credentials)
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
-
-async def require_admin(
-    x_admin_secret: Optional[str] = Header(None),
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
-) -> None:
-    if x_admin_secret == _ADMIN_SECRET:
-        return
-    if creds:
-        try:
-            account_id = decode_token(creds.credentials)
-            account = await get_account_by_id(account_id)
-            if account and account.get('role') == 'admin':
-                return
-        except ValueError:
-            pass
-    raise HTTPException(status_code=401, detail='admin credentials required')
 
 
 @app.get('/api/vendors', response_model=List[VendorResponse])
@@ -763,10 +821,7 @@ async def me_vendor_inquiries(
     account_id: str = Depends(current_user_id),
     limit: int = Query(50, le=100),
 ):
-    vendor = await get_my_vendor(account_id)
-    if not vendor:
-        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
-    return await get_vendor_inquiries(vendor['id'], limit)
+    return await get_vendor_inquiries_by_account(account_id, limit)
 
 
 @app.post('/api/vendors/{vendor_id}/inquire', status_code=201)
@@ -796,16 +851,31 @@ async def me_application_status(account_id: str = Depends(current_user_id)):
 
 @app.post('/api/me/vendor/logo')
 async def me_upload_logo(
-    req: LogoUploadRequest,
+    file: UploadFile = File(...),
     account_id: str = Depends(current_user_id),
 ):
+    if not os.environ.get('R2_ACCOUNT_ID'):
+        raise HTTPException(status_code=503, detail='圖片儲存服務未設定')
     vendor = await get_my_vendor(account_id)
     if not vendor:
         raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
-    ok = await update_vendor_logo(vendor['id'], req.logo_url)
+    logo_url = await upload_logo_to_r2(file)
+    ok = await update_vendor_logo(vendor['id'], logo_url)
     if not ok:
         raise HTTPException(status_code=500, detail='上傳失敗')
-    return {'ok': True}
+    return {'url': logo_url}
+
+
+@app.post('/api/me/vendor/upload-image')
+async def me_upload_image(
+    file: UploadFile = File(...),
+    account_id: str = Depends(current_user_id),
+):
+    """通用圖片上傳（logo、作品集照片等），回傳 R2 公開 URL。"""
+    if not os.environ.get('R2_ACCOUNT_ID'):
+        raise HTTPException(status_code=503, detail='圖片儲存服務未設定')
+    url = await upload_logo_to_r2(file)
+    return {'url': url}
 
 
 @app.patch('/api/me/vendor/inquiries/{inquiry_id}/status')
