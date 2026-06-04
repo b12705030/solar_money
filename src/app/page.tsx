@@ -8,6 +8,7 @@ import TweaksPanel from '@/components/TweaksPanel';
 import WizardFooter from '@/components/WizardFooter';
 import AuthModal from '@/components/AuthModal';
 import HistoryDrawer from '@/components/HistoryDrawer';
+import UserInbox from '@/components/UserInbox';
 import VendorApplyModal from '@/components/VendorApplyModal';
 import Landing from '@/screens/Landing';
 import StepAddress from '@/screens/StepAddress';
@@ -32,6 +33,7 @@ export default function App() {
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
   const [vendorApplyOpen, setVendorApplyOpen] = useState(false);
 
   useEffect(() => { applyTheme(tweaks.theme); }, [tweaks.theme]);
@@ -88,18 +90,20 @@ export default function App() {
     user,
     onLoginClick:       () => setAuthOpen(true),
     onHistoryClick:     () => setHistoryOpen(true),
-    onVendorApplyClick:  () => setVendorApplyOpen(true),
-    onVendorDashClick:   () => router.push('/vendor'),
-    onAdminPanelClick:   () => router.push('/admin'),
-    onLogout:            logout,
+    onInboxClick:       () => setInboxOpen(true),
+    onVendorApplyClick: () => setVendorApplyOpen(true),
+    onVendorDashClick:  () => router.push('/vendor'),
+    onAdminPanelClick:  () => router.push('/admin'),
+    onLogout:           logout,
   };
 
   const modals = (
     <>
-      {tweaksOpen        && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
-      {authOpen          && <AuthModal onClose={() => setAuthOpen(false)} />}
-      {vendorApplyOpen   && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} onLoginClick={() => { setVendorApplyOpen(false); setAuthOpen(true); }} />}
-      {historyOpen       && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
+      {tweaksOpen      && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+      {authOpen        && <AuthModal onClose={() => setAuthOpen(false)} />}
+      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} onLoginClick={() => { setVendorApplyOpen(false); setAuthOpen(true); }} />}
+      {historyOpen     && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
+      {inboxOpen       && user && <UserInbox onClose={() => setInboxOpen(false)} />}
     </>
   );
 

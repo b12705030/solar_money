@@ -211,6 +211,15 @@ async def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS gba_buildings_bbox
                 ON gba_buildings (min_lon, max_lon, min_lat, max_lat);
+            CREATE TABLE IF NOT EXISTS inquiry_messages (
+                id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                inquiry_id   UUID        NOT NULL REFERENCES inquiries(id) ON DELETE CASCADE,
+                sender       TEXT        NOT NULL CHECK (sender IN ('user', 'vendor')),
+                content      TEXT        NOT NULL,
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_inquiry_messages_inquiry_id
+                ON inquiry_messages (inquiry_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_assessments_account_id
                 ON assessments (account_id);
             CREATE INDEX IF NOT EXISTS idx_vendor_portfolios_vendor_id
@@ -1034,7 +1043,40 @@ async def save_inquiry(vendor_id: str, account_id: str | None, data: dict) -> st
             data.get('payback_years'),
             data.get('message'),
         )
-        return str(row['id'])
+        inquiry_id = str(row['id'])
+        # Write initial user message into inquiry_messages
+        if data.get('message'):
+            await conn.execute(
+                'INSERT INTO inquiry_messages (inquiry_id, sender, content) VALUES ($1::uuid, $2, $3)',
+                inquiry_id, 'user', data['message'],
+            )
+        return inquiry_id
+
+
+async def add_inquiry_message(inquiry_id: str, sender: str, content: str) -> dict:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            '''INSERT INTO inquiry_messages (inquiry_id, sender, content)
+               VALUES ($1::uuid, $2, $3) RETURNING id, created_at''',
+            inquiry_id, sender, content,
+        )
+        return {'id': str(row['id']), 'sender': sender, 'content': content,
+                'createdAt': row['created_at'].isoformat()}
+
+
+async def get_inquiry_messages(inquiry_id: str) -> list[dict]:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                'SELECT id, sender, content, created_at FROM inquiry_messages WHERE inquiry_id = $1::uuid ORDER BY created_at',
+                inquiry_id,
+            )
+            return [{'id': str(r['id']), 'sender': r['sender'], 'content': r['content'],
+                     'createdAt': r['created_at'].isoformat()} for r in rows]
+    except Exception:
+        return []
 
 
 async def get_vendor_inquiries_by_account(account_id: str, limit: int = 50) -> list[dict]:
@@ -1090,6 +1132,23 @@ async def get_vendor_inquiries(vendor_id: str, limit: int = 50) -> list[dict]:
                    LIMIT $2''',
                 vendor_id, limit,
             )
+            inquiry_ids = [str(r['id']) for r in rows]
+            msg_rows: list = []
+            if inquiry_ids:
+                msg_rows = await conn.fetch(
+                    '''SELECT inquiry_id, id, sender, content, created_at
+                       FROM inquiry_messages
+                       WHERE inquiry_id = ANY($1::uuid[])
+                       ORDER BY created_at''',
+                    inquiry_ids,
+                )
+            msgs_by_inquiry: dict = {}
+            for m in msg_rows:
+                key = str(m['inquiry_id'])
+                msgs_by_inquiry.setdefault(key, []).append({
+                    'id': str(m['id']), 'sender': m['sender'],
+                    'content': m['content'], 'createdAt': m['created_at'].isoformat(),
+                })
             return [
                 {
                     'id': str(r['id']),
@@ -1104,6 +1163,7 @@ async def get_vendor_inquiries(vendor_id: str, limit: int = 50) -> list[dict]:
                     'caseStatus': r['case_status'] or 'new',
                     'inquirerEmail': r['inquirer_email'],
                     'createdAt': r['created_at'].isoformat(),
+                    'messages': msgs_by_inquiry.get(str(r['id']), []),
                 }
                 for r in rows
             ]
@@ -1111,8 +1171,8 @@ async def get_vendor_inquiries(vendor_id: str, limit: int = 50) -> list[dict]:
         return []
 
 
-async def reply_to_inquiry(inquiry_id: str, vendor_id: str, reply: str) -> bool:
-    """廠商回覆詢價；驗證該詢價確實屬於此廠商。"""
+async def reply_to_inquiry(inquiry_id: str, vendor_id: str, reply: str) -> dict | None:
+    """廠商回覆詢價；驗證該詢價確實屬於此廠商，並寫入 inquiry_messages。回傳新訊息或 None。"""
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -1122,21 +1182,34 @@ async def reply_to_inquiry(inquiry_id: str, vendor_id: str, reply: str) -> bool:
                    WHERE id = $1::uuid AND vendor_id = $2''',
                 inquiry_id, vendor_id, reply,
             )
-            return result.endswith('1')
+            if not result.endswith('1'):
+                return None
+            row = await conn.fetchrow(
+                '''INSERT INTO inquiry_messages (inquiry_id, sender, content)
+                   VALUES ($1::uuid, $2, $3)
+                   RETURNING id, sender, content, created_at''',
+                inquiry_id, 'vendor', reply,
+            )
+            return {
+                'id': str(row['id']),
+                'sender': row['sender'],
+                'content': row['content'],
+                'createdAt': row['created_at'].isoformat(),
+            }
     except Exception:
-        return False
+        return None
 
 
 async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
-    """用戶查看自己送出的詢價（含廠商回覆與評價狀態）。"""
+    """用戶查看自己送出的詢價（含 messages 陣列與評價狀態）。"""
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 '''SELECT i.id, i.vendor_id, i.address, i.county, i.capacity_kw,
-                          i.annual_kwh, i.payback_years, i.message,
-                          i.vendor_reply, i.replied_at, i.created_at,
+                          i.annual_kwh, i.payback_years, i.created_at,
                           v.name AS vendor_name, v.logo_url AS vendor_logo,
+                          v.rating AS vendor_rating, v.review_count AS vendor_review_count,
                           r.id AS review_id, r.rating AS review_rating, r.comment AS review_comment
                    FROM inquiries i
                    JOIN vendors v ON v.id = i.vendor_id
@@ -1146,21 +1219,38 @@ async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
                    LIMIT $2''',
                 account_id, limit,
             )
+            inquiry_ids = [str(r['id']) for r in rows]
+            msg_rows: list = []
+            if inquiry_ids:
+                msg_rows = await conn.fetch(
+                    '''SELECT inquiry_id, id, sender, content, created_at
+                       FROM inquiry_messages
+                       WHERE inquiry_id = ANY($1::uuid[])
+                       ORDER BY created_at''',
+                    inquiry_ids,
+                )
+            msgs_by_inquiry: dict = {}
+            for m in msg_rows:
+                key = str(m['inquiry_id'])
+                msgs_by_inquiry.setdefault(key, []).append({
+                    'id': str(m['id']), 'sender': m['sender'],
+                    'content': m['content'], 'createdAt': m['created_at'].isoformat(),
+                })
             return [
                 {
                     'id': str(r['id']),
                     'vendorId': r['vendor_id'],
                     'vendorName': r['vendor_name'],
                     'vendorLogo': r['vendor_logo'],
+                    'vendorRating': float(r['vendor_rating'] or 0),
+                    'vendorReviewCount': int(r['vendor_review_count'] or 0),
                     'address': r['address'],
                     'county': r['county'],
                     'capacityKw': float(r['capacity_kw'] or 0),
                     'annualKwh': float(r['annual_kwh'] or 0),
                     'paybackYears': float(r['payback_years'] or 0),
-                    'message': r['message'],
-                    'vendorReply': r['vendor_reply'],
-                    'repliedAt': r['replied_at'].isoformat() if r['replied_at'] else None,
                     'createdAt': r['created_at'].isoformat(),
+                    'messages': msgs_by_inquiry.get(str(r['id']), []),
                     'reviewId': str(r['review_id']) if r['review_id'] else None,
                     'reviewRating': r['review_rating'],
                     'reviewComment': r['review_comment'],

@@ -66,7 +66,8 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  reject_vendor_application,
                  reply_to_inquiry, save_assessment, save_inquiry, set_account_role,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
-                 update_vendor_logo, update_vendor_profile)
+                 update_vendor_logo, update_vendor_profile,
+                 add_inquiry_message, get_inquiry_messages)
 from .mada import topsis
 from .shadow import (compute_bbox_shadows, compute_optimal_tilt,
                      compute_shadows_from_features,
@@ -920,10 +921,10 @@ async def me_vendor_reply(
         raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
     if not req.reply.strip():
         raise HTTPException(status_code=422, detail='回覆內容不可空白')
-    ok = await reply_to_inquiry(inquiry_id, vendor['id'], req.reply.strip())
-    if not ok:
+    msg = await reply_to_inquiry(inquiry_id, vendor['id'], req.reply.strip())
+    if not msg:
         raise HTTPException(status_code=404, detail='找不到詢價記錄')
-    return {'ok': True}
+    return msg
 
 
 @app.get('/api/me/inquiries')
@@ -947,6 +948,29 @@ async def me_add_review(
     if not ok:
         raise HTTPException(status_code=404, detail='找不到詢價記錄，或已評價過')
     return {'ok': True}
+
+
+class InquiryMessageRequest(BaseModel):
+    content: str
+
+
+@app.post('/api/me/inquiries/{inquiry_id}/message', status_code=201)
+async def me_add_inquiry_message(
+    inquiry_id: str,
+    req: InquiryMessageRequest,
+    account_id: str = Depends(current_user_id),
+):
+    """用戶對已有詢價追加訊息。"""
+    msg = await add_inquiry_message(inquiry_id, 'user', req.content.strip())
+    return msg
+
+
+@app.get('/api/me/inquiries/{inquiry_id}/messages')
+async def me_inquiry_messages(
+    inquiry_id: str,
+    account_id: str = Depends(current_user_id),
+):
+    return await get_inquiry_messages(inquiry_id)
 
 
 # ─── 地區潛力排名（MADA / TOPSIS）────────────────────────────────────────────

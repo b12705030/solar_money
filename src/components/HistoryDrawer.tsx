@@ -51,7 +51,6 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     if (!user) return;
-    // Fetch both in parallel on open so switching to inquiries tab is instant
     fetch(`${API}/api/me/assessments`, {
       headers: { Authorization: `Bearer ${user.token}` },
     })
@@ -62,7 +61,10 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
       .then((data: unknown) => setList(Array.isArray(data) ? data as Assessment[] : []))
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, [logout, user]);
 
+  useEffect(() => {
+    if (!user || drawerTab !== 'inquiries' || inquiries.length > 0) return;
     setInquiriesLoading(true);
     fetch(`${API}/api/me/inquiries`, {
       headers: { Authorization: `Bearer ${user.token}` },
@@ -71,7 +73,7 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
       .then((data: unknown) => setInquiries(Array.isArray(data) ? data as UserInquiry[] : []))
       .catch(() => {})
       .finally(() => setInquiriesLoading(false));
-  }, [logout, user]);
+  }, [drawerTab, inquiries.length, user]);
 
   const toggleSelect = (id: string) =>
     setSelected(prev =>
@@ -104,9 +106,9 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
           onClick={() => setDrawerTab('inquiries')}
         >
           我的詢價
-          {inquiries.filter(i => i.vendorReply && !i.reviewId).length > 0 && (
+          {inquiries.filter(i => i.messages.some(m => m.sender === 'vendor') && !i.reviewId).length > 0 && (
             <span className="drawer-tab-badge">
-              {inquiries.filter(i => i.vendorReply && !i.reviewId).length}
+              {inquiries.filter(i => i.messages.some(m => m.sender === 'vendor') && !i.reviewId).length}
             </span>
           )}
         </button>
@@ -299,9 +301,9 @@ function UserInquiryCard({
             {new Date(inquiry.createdAt).toLocaleDateString('zh-TW')}
           </div>
         </div>
-        <span className={`vd-status-badge ${inquiry.vendorReply ? 'vd-status-badge--approved' : 'vd-status-badge--pending'}`}
+        <span className={`vd-status-badge ${inquiry.messages.some(m => m.sender === 'vendor') ? 'vd-status-badge--approved' : 'vd-status-badge--pending'}`}
           style={{ marginLeft: 'auto' }}>
-          {inquiry.vendorReply ? '已回覆' : '等待回覆'}
+          {inquiry.messages.some(m => m.sender === 'vendor') ? '已回覆' : '等待回覆'}
         </span>
       </div>
 
@@ -314,23 +316,23 @@ function UserInquiryCard({
       </div>
 
       {/* My message */}
-      {inquiry.message && (
-        <div className="user-inquiry-msg">
+      {inquiry.messages.filter(m => m.sender === 'user').slice(0, 1).map(m => (
+        <div key={m.id} className="user-inquiry-msg">
           <div className="user-inquiry-msg-label">我的留言</div>
-          <div className="user-inquiry-msg-text">{inquiry.message}</div>
+          <div className="user-inquiry-msg-text">{m.content}</div>
         </div>
-      )}
+      ))}
 
       {/* Vendor reply */}
-      {inquiry.vendorReply && (
+      {inquiry.messages.some(m => m.sender === 'vendor') && (() => {
+        const vendorMsg = inquiry.messages.filter(m => m.sender === 'vendor').slice(-1)[0];
+        return (
         <div className="user-inquiry-reply">
           <div className="user-inquiry-reply-label">廠商回覆</div>
-          <div className="user-inquiry-reply-text">{inquiry.vendorReply}</div>
-          {inquiry.repliedAt && (
-            <div className="user-inquiry-reply-date">
-              {new Date(inquiry.repliedAt).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}
-            </div>
-          )}
+          <div className="user-inquiry-reply-text">{vendorMsg.content}</div>
+          <div className="user-inquiry-reply-date">
+            {new Date(vendorMsg.createdAt).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}
+          </div>
 
           {/* Review section */}
           {inquiry.reviewId ? (
@@ -367,7 +369,8 @@ function UserInquiryCard({
             )
           )}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

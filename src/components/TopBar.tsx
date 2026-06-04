@@ -14,6 +14,8 @@ interface TopBarProps {
   onHome?:              () => void;
   onLoginClick?:        () => void;
   onHistoryClick?:      () => void;
+  onInboxClick?:        () => void;
+  inboxUnread?:         number;
   onVendorApplyClick?:  () => void;
   onVendorDashClick?:   () => void;
   onAdminPanelClick?:   () => void;
@@ -21,7 +23,7 @@ interface TopBarProps {
   onLogout?:            () => void;
 }
 
-export default function TopBar({ onHome, onLoginClick, onHistoryClick, onVendorApplyClick, onVendorDashClick, onAdminPanelClick, user, onLogout }: TopBarProps) {
+export default function TopBar({ onHome, onLoginClick, onHistoryClick, onInboxClick, inboxUnread = 0, onVendorApplyClick, onVendorDashClick, onAdminPanelClick, user, onLogout }: TopBarProps) {
   return (
     <div className="topbar">
       <button className="brand" onClick={onHome}>
@@ -53,6 +55,22 @@ export default function TopBar({ onHome, onLoginClick, onHistoryClick, onVendorA
               <button className="btn-outline-sm" onClick={onAdminPanelClick}>管理後台</button>
             )}
             <button className="btn-outline-sm" onClick={onHistoryClick}>歷史紀錄</button>
+            <button
+              className="btn-outline-sm"
+              onClick={onInboxClick}
+              style={{ position: 'relative' }}
+            >
+              ✉ 收件箱
+              {inboxUnread > 0 && (
+                <span style={{
+                  position: 'absolute', top: -6, right: -6,
+                  background: 'var(--green-700)', color: '#fff',
+                  borderRadius: '50%', width: 16, height: 16,
+                  fontSize: 10, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>{inboxUnread}</span>
+              )}
+            </button>
             <div className="topbar-user">
               <div className="avatar">{user.email[0].toUpperCase()}</div>
               <span className="role-pill">{ROLE_LABELS[user.role ?? 'user']}</span>
