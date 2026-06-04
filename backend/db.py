@@ -547,7 +547,8 @@ async def get_account_assessments(account_id: str, limit: int = 20) -> list[dict
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 '''SELECT id, address, county, annual_kwh, payback_years,
-                          out_of_pocket, capacity_kw, created_at
+                          out_of_pocket, capacity_kw, created_at,
+                          roof_area_ping, self_sufficiency, total_20yr, goal
                    FROM assessments
                    WHERE account_id = $1::uuid
                    ORDER BY created_at DESC LIMIT $2''',
