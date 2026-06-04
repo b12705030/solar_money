@@ -597,7 +597,7 @@ async def get_user_assessments(user_id: str, limit: int = 10) -> list[dict]:
 
 # ─── 廠商推薦 ────────────────────────────────────────────────────────────────
 
-async def list_vendors(county: str | None = None, limit: int = 3) -> list[dict]:
+async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 0) -> list[dict]:
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -618,9 +618,10 @@ async def list_vendors(county: str | None = None, limit: int = 3) -> list[dict]:
                        ) p ON TRUE
                        WHERE v.approved = TRUE AND $1 = ANY(v.counties)
                        ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
-                       LIMIT $2''',
+                       LIMIT $2 OFFSET $3''',
                     county,
                     limit,
+                    offset,
                 )
             else:
                 rows = await conn.fetch(
@@ -639,8 +640,9 @@ async def list_vendors(county: str | None = None, limit: int = 3) -> list[dict]:
                        ) p ON TRUE
                        WHERE v.approved = TRUE
                        ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
-                       LIMIT $1''',
+                       LIMIT $1 OFFSET $2''',
                     limit,
+                    offset,
                 )
             return [
                 {
@@ -1085,7 +1087,7 @@ async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
                           i.annual_kwh, i.payback_years, i.message,
                           i.vendor_reply, i.replied_at, i.created_at,
                           v.name AS vendor_name, v.logo_url AS vendor_logo,
-                          r.id AS review_id, r.rating AS review_rating
+                          r.id AS review_id, r.rating AS review_rating, r.comment AS review_comment
                    FROM inquiries i
                    JOIN vendors v ON v.id = i.vendor_id
                    LEFT JOIN vendor_reviews r ON r.inquiry_id = i.id
@@ -1111,6 +1113,7 @@ async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
                     'createdAt': r['created_at'].isoformat(),
                     'reviewId': str(r['review_id']) if r['review_id'] else None,
                     'reviewRating': r['review_rating'],
+                    'reviewComment': r['review_comment'],
                 }
                 for r in rows
             ]

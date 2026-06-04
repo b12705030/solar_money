@@ -325,8 +325,10 @@ function UserInquiryCard({
           {/* Review section */}
           {inquiry.reviewId ? (
             <div className="user-inquiry-reviewed">
-              {'★'.repeat(inquiry.reviewRating ?? 0)}{'☆'.repeat(5 - (inquiry.reviewRating ?? 0))}
-              <span>已評價</span>
+              <span>{'★'.repeat(inquiry.reviewRating ?? 0)}{'☆'.repeat(5 - (inquiry.reviewRating ?? 0))}</span>
+              {inquiry.reviewComment && (
+                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--ink-500)' }}>{inquiry.reviewComment}</span>
+              )}
             </div>
           ) : (
             reviewOpen ? (

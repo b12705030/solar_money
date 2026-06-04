@@ -168,4 +168,5 @@ export interface UserInquiry {
   createdAt: string;
   reviewId: string | null;
   reviewRating: number | null;
+  reviewComment: string | null;
 }
