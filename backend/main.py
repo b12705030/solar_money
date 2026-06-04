@@ -61,14 +61,15 @@ async def lifespan(app: FastAPI):
         await load_dem()
     except Exception as e:
         print(f'[DEM] 警告：{e}，地形高程功能停用')
-    # Pre-load GBA polygon fallback only when GBA_PRELOAD=1 (default: skip).
-    # Do NOT enable on Railway free tier (512 MB) — the 2.56M-building list
-    # takes ~800 MB RAM and will OOM the container. Only needed locally when
-    # the gba_buildings DB table is empty and the .gz fallback is the only source.
-    if os.environ.get('GBA_PRELOAD', '0') == '1':
+    # Start GBA polygon fallback loading in a background thread (fire-and-forget).
+    # Server accepts requests immediately; fallback merges into /api/buildings ~3–10 s after start.
+    # Set GBA_DISABLE_FALLBACK=1 on memory-constrained deployments (e.g., Railway free tier, 512 MB)
+    # to skip loading entirely — the 2.56M-building list takes ~800 MB RAM.
+    if os.environ.get('GBA_DISABLE_FALLBACK', '0') != '1':
         try:
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, preload_polygon_fallback)
+            loop.run_in_executor(None, preload_polygon_fallback)   # not awaited — background load
+            print('[GBA] Polygon fallback loading in background...')
         except Exception as e:
             print(f'[GBA] Polygon preload warning: {e}')
     yield

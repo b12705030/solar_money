@@ -1290,6 +1290,7 @@ _FALLBACK_PKL_PATH = Path(__file__).parent.parent / 'data' / 'taiwan_polygon_fal
 # 模組級單例快取
 _fallback_buildings: Optional[list] = None
 _fallback_bbox_arr: 'np.ndarray | None' = None   # float32 (N, 4): [min_lon, max_lon, min_lat, max_lat]
+_fallback_lock = __import__('threading').Lock()   # prevents double-load when background thread + request thread race
 
 
 def _load_polygon_fallback() -> list:
@@ -1297,72 +1298,77 @@ def _load_polygon_fallback() -> list:
     首次呼叫時載入 GBA fallback 資料：
     - 快取存在且比來源 gz 新 → 從 .npy + .pkl.gz 快速載入（< 3 s）
     - 否則 → 解析 NDJSON.gz → 建 numpy 陣列 → 寫入快取（一次性，10–30 s）
+    使用 threading.Lock + double-check pattern：背景執行緒載入時，若請求執行緒同時呼叫，
+    後者等待 lock 釋放後直接取得結果，不會啟動第二次載入。
     """
     global _fallback_buildings, _fallback_bbox_arr
     if _fallback_buildings is not None:
         return _fallback_buildings
-
-    if not _FALLBACK_PATH.exists():
-        print(f'[DB] Polygon fallback not found: {_FALLBACK_PATH}', flush=True)
-        _fallback_buildings = []
-        return _fallback_buildings
-
-    gz_mtime = _FALLBACK_PATH.stat().st_mtime
-
-    # ── Fast path: binary cache ─────────────────────────────────────────────────
-    if (
-        _FALLBACK_NPY_PATH.exists() and _FALLBACK_PKL_PATH.exists()
-        and _FALLBACK_NPY_PATH.stat().st_mtime >= gz_mtime
-        and _FALLBACK_PKL_PATH.stat().st_mtime >= gz_mtime
-    ):
-        try:
-            print('[DB] Loading Polygon fallback from binary cache...', flush=True)
-            _fallback_bbox_arr = np.load(str(_FALLBACK_NPY_PATH))
-            with gzip.open(_FALLBACK_PKL_PATH, 'rb') as f:
-                _fallback_buildings = pickle.load(f)
-            print(f'[DB] Polygon fallback ready: {len(_fallback_buildings):,} buildings (cached)', flush=True)
+    with _fallback_lock:
+        if _fallback_buildings is not None:   # double-check after acquiring lock
             return _fallback_buildings
+
+        if not _FALLBACK_PATH.exists():
+            print(f'[DB] Polygon fallback not found: {_FALLBACK_PATH}', flush=True)
+            _fallback_buildings = []
+            return _fallback_buildings
+
+        gz_mtime = _FALLBACK_PATH.stat().st_mtime
+
+        # ── Fast path: binary cache ─────────────────────────────────────────────────
+        if (
+            _FALLBACK_NPY_PATH.exists() and _FALLBACK_PKL_PATH.exists()
+            and _FALLBACK_NPY_PATH.stat().st_mtime >= gz_mtime
+            and _FALLBACK_PKL_PATH.stat().st_mtime >= gz_mtime
+        ):
+            try:
+                print('[DB] Loading Polygon fallback from binary cache...', flush=True)
+                _fallback_bbox_arr = np.load(str(_FALLBACK_NPY_PATH))
+                with gzip.open(_FALLBACK_PKL_PATH, 'rb') as f:
+                    _fallback_buildings = pickle.load(f)
+                print(f'[DB] Polygon fallback ready: {len(_fallback_buildings):,} buildings (cached)', flush=True)
+                return _fallback_buildings
+            except Exception as e:
+                print(f'[DB] Cache load failed ({e}), rebuilding...', flush=True)
+                _fallback_buildings = None
+                _fallback_bbox_arr  = None
+
+        # ── Slow path: parse NDJSON.gz ──────────────────────────────────────────────
+        size_mb = _FALLBACK_PATH.stat().st_size // 1024 // 1024
+        print(f'[DB] Building Polygon fallback cache ({size_mb} MB gz, one-time)...', flush=True)
+
+        buildings: list = []
+        try:
+            with gzip.open(_FALLBACK_PATH, 'rt', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    buildings.append(json.loads(line))
         except Exception as e:
-            print(f'[DB] Cache load failed ({e}), rebuilding...', flush=True)
-            _fallback_buildings = None
-            _fallback_bbox_arr  = None
+            print(f'[DB] Polygon fallback load error: {e}', flush=True)
+            _fallback_buildings = []
+            return _fallback_buildings
 
-    # ── Slow path: parse NDJSON.gz ──────────────────────────────────────────────
-    size_mb = _FALLBACK_PATH.stat().st_size // 1024 // 1024
-    print(f'[DB] Building Polygon fallback cache ({size_mb} MB gz, one-time)...', flush=True)
+        # Build numpy bbox array (float32 saves ~50% vs float64, sufficient precision)
+        bbox_arr = np.array(
+            [[b['min_lon'], b['max_lon'], b['min_lat'], b['max_lat']] for b in buildings],
+            dtype=np.float32,
+        )
 
-    buildings: list = []
-    try:
-        with gzip.open(_FALLBACK_PATH, 'rt', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                buildings.append(json.loads(line))
-    except Exception as e:
-        print(f'[DB] Polygon fallback load error: {e}', flush=True)
-        _fallback_buildings = []
+        # Write binary cache
+        try:
+            np.save(str(_FALLBACK_NPY_PATH), bbox_arr)
+            with gzip.open(_FALLBACK_PKL_PATH, 'wb', compresslevel=1) as f:
+                pickle.dump(buildings, f, protocol=4)
+            print('[DB] Polygon fallback binary cache written.', flush=True)
+        except Exception as e:
+            print(f'[DB] Cache write failed (non-fatal): {e}', flush=True)
+
+        _fallback_buildings = buildings
+        _fallback_bbox_arr  = bbox_arr
+        print(f'[DB] Polygon fallback ready: {len(buildings):,} buildings', flush=True)
         return _fallback_buildings
-
-    # Build numpy bbox array (float32 saves ~50% vs float64, sufficient precision)
-    bbox_arr = np.array(
-        [[b['min_lon'], b['max_lon'], b['min_lat'], b['max_lat']] for b in buildings],
-        dtype=np.float32,
-    )
-
-    # Write binary cache
-    try:
-        np.save(str(_FALLBACK_NPY_PATH), bbox_arr)
-        with gzip.open(_FALLBACK_PKL_PATH, 'wb', compresslevel=1) as f:
-            pickle.dump(buildings, f, protocol=4)
-        print('[DB] Polygon fallback binary cache written.', flush=True)
-    except Exception as e:
-        print(f'[DB] Cache write failed (non-fatal): {e}', flush=True)
-
-    _fallback_buildings = buildings
-    _fallback_bbox_arr  = bbox_arr
-    print(f'[DB] Polygon fallback ready: {len(buildings):,} buildings', flush=True)
-    return _fallback_buildings
 
 
 def preload_polygon_fallback() -> None:
