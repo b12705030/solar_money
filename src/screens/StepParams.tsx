@@ -27,7 +27,8 @@ export default function StepParams({
 
   const costPerKw = gradeInfo.costPerKw;
   const netCostPerKw = costPerKw - subsidy.amount;
-  const budgetCapacity = netCostPerKw > 0 ? budgetCeiling / netCostPerKw : maxCapacity;
+  // Floor to 1 decimal (not round) so capacity × netCostPerKw never exceeds budgetCeiling
+  const budgetCapacity = netCostPerKw > 0 ? Math.floor((budgetCeiling / netCostPerKw) * 10) / 10 : maxCapacity;
   const capacity = parseFloat(Math.min(maxCapacity, budgetCapacity).toFixed(1));
   const totalCost = Math.round(capacity * costPerKw);
   const subsidyAmount = subsidy.amount * capacity;
@@ -74,7 +75,7 @@ export default function StepParams({
           const active = grade === g.id;
           const gNet = g.costPerKw - subsidy.amount;
           const gMaxCap = parseFloat((area * 3.3 * (state.usableFraction ?? 0.6) * g.kWpPerM2).toFixed(1));
-          const gCap = parseFloat(Math.min(gMaxCap, gNet > 0 ? budgetCeiling / gNet : gMaxCap).toFixed(1));
+          const gCap = parseFloat(Math.min(gMaxCap, gNet > 0 ? Math.floor((budgetCeiling / gNet) * 10) / 10 : gMaxCap).toFixed(1));
           const isFull = gCap >= gMaxCap - 0.05;
           return (
             <button
