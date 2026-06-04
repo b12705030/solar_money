@@ -336,6 +336,66 @@ async def clear_buildings_cache(
     return {'deleted': deleted, 'message': '快取已清除，下次請求將重新抓取'}
 
 
+_bearer = HTTPBearer()
+_optional_bearer = HTTPBearer(auto_error=False)
+_VALID_ROLES = {'user', 'vendor', 'admin'}
+
+
+def current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+    try:
+        return decode_token(creds.credentials)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+
+async def require_admin(
+    x_admin_secret: Optional[str] = Header(None),
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+) -> None:
+    if x_admin_secret == _ADMIN_SECRET:
+        return
+    if creds:
+        try:
+            account_id = decode_token(creds.credentials)
+            account = await get_account_by_id(account_id)
+            if account and account.get('role') == 'admin':
+                return
+        except ValueError:
+            pass
+    raise HTTPException(status_code=401, detail='admin credentials required')
+
+
+@app.post('/api/admin/cache/cleanup')
+async def cleanup_stale_caches(admin=Depends(require_admin)):
+    """
+    清除過期快取與廢棄資料，用於 Neon 免費 512 MB 容量管理。
+    - dem_cache：.npy 已 commit 進 git，DB 備份永遠不需要
+    - shadow_cache：只保留當前版本 (v3_*)，舊版 v1/v2 已失效
+    - osm_cache：刪除超過 7 天（永遠不會再被讀取）
+    - gba_cache：刪除超過 30 天（永遠不會再被讀取）
+    """
+    pool = await get_pool()
+    deleted: dict[str, int] = {}
+    async with pool.acquire() as conn:
+        r = await conn.execute('DELETE FROM dem_cache')
+        deleted['dem_cache'] = int(r.split()[-1])
+
+        r = await conn.execute("DELETE FROM shadow_cache WHERE cache_key NOT LIKE 'v3_%'")
+        deleted['shadow_cache_old_versions'] = int(r.split()[-1])
+
+        r = await conn.execute("DELETE FROM osm_cache WHERE fetched_at < NOW() - INTERVAL '7 days'")
+        deleted['osm_cache_expired'] = int(r.split()[-1])
+
+        r = await conn.execute("DELETE FROM gba_cache WHERE cached_at < NOW() - INTERVAL '30 days'")
+        deleted['gba_cache_expired'] = int(r.split()[-1])
+
+    print(f'[Cache cleanup] {deleted}')
+    return {
+        'deleted': deleted,
+        'note': 'VACUUM 需在 Neon Console 手動執行以立即回收空間',
+    }
+
+
 @app.get('/api/township')
 async def get_township_climate(
     lat: float = Query(...),
@@ -474,34 +534,6 @@ class VendorRejectRequest(BaseModel):
 class AccountRoleRequest(BaseModel):
     role: str
 
-
-_bearer = HTTPBearer()
-_optional_bearer = HTTPBearer(auto_error=False)
-_VALID_ROLES = {'user', 'vendor', 'admin'}
-
-
-def current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
-    try:
-        return decode_token(creds.credentials)
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
-
-async def require_admin(
-    x_admin_secret: Optional[str] = Header(None),
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
-) -> None:
-    if x_admin_secret == _ADMIN_SECRET:
-        return
-    if creds:
-        try:
-            account_id = decode_token(creds.credentials)
-            account = await get_account_by_id(account_id)
-            if account and account.get('role') == 'admin':
-                return
-        except ValueError:
-            pass
-    raise HTTPException(status_code=401, detail='admin credentials required')
 
 
 @app.get('/api/vendors', response_model=List[VendorResponse])

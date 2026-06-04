@@ -55,9 +55,9 @@ export const GOALS = [
 ] as const;
 
 export const PANEL_GRADES = [
-  { id: 'entry',    label: '入門款', costPerKw: 40000, efficiency: '18–19%', kWpPerM2: 0.154, desc: '基礎效率，適合預算有限的屋主' },
-  { id: 'standard', label: '標準款', costPerKw: 55000, efficiency: '20–21%', kWpPerM2: 0.170, desc: '市場主流，CP 值最高', recommended: true },
-  { id: 'premium',  label: '高效款', costPerKw: 70000, efficiency: '22–23%', kWpPerM2: 0.187, desc: '高效模組，同樣屋頂裝更多電' },
+  { id: 'entry',    label: '入門款', costPerKw: 40000, efficiency: '18–19%', kWpPerM2: 0.154, perfRatio: 0.74, desc: '基礎效率，適合預算有限的屋主' },
+  { id: 'standard', label: '標準款', costPerKw: 55000, efficiency: '20–21%', kWpPerM2: 0.170, perfRatio: 0.78, desc: '市場主流，CP 值最高', recommended: true },
+  { id: 'premium',  label: '高效款', costPerKw: 70000, efficiency: '22–23%', kWpPerM2: 0.187, perfRatio: 0.82, desc: '高效模組，同樣屋頂裝更多電' },
 ] as const;
 
 export const SUBSIDIES: Record<string, { amount: number; per: string; source: string; updatedAt: string; url: string }> = {
