@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import type { UserInquiry } from '@/lib/types';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -25,17 +24,12 @@ const COMPARE_ROWS: { key: keyof Assessment; label: string; fmt: (v: unknown) =>
   { key: 'out_of_pocket',label: '實際自付', fmt: v => v != null ? `NT$ ${(v as number).toLocaleString()}` : '—' },
 ];
 
-type DrawerTab = 'assessments' | 'inquiries';
-
 export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
   const { user, logout } = useAuth();
-  const [drawerTab, setDrawerTab] = useState<DrawerTab>('assessments');
   const [list, setList] = useState<Assessment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string[]>([]);
   const [comparing, setComparing] = useState(false);
-  const [inquiries, setInquiries] = useState<UserInquiry[]>([]);
-  const [inquiriesLoading, setInquiriesLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -50,18 +44,6 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [logout, user]);
-
-  useEffect(() => {
-    if (!user || drawerTab !== 'inquiries' || inquiries.length > 0) return;
-    setInquiriesLoading(true);
-    fetch(`${API}/api/me/inquiries`, {
-      headers: { Authorization: `Bearer ${user.token}` },
-    })
-      .then(r => r.ok ? r.json() : [])
-      .then((data: unknown) => setInquiries(Array.isArray(data) ? data as UserInquiry[] : []))
-      .catch(() => {})
-      .finally(() => setInquiriesLoading(false));
-  }, [drawerTab, inquiries.length, user]);
 
   const toggleSelect = (id: string) =>
     setSelected(prev =>
@@ -81,31 +63,8 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
         <button className="modal-close" onClick={onClose}>×</button>
       </div>
 
-      {/* Tab bar */}
-      <div className="drawer-tabs">
-        <button
-          className={`drawer-tab${drawerTab === 'assessments' ? ' drawer-tab--active' : ''}`}
-          onClick={() => setDrawerTab('assessments')}
-        >
-          評估紀錄
-        </button>
-        <button
-          className={`drawer-tab${drawerTab === 'inquiries' ? ' drawer-tab--active' : ''}`}
-          onClick={() => setDrawerTab('inquiries')}
-        >
-          我的詢價
-          {inquiries.filter(i => i.vendorReply && !i.reviewId).length > 0 && (
-            <span className="drawer-tab-badge">
-              {inquiries.filter(i => i.vendorReply && !i.reviewId).length}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* ── Assessments tab ── */}
-      {drawerTab === 'assessments' && (
-        <>
-          {selected.length > 0 && (
+      {/* ── Assessments ── */}
+      {selected.length > 0 && (
             <div className="drawer-compare-bar">
               <span className="body-sm" style={{ color: 'var(--green-700)', fontWeight: 500 }}>
                 已選 {selected.length} / 2 筆
@@ -189,173 +148,6 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
               </div>
             )}
           </div>
-        </>
-      )}
-
-      {/* ── Inquiries tab ── */}
-      {drawerTab === 'inquiries' && (
-        <div className="drawer-body">
-          {inquiriesLoading && <div className="drawer-empty">載入中⋯</div>}
-          {!inquiriesLoading && inquiries.length === 0 && (
-            <div className="drawer-empty">
-              尚未送出任何詢價<br />
-              <span className="caption">在評估結果頁點擊「聯絡廠商」即可詢價</span>
-            </div>
-          )}
-          {!inquiriesLoading && inquiries.map(inq => (
-            <UserInquiryCard
-              key={inq.id}
-              inquiry={inq}
-              token={user?.token ?? ''}
-              onReviewed={(id, rating) =>
-                setInquiries(prev => prev.map(i => i.id === id ? { ...i, reviewId: 'done', reviewRating: rating } : i))
-              }
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// ── User Inquiry Card ─────────────────────────────────────────────────────────
-
-function StarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const [hovered, setHovered] = useState(0);
-  return (
-    <div className="star-rating">
-      {[1, 2, 3, 4, 5].map(n => (
-        <button
-          key={n}
-          type="button"
-          className={`star-btn${n <= (hovered || value) ? ' star-btn--active' : ''}`}
-          onMouseEnter={() => setHovered(n)}
-          onMouseLeave={() => setHovered(0)}
-          onClick={() => onChange(n)}
-          aria-label={`${n} 星`}
-        >
-          ★
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function UserInquiryCard({
-  inquiry, token, onReviewed,
-}: {
-  inquiry: UserInquiry;
-  token: string;
-  onReviewed: (id: string, rating: number) => void;
-}) {
-  const [reviewOpen,  setReviewOpen]  = useState(false);
-  const [rating,      setRating]      = useState(0);
-  const [comment,     setComment]     = useState('');
-  const [submitting,  setSubmitting]  = useState(false);
-  const [err,         setErr]         = useState('');
-
-  const submitReview = async () => {
-    if (rating === 0) { setErr('請選擇評分'); return; }
-    setSubmitting(true); setErr('');
-    try {
-      const res = await fetch(`${API}/api/me/inquiries/${inquiry.id}/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ vendor_id: inquiry.vendorId, rating, comment: comment.trim() || null }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '送出失敗');
-      onReviewed(inquiry.id, rating);
-      setReviewOpen(false);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : '送出失敗');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="user-inquiry-card">
-      {/* Vendor header */}
-      <div className="user-inquiry-vendor-row">
-        {inquiry.vendorLogo ? (
-          <img src={inquiry.vendorLogo} className="user-inquiry-vendor-logo" alt="" />
-        ) : (
-          <div className="user-inquiry-vendor-avatar">{inquiry.vendorName[0]}</div>
-        )}
-        <div>
-          <div className="user-inquiry-vendor-name">{inquiry.vendorName}</div>
-          <div className="user-inquiry-date">
-            {new Date(inquiry.createdAt).toLocaleDateString('zh-TW')}
-          </div>
-        </div>
-        <span className={`vd-status-badge ${inquiry.vendorReply ? 'vd-status-badge--approved' : 'vd-status-badge--pending'}`}
-          style={{ marginLeft: 'auto' }}>
-          {inquiry.vendorReply ? '已回覆' : '等待回覆'}
-        </span>
-      </div>
-
-      {/* Chips */}
-      <div className="dash-inquiry-chips">
-        {inquiry.address && <span>{inquiry.address}</span>}
-        {inquiry.county && !inquiry.address && <span>{inquiry.county}</span>}
-        {inquiry.capacityKw > 0 && <span>{inquiry.capacityKw} kWp</span>}
-        {inquiry.annualKwh > 0 && <span>{Math.round(inquiry.annualKwh).toLocaleString()} kWh/年</span>}
-      </div>
-
-      {/* My message */}
-      {inquiry.message && (
-        <div className="user-inquiry-msg">
-          <div className="user-inquiry-msg-label">我的留言</div>
-          <div className="user-inquiry-msg-text">{inquiry.message}</div>
-        </div>
-      )}
-
-      {/* Vendor reply */}
-      {inquiry.vendorReply && (
-        <div className="user-inquiry-reply">
-          <div className="user-inquiry-reply-label">廠商回覆</div>
-          <div className="user-inquiry-reply-text">{inquiry.vendorReply}</div>
-          {inquiry.repliedAt && (
-            <div className="user-inquiry-reply-date">
-              {new Date(inquiry.repliedAt).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}
-            </div>
-          )}
-
-          {/* Review section */}
-          {inquiry.reviewId ? (
-            <div className="user-inquiry-reviewed">
-              {'★'.repeat(inquiry.reviewRating ?? 0)}{'☆'.repeat(5 - (inquiry.reviewRating ?? 0))}
-              <span>已評價</span>
-            </div>
-          ) : (
-            reviewOpen ? (
-              <div className="user-inquiry-review-form">
-                <div className="user-inquiry-review-label">為廠商評分</div>
-                <StarRating value={rating} onChange={setRating} />
-                <textarea
-                  className="form-input"
-                  rows={2}
-                  placeholder="選填：文字評價"
-                  value={comment}
-                  onChange={e => setComment(e.target.value)}
-                />
-                {err && <div className="form-error" style={{ fontSize: 13 }}>{err}</div>}
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-primary btn-sm" disabled={submitting} onClick={submitReview}>
-                    {submitting ? '送出中⋯' : '送出評價'}
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => setReviewOpen(false)}>取消</button>
-                </div>
-              </div>
-            ) : (
-              <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setReviewOpen(true)}>
-                為廠商評分
-              </button>
-            )
-          )}
-        </div>
-      )}
     </div>
   );
 }

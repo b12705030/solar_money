@@ -1368,9 +1368,10 @@ input[type="range"]::-moz-range-thumb {
 /* ========== Dashboard Pages (廠商後台 / 管理後台) ========== */
 
 .dash-page {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--paper);
 }
 
@@ -1449,6 +1450,7 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* Sidebar — expanded 220px, collapsed 52px */
@@ -1592,11 +1594,13 @@ input[type="range"]::-moz-range-thumb {
   flex: 1;
   padding: 36px 40px;
   min-width: 0;
-  max-width: 900px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .dash-content-header {
-  margin-bottom: 28px;
+  margin-bottom: 12px;
 }
 .dash-content-title {
   font-size: 22px;
@@ -2481,8 +2485,9 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-md);
   background: var(--white);
   overflow: hidden;
-  min-height: 540px;
-  margin-top: 16px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
 }
 
 /* Left contact list */
