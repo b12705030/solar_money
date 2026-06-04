@@ -47,10 +47,13 @@ export default function VendorDashboard({ onClose }: Props) {
     } catch { /* ignore */ }
   }, [authHeaders]);
 
-  useEffect(() => { fetchVendor(); }, [fetchVendor]);
   useEffect(() => {
-    if (tab === 'inquiries') fetchInquiries();
-  }, [tab, fetchInquiries]);
+    fetchVendor();
+    fetchInquiries();
+  }, [fetchVendor, fetchInquiries]);
+  useEffect(() => {
+    if (tab === 'inquiries' && inquiries.length === 0) fetchInquiries();
+  }, [tab, fetchInquiries, inquiries.length]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
