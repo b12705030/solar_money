@@ -14,15 +14,27 @@ interface Assessment {
   out_of_pocket: number | null;
   capacity_kw: number | null;
   created_at: string;
+  roof_area_ping: number | null;
+  self_sufficiency: number | null;
+  total_20yr: number | null;
+  goal: string | null;
 }
 
+const GOAL_LABEL: Record<string, string> = {
+  self: '自用優先', sell: '售電優先', roi: '最快回本',
+};
+
 const COMPARE_ROWS: { key: keyof Assessment; label: string; fmt: (v: unknown) => string }[] = [
-  { key: 'address',      label: '地址',     fmt: v => (v as string) ?? '—' },
-  { key: 'county',       label: '縣市',     fmt: v => (v as string) ?? '—' },
-  { key: 'capacity_kw',  label: '裝機容量', fmt: v => v != null ? `${v} kWp` : '—' },
-  { key: 'annual_kwh',   label: '年發電量', fmt: v => v != null ? `${(v as number).toLocaleString()} kWh` : '—' },
-  { key: 'payback_years',label: '回本年限', fmt: v => v != null ? `${v} 年` : '—' },
-  { key: 'out_of_pocket',label: '實際自付', fmt: v => v != null ? `NT$ ${(v as number).toLocaleString()}` : '—' },
+  { key: 'address',         label: '地址',     fmt: v => (v as string) ?? '—' },
+  { key: 'county',          label: '縣市',     fmt: v => (v as string) ?? '—' },
+  { key: 'goal',            label: '目標',     fmt: v => (v ? (GOAL_LABEL[v as string] ?? (v as string)) : '—') },
+  { key: 'roof_area_ping',  label: '屋頂坪數', fmt: v => v != null ? `${v} 坪` : '—' },
+  { key: 'capacity_kw',     label: '裝機容量', fmt: v => v != null ? `${v} kWp` : '—' },
+  { key: 'annual_kwh',      label: '年發電量', fmt: v => v != null ? `${(v as number).toLocaleString()} kWh` : '—' },
+  { key: 'self_sufficiency',label: '自給率',   fmt: v => v != null ? `${Math.round((v as number) * 100)} %` : '—' },
+  { key: 'payback_years',   label: '回本年限', fmt: v => v != null ? `${v} 年` : '—' },
+  { key: 'total_20yr',      label: '20年總收益', fmt: v => v != null ? `NT$ ${(v as number).toLocaleString()}` : '—' },
+  { key: 'out_of_pocket',   label: '實際自付', fmt: v => v != null ? `NT$ ${(v as number).toLocaleString()}` : '—' },
 ];
 
 type DrawerTab = 'assessments' | 'inquiries';
@@ -114,8 +126,8 @@ export default function HistoryDrawer({ onClose }: { onClose: () => void }) {
                     並排比較
                   </button>
                 )}
-                <button className="btn-ghost" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => setSelected([])}>
-                  清除
+                <button className="btn-ghost" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => { setSelected([]); setComparing(false); }}>
+                  取消選取
                 </button>
               </div>
             </div>
@@ -323,8 +335,10 @@ function UserInquiryCard({
           {/* Review section */}
           {inquiry.reviewId ? (
             <div className="user-inquiry-reviewed">
-              {'★'.repeat(inquiry.reviewRating ?? 0)}{'☆'.repeat(5 - (inquiry.reviewRating ?? 0))}
-              <span>已評價</span>
+              <span>{'★'.repeat(inquiry.reviewRating ?? 0)}{'☆'.repeat(5 - (inquiry.reviewRating ?? 0))}</span>
+              {inquiry.reviewComment && (
+                <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--ink-500)' }}>{inquiry.reviewComment}</span>
+              )}
             </div>
           ) : (
             reviewOpen ? (

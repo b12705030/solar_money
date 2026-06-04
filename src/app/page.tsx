@@ -88,18 +88,18 @@ export default function App() {
     user,
     onLoginClick:       () => setAuthOpen(true),
     onHistoryClick:     () => setHistoryOpen(true),
-    onVendorApplyClick: () => setVendorApplyOpen(true),
-    onVendorDashClick:  () => router.push('/vendor'),
-    onAdminPanelClick:  () => router.push('/admin'),
-    onLogout:           logout,
+    onVendorApplyClick:  () => setVendorApplyOpen(true),
+    onVendorDashClick:   () => router.push('/vendor'),
+    onAdminPanelClick:   () => router.push('/admin'),
+    onLogout:            logout,
   };
 
   const modals = (
     <>
-      {tweaksOpen      && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
-      {authOpen        && <AuthModal onClose={() => setAuthOpen(false)} />}
-      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} onLoginClick={() => { setVendorApplyOpen(false); setAuthOpen(true); }} />}
-      {historyOpen     && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
+      {tweaksOpen        && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+      {authOpen          && <AuthModal onClose={() => setAuthOpen(false)} />}
+      {vendorApplyOpen   && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} onLoginClick={() => { setVendorApplyOpen(false); setAuthOpen(true); }} />}
+      {historyOpen       && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
     </>
   );
 
