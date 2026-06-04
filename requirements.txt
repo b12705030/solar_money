@@ -13,3 +13,5 @@ python-jose[cryptography]
 rasterio
 fiona
 Pillow
+boto3
+python-multipart
