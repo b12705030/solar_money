@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { SUBSIDIES } from '@/lib/constants';
-import type { MyVendor, Inquiry, VendorPortfolio, CaseStatus, PotentialLead } from '@/lib/types';
+import type { MyVendor, Inquiry, InquiryMessage, VendorPortfolio, CaseStatus, PotentialLead } from '@/lib/types';
 import DashLayout, { IconBuilding, IconFolder, IconInbox, IconUsers } from '@/components/DashLayout';
 import type { NavItem } from '@/components/DashLayout';
 
@@ -660,21 +660,28 @@ function InquiriesTab({
   const selected = inquiries.find(i => i.id === selectedId) ?? null;
 
   return (
-    <div>
-      <div className="dash-content-header">
-        <div className="dash-content-title">收件箱</div>
-        <div className="dash-content-sub">點選左側聯絡人查看對話，在右側直接回覆與更新案件狀態</div>
-      </div>
-
-      <div className="dash-stats">
-        {(['new','contacted','quoted','closed'] as CaseStatus[]).map(s => (
-          <div key={s} className="dash-stat">
-            <div className={`dash-stat-value case-stat-${s}`}>
-              {inquiries.filter(i => i.caseStatus === s).length}
-            </div>
-            <div className="dash-stat-label">{CASE_STATUS_LABEL[s]}</div>
-          </div>
-        ))}
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div className="dash-content-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div className="dash-content-title">收件箱</div>
+          <div className="dash-content-sub">點選左側聯絡人查看對話，在右側直接回覆與更新案件狀態</div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {(['new','contacted','quoted','closed'] as CaseStatus[]).map(s => {
+            const count = inquiries.filter(i => i.caseStatus === s).length;
+            return (
+              <div key={s} className={`cs-${s}`} style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '6px 14px', borderRadius: 999,
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                fontSize: 13,
+              }}>
+                <span style={{ fontWeight: 700, fontFamily: 'var(--font-num)', fontSize: 16 }}>{count}</span>
+                <span style={{ color: 'var(--text-muted)' }}>{CASE_STATUS_LABEL[s]}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {inquiries.length === 0 ? (
@@ -744,9 +751,9 @@ function ChatWindow({
   onStatusChange: (s: CaseStatus) => void;
   onReplySent: (reply: string) => void;
 }) {
-  const [replyText,   setReplyText]   = useState('');
-  const [localReply,  setLocalReply]  = useState(inquiry.vendorReply ?? null);
-  const [localStatus, setLocalStatus] = useState<CaseStatus>(inquiry.caseStatus);
+  const [replyText,    setReplyText]    = useState('');
+  const [localMessages, setLocalMessages] = useState(inquiry.messages ?? []);
+  const [localStatus,  setLocalStatus]  = useState<CaseStatus>(inquiry.caseStatus);
   const [saving,      setSaving]      = useState(false);
   const [err,         setErr]         = useState('');
 
@@ -759,8 +766,10 @@ function ChatWindow({
         headers: authHeaders,
         body: JSON.stringify({ reply: replyText.trim() }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '回覆失敗');
-      setLocalReply(replyText.trim());
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail ?? '回覆失敗');
+      const newMsg: InquiryMessage = data;
+      setLocalMessages(prev => [...prev, newMsg]);
       setReplyText('');
       onReplySent(replyText.trim());
       // auto-advance status
@@ -821,36 +830,30 @@ function ChatWindow({
 
       {/* Messages */}
       <div className="inq-messages">
-        {/* Assessment summary as system card */}
-        <div className="inq-system-card">
-          <div className="inq-system-card-label">評估資料</div>
-          <div className="dash-inquiry-chips" style={{ marginTop: 4 }}>
-            {inquiry.address && <span>{inquiry.address}</span>}
-            {inquiry.county && !inquiry.address && <span>{inquiry.county}</span>}
-            {inquiry.capacityKw > 0 && <span>{inquiry.capacityKw} kWp</span>}
-            {inquiry.annualKwh > 0 && <span>{Math.round(inquiry.annualKwh).toLocaleString()} kWh/年</span>}
-            {inquiry.paybackYears > 0 && <span>回本 {inquiry.paybackYears.toFixed(1)} 年</span>}
-          </div>
-          <div className="inq-system-date">
-            詢價時間：{new Date(inquiry.createdAt).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}
-          </div>
-        </div>
-
-        {/* User message */}
-        {inquiry.message && (
-          <div className="inq-msg-row inq-msg-row--user">
-            <div className="inq-msg-avatar">{inquiry.inquirerEmail ? inquiry.inquirerEmail[0].toUpperCase() : '?'}</div>
-            <div className="inq-msg inq-msg--user">{inquiry.message}</div>
-          </div>
-        )}
-
-        {/* Vendor reply */}
-        {localReply && (
-          <div className="inq-msg-row inq-msg-row--vendor">
-            <div className="inq-msg inq-msg--vendor">{localReply}</div>
-            <div className="inq-msg-avatar inq-msg-avatar--vendor">我</div>
-          </div>
-        )}
+        {localMessages.map(msg => {
+          const isVendor = msg.sender === 'vendor';
+          const time = msg.createdAt ? new Date(msg.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+          const initial = inquiry.inquirerEmail ? inquiry.inquirerEmail[0].toUpperCase() : '?';
+          return (
+            <div key={msg.id} style={{ display: 'flex', justifyContent: isVendor ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end' }}>
+              {!isVendor && (
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--green-200)', color: 'var(--ink-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                  {initial}
+                </div>
+              )}
+              <div style={{ maxWidth: '70%' }}>
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: isVendor ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  background: isVendor ? 'var(--green-700)' : 'var(--green-100)',
+                  color: isVendor ? '#fff' : 'var(--green-900)',
+                  fontSize: 14, lineHeight: 1.55, whiteSpace: 'pre-wrap',
+                }}>{msg.content}</div>
+                {time && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, textAlign: isVendor ? 'right' : 'left' }}>{time}</div>}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Input area */}
@@ -860,7 +863,7 @@ function ChatWindow({
           <textarea
             className="form-input inq-textarea"
             placeholder={`回覆 ${inquiry.inquirerEmail}… (Ctrl+Enter 送出)`}
-            rows={3}
+            rows={2}
             value={replyText}
             onChange={e => setReplyText(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -869,9 +872,9 @@ function ChatWindow({
             className="btn btn-primary"
             disabled={saving || !replyText.trim()}
             onClick={sendReply}
-            style={{ flexShrink: 0, alignSelf: 'flex-end' }}
+            style={{ flexShrink: 0, alignSelf: 'center', borderRadius: 12, fontSize: 13, padding: '12px 16px' }}
           >
-            {saving ? '送出中⋯' : localReply ? '更新回覆' : '送出回覆'}
+            {saving ? '送出中⋯' : '送出回覆'}
           </button>
         </div>
       ) : (

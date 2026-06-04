@@ -134,6 +134,7 @@ export interface Inquiry {
   caseStatus: CaseStatus;
   inquirerEmail: string | null;
   createdAt: string;
+  messages: InquiryMessage[];
 }
 
 export interface RegionPotential {
@@ -158,20 +159,28 @@ export interface PotentialLead {
   createdAt: string;
 }
 
+export interface InquiryMessage {
+  id: string;
+  sender: 'user' | 'vendor';
+  content: string;
+  createdAt: string;
+}
+
 export interface UserInquiry {
   id: string;
   vendorId: string;
   vendorName: string;
   vendorLogo: string | null;
+  vendorRating: number;
+  vendorReviewCount: number;
   address: string | null;
   county: string | null;
   capacityKw: number;
   annualKwh: number;
   paybackYears: number;
-  message: string | null;
-  vendorReply: string | null;
-  repliedAt: string | null;
   createdAt: string;
+  messages: InquiryMessage[];
   reviewId: string | null;
   reviewRating: number | null;
+  reviewComment: string | null;
 }

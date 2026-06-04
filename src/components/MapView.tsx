@@ -431,6 +431,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
         const usableFraction = await fetchUsableFractionForBuilding(
           primary.footprint, clickLat, clickLng, buildingsRef,
         );
+        buildingCacheRef.current = { features: [primaryFeat], footprint: primary.footprint, height: primary.height, lat: clickLat, lng: clickLng };
         onBuildingFoundRef.current?.({ height: primary.height, areaPing, usableFraction, lat: clickLat, lng: clickLng });
       });
 
