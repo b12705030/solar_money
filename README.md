@@ -220,6 +220,11 @@ cp backend/.env.example backend/.env
 | `JWT_SECRET` | 任意隨機字串 | 自動產生臨時 key，重啟後 token 失效（本地開發可接受） |
 | `ADMIN_SECRET` | 管理員 API secret | 預設 `dev-admin-secret`（本地開發可接受，部署前必改） |
 | `CORS_ORIGINS` | 允許的前端來源（逗號分隔） | 允許所有來源，本地開發可不設 |
+| `R2_ACCOUNT_ID` | Cloudflare Account ID | 未設定時圖片上傳功能停用 |
+| `R2_ACCESS_KEY_ID` | R2 API Token Access Key | 同上 |
+| `R2_SECRET_ACCESS_KEY` | R2 API Token Secret Key | 同上 |
+| `R2_BUCKET_NAME` | R2 Bucket 名稱 | 同上 |
+| `R2_PUBLIC_URL` | Bucket 公開 URL（`https://pub-xxx.r2.dev`） | 同上 |
 
 
 ### 5. 啟動服務
@@ -292,7 +297,8 @@ uvicorn backend.main:app --reload
 |--------|----------|------|
 | `GET` | `/api/me/vendor` | 取得自己的廠商資料、作品集、訂閱狀態 |
 | `PATCH` | `/api/me/vendor` | 更新廠商資料（名稱、電話、email、縣市、標籤） |
-| `POST` | `/api/me/vendor/logo` | 更新廠商 Logo（base64 DataURL） |
+| `POST` | `/api/me/vendor/logo` | 更新廠商 Logo（multipart file upload → 上傳至 Cloudflare R2，回傳公開 URL） |
+| `POST` | `/api/me/vendor/upload-image` | 通用圖片上傳（作品集照片等），同上 |
 | `POST` | `/api/me/vendor/portfolios` | 新增作品集項目（含施工照、規格、客戶描述） |
 | `DELETE` | `/api/me/vendor/portfolios/{id}` | 刪除作品集項目 |
 | `GET` | `/api/me/vendor/inquiries` | 取得收到的詢價紀錄（含 case_status） |
@@ -476,12 +482,17 @@ moveend + 600ms debounce
 | `JWT_SECRET` | 長隨機字串，例如 `python -c "import secrets; print(secrets.token_hex(32))"` 的輸出 | **自動產生臨時 key，重啟後所有用戶 token 失效** |
 | `ADMIN_SECRET` | 自訂管理員 API secret，例如 `solar-admin-2026-xxx` | **預設為 `dev-admin-secret`，生產環境必須改掉** |
 | `CORS_ORIGINS` | 允許的前端來源，逗號分隔，例如 `https://your-app.vercel.app,http://localhost:3000` | 未設定時允許所有來源（`*`） |
+| `R2_ACCOUNT_ID` | Cloudflare Account ID | 未設定時圖片上傳功能停用 |
+| `R2_ACCESS_KEY_ID` | R2 API Token Access Key | 同上 |
+| `R2_SECRET_ACCESS_KEY` | R2 API Token Secret Key | 同上 |
+| `R2_BUCKET_NAME` | R2 Bucket 名稱，例如 `solar-money-logos` | 同上 |
+| `R2_PUBLIC_URL` | Bucket 公開 URL，例如 `https://pub-xxx.r2.dev` | 同上 |
 
 > **注意：** `JWT_SECRET` 和 `ADMIN_SECRET` 本地開發可不設，但部署前務必填入。前者未設定每次重啟都會讓用戶登出；後者預設值是公開資訊，任何人都能呼叫管理員 API。
 
 ### 注意事項
 
-- **base64 圖片儲存**：廠商 Logo 和作品集施工照都是以 base64 DataURL 存在 PostgreSQL TEXT 欄位，小張圖沒問題，但大量高解析照片會讓 DB 快速膨脹。規模化前建議改用 [Cloudinary](https://cloudinary.com) 免費方案（每月 25 GB）。
+- **圖片儲存**：廠商 Logo 和作品集施工照上傳至 **Cloudflare R2**（免費方案：10 GB 儲存 + 零 egress 費用），DB 只存公開 URL。現有 base64 資料可用 `python -m backend.migrate_logos` 遷移。
 - **Neon cold start**：Neon serverless 免費方案有連線數限制，後端已用 asyncpg connection pool 處理，應對短暫高峰沒問題。
 - **Railway free tier**：每月 $5 額度，睡眠機制會讓第一個請求慢幾秒；如需避免可升級 Hobby 方案（$5/月）。
 
