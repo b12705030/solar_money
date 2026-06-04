@@ -148,20 +148,27 @@ export default function StepAddress({
     setBuildingInfo({ height: info.height, areaPing: info.areaPing, usableFraction: info.usableFraction });
     update({ roofArea: info.areaPing, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
 
-    const [township, geocoded] = await Promise.all([
-      fetchTownshipCode(info.lat, info.lng),
-      reverseGeocode(info.lat, info.lng),
-    ]);
-    const label = geocoded ?? (township
-      ? `${township.townshipName}（地圖點選）`
-      : `${info.lat.toFixed(5)}, ${info.lng.toFixed(5)}（地圖點選）`);
-    const synthetic: AddressOption = {
-      label, meta: '', area: info.areaPing, type: '一般住宅', floors: 0,
-      region: detectRegion(township?.townshipName ?? label), lat: info.lat, lng: info.lng,
-    };
-    setSelected(synthetic);
-    setQuery(label);
-    update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
+    if (!selected || selected.meta === '') {
+      // 地圖點選（非手打地址）→ 反向 geocoding 取得地址
+      const [township, geocoded] = await Promise.all([
+        fetchTownshipCode(info.lat, info.lng),
+        reverseGeocode(info.lat, info.lng),
+      ]);
+      const label = geocoded ?? (township
+        ? `${township.townshipName}（地圖點選）`
+        : `${info.lat.toFixed(5)}, ${info.lng.toFixed(5)}（地圖點選）`);
+      const synthetic: AddressOption = {
+        label, meta: '', area: info.areaPing, type: '一般住宅', floors: 0,
+        region: detectRegion(township?.townshipName ?? label), lat: info.lat, lng: info.lng,
+      };
+      setSelected(synthetic);
+      setQuery(label);
+      update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
+    } else {
+      // 手打地址 → 只更新坪數與行政區代碼，不動地址文字
+      const township = await fetchTownshipCode(info.lat, info.lng);
+      if (township) update({ townshipCode: township.townshipCode, townshipName: township.townshipName });
+    }
     setBuildingLoading(false);
   };
 

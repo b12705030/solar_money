@@ -570,7 +570,9 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         <div className="eyebrow" style={{ marginBottom: 16, color: 'var(--amber)' }}>
           <span style={{ background: 'var(--amber)' }}></span>評估結果
         </div>
-        <h2 className="h-title" style={{ margin: '0 0 8px' }}>你家屋頂很適合裝太陽能</h2>
+        <h2 className="h-title" style={{ margin: '0 0 8px' }}>
+          {r.suitability === 'good' ? '你家屋頂很適合裝太陽能' : r.suitability === 'fair' ? '你家屋頂適合裝太陽能' : '你家屋頂仍可裝太陽能'}
+        </h2>
         <p className="body" style={{ color: 'var(--ink-500)' }}>
           基於 {state.address?.label ?? '你輸入的地址'} 的日照資料、{r.region}氣候模型與 {state.county ?? '台北市'} 政府補助計算。
         </p>
