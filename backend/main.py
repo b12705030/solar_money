@@ -850,10 +850,10 @@ async def me_vendor_reply(
         raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
     if not req.reply.strip():
         raise HTTPException(status_code=422, detail='回覆內容不可空白')
-    ok = await reply_to_inquiry(inquiry_id, vendor['id'], req.reply.strip())
-    if not ok:
+    msg = await reply_to_inquiry(inquiry_id, vendor['id'], req.reply.strip())
+    if not msg:
         raise HTTPException(status_code=404, detail='找不到詢價記錄')
-    return {'ok': True}
+    return msg
 
 
 @app.get('/api/me/inquiries')

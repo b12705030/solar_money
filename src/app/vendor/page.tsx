@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { SUBSIDIES } from '@/lib/constants';
-import type { MyVendor, Inquiry, VendorPortfolio, CaseStatus, PotentialLead } from '@/lib/types';
+import type { MyVendor, Inquiry, InquiryMessage, VendorPortfolio, CaseStatus, PotentialLead } from '@/lib/types';
 import DashLayout, { IconBuilding, IconFolder, IconInbox, IconUsers } from '@/components/DashLayout';
 import type { NavItem } from '@/components/DashLayout';
 
@@ -745,8 +745,9 @@ function ChatWindow({
         headers: authHeaders,
         body: JSON.stringify({ reply: replyText.trim() }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '回覆失敗');
-      const newMsg = { id: Date.now().toString(), sender: 'vendor', content: replyText.trim(), createdAt: new Date().toISOString() };
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail ?? '回覆失敗');
+      const newMsg: InquiryMessage = data;
       setLocalMessages(prev => [...prev, newMsg]);
       setReplyText('');
       onReplySent(replyText.trim());

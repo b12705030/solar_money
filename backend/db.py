@@ -1119,8 +1119,8 @@ async def get_vendor_inquiries(vendor_id: str, limit: int = 50) -> list[dict]:
         return []
 
 
-async def reply_to_inquiry(inquiry_id: str, vendor_id: str, reply: str) -> bool:
-    """廠商回覆詢價；驗證該詢價確實屬於此廠商，並寫入 inquiry_messages。"""
+async def reply_to_inquiry(inquiry_id: str, vendor_id: str, reply: str) -> dict | None:
+    """廠商回覆詢價；驗證該詢價確實屬於此廠商，並寫入 inquiry_messages。回傳新訊息或 None。"""
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -1130,14 +1130,22 @@ async def reply_to_inquiry(inquiry_id: str, vendor_id: str, reply: str) -> bool:
                    WHERE id = $1::uuid AND vendor_id = $2''',
                 inquiry_id, vendor_id, reply,
             )
-            if result.endswith('1'):
-                await conn.execute(
-                    'INSERT INTO inquiry_messages (inquiry_id, sender, content) VALUES ($1::uuid, $2, $3)',
-                    inquiry_id, 'vendor', reply,
-                )
-            return result.endswith('1')
+            if not result.endswith('1'):
+                return None
+            row = await conn.fetchrow(
+                '''INSERT INTO inquiry_messages (inquiry_id, sender, content)
+                   VALUES ($1::uuid, $2, $3)
+                   RETURNING id, sender, content, created_at''',
+                inquiry_id, 'vendor', reply,
+            )
+            return {
+                'id': str(row['id']),
+                'sender': row['sender'],
+                'content': row['content'],
+                'createdAt': row['created_at'].isoformat(),
+            }
     except Exception:
-        return False
+        return None
 
 
 async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
