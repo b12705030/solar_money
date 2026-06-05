@@ -622,77 +622,6 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         )}
       </div>
 
-      {/* 氣候適宜性卡片 (Han et al. 2026 ADR model) */}
-      {(() => {
-        const suitMap = {
-          good: { label: '優良', color: 'var(--green-700)', bg: '#F0F9F2', border: 'var(--green-300)' },
-          fair: { label: '尚可', color: '#C8861E',          bg: '#FFF8EE', border: '#E8A53C' },
-          poor: { label: '偏低', color: '#B02424',          bg: '#FFF1F1', border: '#F5ACAC' },
-        } as const;
-        const s = suitMap[r.suitability];
-        const avgPR = r.monthlyPR.reduce((a, b) => a + b, 0) / 12;
-        const prDeltaPct = ((avgPR - 0.78) / 0.78 * 100).toFixed(1);
-        const prSign = avgPR >= 0.78 ? '+' : '';
-        const twAvg = Math.round(417 / 0.325); // 1283 kWh/kWp (paper value ÷ 0.325 kWp/panel)
-        const yieldDiff = r.pvYieldPerKwp - twAvg;
-        const yieldSign = yieldDiff >= 0 ? '+' : '';
-        return (
-          <div style={{
-            marginBottom: 20, padding: '16px 20px',
-            background: tiltLoading ? 'var(--ink-50)' : s.bg,
-            border: `1px solid ${tiltLoading ? 'var(--ink-200)' : s.border}`,
-            borderRadius: 12,
-            display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 20,
-          }}>
-            {tiltLoading ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', color: 'var(--ink-400)', fontSize: 14 }}>
-                <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
-                依當地氣候資料計算中…
-              </div>
-            ) : (
-              <>
-                <div style={{ flex: '0 0 auto' }}>
-                  <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性<Info tip="依 Han et al. (2026) Fig.11 ±σ 門檻分類；年效率 = 年發電量(kWh) ÷ 裝置容量(kWp)：≥ 1418 kWh/kWp → 優良；≥ 1148 → 尚可；< 1148 → 偏低（台灣均值 1283 kWh/kWp）" /></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{
-                      padding: '3px 10px', borderRadius: 6, fontSize: 13, fontWeight: 700,
-                      background: s.color, color: '#fff',
-                    }}>{s.label}</span>
-                  </div>
-                </div>
-
-                <div style={{ flex: '0 0 auto' }}>
-                  <div className="caption" style={{ marginBottom: 2 }}>年發電效率<Info tip="年發電量(kWh) ÷ 裝置容量(kWp)；數值越高表示當地氣候對發電越有利" /></div>
-                  <div>
-                    <span className="num" style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{r.pvYieldPerKwp}</span>
-                    <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 4 }}>kWh/kWp</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                    台灣均值 {twAvg} · <span style={{ color: s.color }}>{yieldSign}{yieldDiff.toFixed(0)} kWh/kWp</span>
-                  </div>
-                </div>
-
-                <div style={{ flex: '0 0 auto' }}>
-                  <div className="caption" style={{ marginBottom: 2 }}>
-                    溫度效率修正<Info tip="月均動態 PR 與固定基準 PR=0.78 的百分差；高溫導致效率熱衰減（負值），低溫+強風可提升效率（正值）" />
-                  </div>
-                  <div>
-                    <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-700)' }}>{prSign}{prDeltaPct}%</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>相對固定 PR=0.78 的月均修正</div>
-                </div>
-
-                <div style={{ flex: '1 1 200px', borderTop: 'none', alignSelf: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--ink-400)', lineHeight: 1.5 }}>
-                    依 Han et al. (2026) Faiman T<sub>cell</sub> 模型計算，考量月均溫度與風速對電池片效率之影響
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        );
-      })()}
-
       {/* Headline numbers */}
       <div className="card elevated results-kpi-card" style={{ marginBottom: 28, background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
         <div className="results-kpi-grid">
@@ -989,6 +918,80 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           </div>
         </div>
 
+        {/* 氣候適宜性卡片 (Han et al. 2026 ADR model) */}
+        {(() => {
+          const suitMap = {
+            good: { label: '優良', color: 'var(--green-700)', bg: '#F0F9F2', border: 'var(--green-300)' },
+            fair: { label: '尚可', color: '#C8861E',          bg: '#FFF8EE', border: '#E8A53C' },
+            poor: { label: '偏低', color: '#B02424',          bg: '#FFF1F1', border: '#F5ACAC' },
+          } as const;
+          const s = suitMap[r.suitability];
+          const avgPR = r.monthlyPR.reduce((a, b) => a + b, 0) / 12;
+          const prDeltaPct = ((avgPR - 0.78) / 0.78 * 100).toFixed(1);
+          const prSign = avgPR >= 0.78 ? '+' : '';
+          const twAvg = Math.round(417 / 0.325);
+          const yieldDiff = r.pvYieldPerKwp - twAvg;
+          const yieldSign = yieldDiff >= 0 ? '+' : '';
+          return (
+            <div style={{
+              marginTop: 20, marginBottom: 20, padding: '16px 20px',
+              background: tiltLoading ? 'var(--ink-50)' : s.bg,
+              border: `1px solid ${tiltLoading ? 'var(--ink-200)' : s.border}`,
+              borderRadius: 12,
+              display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 20,
+            }}>
+              {tiltLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', color: 'var(--ink-400)', fontSize: 14 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                  依當地氣候資料計算中…
+                </div>
+              ) : (
+                <>
+                  <div style={{ flex: '0 0 auto' }}>
+                    <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性<Info tip="依 Han et al. (2026) Fig.11 ±σ 門檻分類；年效率 = 年發電量(kWh) ÷ 裝置容量(kWp)：≥ 1418 kWh/kWp → 優良；≥ 1148 → 尚可；< 1148 → 偏低（台灣均值 1283 kWh/kWp）" /></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{
+                        padding: '3px 10px', borderRadius: 6, fontSize: 13, fontWeight: 700,
+                        background: s.color, color: '#fff',
+                      }}>{s.label}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 4, lineHeight: 1.4 }}>
+                      全台相對比較<br />非裝設可行性判斷
+                    </div>
+                  </div>
+
+                  <div style={{ flex: '0 0 auto' }}>
+                    <div className="caption" style={{ marginBottom: 2 }}>年發電效率<Info tip="年發電量(kWh) ÷ 裝置容量(kWp)；數值越高表示當地氣候對發電越有利" /></div>
+                    <div>
+                      <span className="num" style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{r.pvYieldPerKwp}</span>
+                      <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 4 }}>kWh/kWp</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                      台灣均值 {twAvg} · <span style={{ color: s.color }}>{yieldSign}{yieldDiff.toFixed(0)} kWh/kWp</span>
+                    </div>
+                  </div>
+
+                  <div style={{ flex: '0 0 auto' }}>
+                    <div className="caption" style={{ marginBottom: 2 }}>
+                      溫度效率修正<Info tip="月均動態 PR 與固定基準 PR=0.78 的百分差；高溫導致效率熱衰減（負值），低溫+強風可提升效率（正值）" />
+                    </div>
+                    <div>
+                      <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-700)' }}>{prSign}{prDeltaPct}%</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>相對固定 PR=0.78 的月均修正</div>
+                  </div>
+
+                  <div style={{ flex: '1 1 200px', borderTop: 'none', alignSelf: 'center' }}>
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)', lineHeight: 1.5 }}>
+                      依 Han et al. (2026) Faiman T<sub>cell</sub> 模型計算，考量月均溫度與風速對電池片效率之影響
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Climate parameters card — inside generation tab */}
         {(() => {
         const dispGhi      = monthlyGhi      ?? TW_IRRADIANCE[r.region];
@@ -1038,7 +1041,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               <div>
                 <h3 className="h-section" style={{ margin: 0 }}>氣候輸入參數<Info tip="NASA POWER 月均資料（GHI、氣溫、風速、濕度），用於 Faiman T_cell 模型計算各月動態PR" /></h3>
                 <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3, lineHeight: 1.7 }}>
-                  用於 Faiman T<sub>cell</sub> 模型計算月動態 PR
+                  這張表顯示影響你屋頂發電效率的四大氣候因子，以及系統據此計算出的每月動態 PR（實際效率比）
                   {fromApi ? (
                     <>
                       <br />
@@ -1129,12 +1132,38 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               </span>
               <span>
                 <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(220,80,60,0.4)', marginRight: 4, verticalAlign: 'middle' }} />
-                動態 PR 低於基準 0.78（熱衰減）
+                動態 PR 低於 0.78（熱衰減）→ 效率較差
               </span>
               <span>
                 <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(64,145,108,0.45)', marginRight: 4, verticalAlign: 'middle' }} />
-                動態 PR 高於基準 0.78（冷卻效果）
+                動態 PR 高於 0.78（冷卻效果）→ 效率較佳
               </span>
+            </div>
+
+            {/* 教育說明 callout */}
+            <div style={{
+              marginTop: 16,
+              padding: '14px 16px',
+              background: 'var(--ink-50)',
+              borderLeft: '3px solid var(--green-400)',
+              borderRadius: '0 8px 8px 0',
+              fontSize: 12,
+              color: 'var(--ink-600)',
+              lineHeight: 1.8,
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--ink-800)' }}>如何解讀這張表？</div>
+              <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <li><strong>日射量</strong>（綠色越深）→ 太陽資源越豐富，發電潛力越高</li>
+                <li><strong>月均氣溫</strong>（紅色越深）→ 電板越熱，效率越低（熱衰減）</li>
+                <li><strong>風速</strong>（藍色越深）→ 有助電板降溫，可彌補部分熱衰減損失</li>
+                <li><strong>動態 PR</strong> = 綜合上述因素的每月實際效率比，<strong>越高越好</strong>，基準為 0.78</li>
+              </ul>
+              <div style={{ marginTop: 8, color: 'var(--ink-500)' }}>
+                以台北為例：夏季（6–9 月）日射量高但氣溫更高，動態 PR 通常<span style={{ color: '#B02424', fontWeight: 600 }}>低於 0.78（紅色）</span>，代表高溫熱衰減抵消了部分日照優勢。冬季氣溫低、風速強，動態 PR 反而<span style={{ color: 'var(--green-700)', fontWeight: 600 }}>高於 0.78（綠色）</span>，效率優於基準。
+              </div>
+              <div style={{ marginTop: 6, color: 'var(--ink-400)' }}>
+                上方的「氣候適宜性」與「年發電效率」正是將這 12 個月的動態 PR 加權平均後得出的綜合結論。
+              </div>
             </div>
           </div>
         );
