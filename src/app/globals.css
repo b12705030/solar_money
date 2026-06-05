@@ -222,7 +222,7 @@ a { text-decoration: none; }
 }
 .btn-secondary:hover { background: var(--green-50); border-color: var(--green-300); }
 
-.btn-ghost { color: var(--ink-500); padding: 10px 14px; }
+.btn-ghost { color: var(--ink-500); padding: 10px 14px; display: inline-flex; align-items: center; gap: 6px; }
 .btn-ghost:hover { color: var(--green-700); background: var(--green-50); }
 
 .btn-nav {

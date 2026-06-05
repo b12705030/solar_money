@@ -661,7 +661,7 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
             if county:
                 rows = await conn.fetch(
                     '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
-                              v.phone, v.email, v.tags,
+                              v.phone, v.email, v.tags, v.logo_url,
                               p.title AS portfolio_title,
                               p.meta AS portfolio_meta,
                               p.capacity_kw
@@ -683,7 +683,7 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
             else:
                 rows = await conn.fetch(
                     '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
-                              v.phone, v.email, v.tags,
+                              v.phone, v.email, v.tags, v.logo_url,
                               p.title AS portfolio_title,
                               p.meta AS portfolio_meta,
                               p.capacity_kw
@@ -714,6 +714,7 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
                     'phone': r['phone'] or '',
                     'email': r['email'] or '',
                     'tags': list(r['tags'] or []),
+                    'logoUrl': r['logo_url'],
                 }
                 for r in rows
             ]
