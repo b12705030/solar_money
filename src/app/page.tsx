@@ -124,7 +124,7 @@ export default function App() {
     return (
       <div className="app">
         <TopBar {...topBarProps} onHome={reset} />
-        <ProgressBar step={4} steps={STEPS} />
+        <ProgressBar step={4} steps={STEPS} onStepClick={go} />
         <main className="main-content">
           <div style={{ padding: '24px 0' }}>
             <Results state={state} onRestart={reset} onLoginClick={() => setAuthOpen(true)} />
@@ -138,7 +138,7 @@ export default function App() {
   return (
     <div className="app">
       <TopBar {...topBarProps} onHome={reset} />
-      <ProgressBar step={step} steps={STEPS} />
+      <ProgressBar step={step} steps={STEPS} onStepClick={go} />
       <main className="main-content" style={{ position: 'relative', overflow: 'hidden' }}>
         <div style={{ padding: '30px 0 40px', position: 'relative', minHeight: 520 }}>
           {([0, 1, 2, 3] as const).map(i => (
