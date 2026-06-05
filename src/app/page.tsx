@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import TopBar from '@/components/TopBar';
 import Footer from '@/components/Footer';
@@ -37,6 +37,8 @@ export default function App() {
   const [vendorApplyOpen, setVendorApplyOpen] = useState(false);
   const [pendingVendorApply, setPendingVendorApply] = useState(false);
   const [vendorLoginToast, setVendorLoginToast] = useState(false);
+  const vendorToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevAuthOpenRef = useRef(false);
 
   useEffect(() => {
     if (user && pendingVendorApply) {
@@ -45,6 +47,15 @@ export default function App() {
       setVendorApplyOpen(true);
     }
   }, [user, pendingVendorApply]);
+
+  // Bug 1 fix: 關閉登入視窗但未登入時，清除 pendingVendorApply，
+  // 避免之後透過其他路徑登入時意外開啟廠商申請表單
+  useEffect(() => {
+    if (prevAuthOpenRef.current && !authOpen && !user) {
+      setPendingVendorApply(false);
+    }
+    prevAuthOpenRef.current = authOpen;
+  }, [authOpen, user]);
 
   useEffect(() => { applyTheme(tweaks.theme); }, [tweaks.theme]);
   useEffect(() => { applyDensity(tweaks.density); }, [tweaks.density]);
@@ -105,7 +116,13 @@ export default function App() {
       if (user) { setVendorApplyOpen(true); return; }
       setPendingVendorApply(true);
       setVendorLoginToast(true);
-      setTimeout(() => { setVendorLoginToast(false); setAuthOpen(true); }, 2000);
+      // Bug 3 fix: 避免多次點擊累積多個 timer，先清除舊的再設新的
+      if (vendorToastTimerRef.current) clearTimeout(vendorToastTimerRef.current);
+      vendorToastTimerRef.current = setTimeout(() => {
+        setVendorLoginToast(false);
+        setAuthOpen(true);
+        vendorToastTimerRef.current = null;
+      }, 2000);
     },
     onVendorDashClick:  () => router.push('/vendor'),
     onAdminPanelClick:  () => router.push('/admin'),

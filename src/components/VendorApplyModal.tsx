@@ -35,15 +35,25 @@ export default function VendorApplyModal({ onClose }: Props) {
 
   useEffect(() => {
     if (!user) return;
+    const controller = new AbortController();
     setStatusLoading(true);
     fetch(`${API}/api/me/application/status`, {
       headers: { Authorization: `Bearer ${user.token}` },
+      signal: controller.signal,
     })
       .then(r => r.json())
       .then((data: StatusResult) => setAppStatus(data))
-      .catch(() => setAppStatus({ status: 'none', rejectionReason: null }))
+      .catch(err => { if (err.name !== 'AbortError') setAppStatus({ status: 'none', rejectionReason: null }); })
       .finally(() => setStatusLoading(false));
+    return () => controller.abort();
   }, [user]);
+
+  // Bug 2 fix: logoPreview 變更或元件卸載時，釋放舊的 blob URL
+  useEffect(() => {
+    return () => {
+      if (logoPreview?.startsWith('blob:')) URL.revokeObjectURL(logoPreview);
+    };
+  }, [logoPreview]);
 
   const toggleCounty = (county: string) => {
     setCounties(prev =>
@@ -207,7 +217,6 @@ export default function VendorApplyModal({ onClose }: Props) {
                     className="btn-ghost"
                     style={{ fontSize: 13, padding: '4px 10px' }}
                     onClick={() => {
-                      if (logoPreview?.startsWith('blob:')) URL.revokeObjectURL(logoPreview);
                       setLogoPreview(null);
                       setLogoFile(null);
                     }}
