@@ -60,6 +60,7 @@ export default function StepAddress({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [buildingInfo, setBuildingInfo] = useState<{ height: number; areaPing: number; usableFraction?: number } | null>(null);
   const [buildingLoading, setBuildingLoading] = useState(false);
+  const geocodingStartedRef = useRef(false);
   const [sunHour, setSunHour] = useState<number>(() => {
     const h = new Date().getHours(); // local hour
     return h >= 6 && h <= 18 ? h : 12;
@@ -144,14 +145,51 @@ export default function StepAddress({
     }
   };
 
+  const handleDetectionStart = (early?: { lat: number; lng: number; height: number; areaPing: number }) => {
+    setBuildingLoading(true);
+    setBuildingInfo(null);
+    geocodingStartedRef.current = false;
+
+    if (early && (!selected || selected.meta === '')) {
+      geocodingStartedRef.current = true;
+      // 地圖點選且無手打地址 → 立刻顯示佔位地址，並行跑 reverse geocoding
+      const placeholder: AddressOption = {
+        label: '取得地址中…', meta: '', area: early.areaPing,
+        type: '一般住宅', floors: 0, region: '北部',
+        lat: early.lat, lng: early.lng,
+      };
+      setSelected(placeholder);
+      setQuery('');
+      update({ address: placeholder, addressQuery: '' });
+
+      Promise.all([
+        fetchTownshipCode(early.lat, early.lng),
+        reverseGeocode(early.lat, early.lng),
+      ]).then(([township, geocoded]) => {
+        const label = geocoded ?? (township
+          ? `${township.townshipName}（地圖點選）`
+          : `${early.lat.toFixed(5)}, ${early.lng.toFixed(5)}（地圖點選）`);
+        const synthetic: AddressOption = {
+          label, meta: '', area: early.areaPing, type: '一般住宅', floors: 0,
+          region: detectRegion(township?.townshipName ?? label),
+          lat: early.lat, lng: early.lng,
+        };
+        setSelected(synthetic);
+        setQuery(label);
+        update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
+      });
+    }
+  };
+
   const handleBuildingFound = async (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => {
-    // Immediate UI update — don't wait for the async township fetch
     setBuildingInfo({ height: info.height, areaPing: info.areaPing, usableFraction: info.usableFraction });
     const usableAreaVal = Math.round(info.areaPing * (info.usableFraction ?? 0.6));
     update({ roofArea: usableAreaVal, roofAreaMax: usableAreaVal, roofAreaError: false, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
 
-    if (!selected || selected.meta === '') {
-      // 地圖點選（非手打地址）→ 反向 geocoding 取得地址
+    if (geocodingStartedRef.current) {
+      // 地圖點選路徑：geocoding 已在 handleDetectionStart 並行跑，address 會自行更新
+    } else if (!selected || selected.meta === '') {
+      // 無提前 geocoding（理論上不常發生）→ 同步補做
       const [township, geocoded] = await Promise.all([
         fetchTownshipCode(info.lat, info.lng),
         reverseGeocode(info.lat, info.lng),
@@ -167,7 +205,7 @@ export default function StepAddress({
       setQuery(label);
       update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
     } else {
-      // 手打地址 → 只更新坪數與行政區代碼，不動地址文字
+      // 手打地址 → 只更新行政區代碼，不動地址文字
       const township = await fetchTownshipCode(info.lat, info.lng);
       if (township) update({ townshipCode: township.townshipCode, townshipName: township.townshipName });
     }
@@ -259,7 +297,7 @@ export default function StepAddress({
           )}
 
           {/* Confirmed info */}
-          {a && (
+          {(a || buildingLoading) && (
             <div style={{ marginTop: 28, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="body-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {buildingLoading ? (
@@ -403,7 +441,7 @@ export default function StepAddress({
             <MapView
               selectedAddress={a}
               onBuildingFound={handleBuildingFound}
-              onDetectionStart={() => { setBuildingLoading(true); setBuildingInfo(null); }}
+              onDetectionStart={handleDetectionStart}
               sunHour={sunHour}
             />
           </div>
