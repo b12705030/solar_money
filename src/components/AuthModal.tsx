@@ -33,7 +33,7 @@ export default function AuthModal({ onClose }: { onClose: () => void }) {
 
         <div className="modal-header">
           <div className="modal-title">
-            <div className="brand-mark" />
+            <img className="brand-mark" src="/logo.png" alt="Solar Money" />
             {tab === 'login' ? '登入帳號' : '建立帳號'}
           </div>
           <button className="modal-close" onClick={onClose}>×</button>

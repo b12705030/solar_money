@@ -7,8 +7,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 const COUNTIES = Object.keys(SUBSIDIES);
 
 interface Props {
-  onClose: () => void;
-  onLoginClick?: () => void;
+  readonly onClose: () => void;
 }
 
 type AppStatus = 'none' | 'pending' | 'approved' | 'rejected';
@@ -18,7 +17,7 @@ interface StatusResult {
   rejectionReason: string | null;
 }
 
-export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
+export default function VendorApplyModal({ onClose }: Props) {
   const { user } = useAuth();
   const [appStatus, setAppStatus] = useState<StatusResult | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -36,15 +35,25 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
 
   useEffect(() => {
     if (!user) return;
+    const controller = new AbortController();
     setStatusLoading(true);
     fetch(`${API}/api/me/application/status`, {
       headers: { Authorization: `Bearer ${user.token}` },
+      signal: controller.signal,
     })
       .then(r => r.json())
       .then((data: StatusResult) => setAppStatus(data))
-      .catch(() => setAppStatus({ status: 'none', rejectionReason: null }))
+      .catch(err => { if (err.name !== 'AbortError') setAppStatus({ status: 'none', rejectionReason: null }); })
       .finally(() => setStatusLoading(false));
+    return () => controller.abort();
   }, [user]);
+
+  // Bug 2 fix: logoPreview 變更或元件卸載時，釋放舊的 blob URL
+  useEffect(() => {
+    return () => {
+      if (logoPreview?.startsWith('blob:')) URL.revokeObjectURL(logoPreview);
+    };
+  }, [logoPreview]);
 
   const toggleCounty = (county: string) => {
     setCounties(prev =>
@@ -118,6 +127,8 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
 
   const isReApply = appStatus?.status === 'rejected';
 
+  if (!user) return null;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal vendor-apply-modal" onClick={e => e.stopPropagation()}>
@@ -126,22 +137,8 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
-        {/* 未登入 */}
-        {!user ? (
-          <div className="vendor-apply-login-required">
-            <div className="vendor-apply-login-icon">🏢</div>
-            <div className="vendor-apply-login-title">請先登入帳號</div>
-            <div className="body-sm">廠商入駐需要先有帳號，審核通過後才能使用廠商後台管理服務。</div>
-            <div className="vendor-apply-login-actions">
-              <button className="btn btn-primary" onClick={() => { onClose(); onLoginClick?.(); }}>
-                登入 / 註冊
-              </button>
-              <button className="btn-ghost" onClick={onClose}>稍後再說</button>
-            </div>
-          </div>
-
-        /* 狀態載入中 */
-        ) : statusLoading ? (
+        {/* 狀態載入中 */}
+        {statusLoading ? (
           <div className="vendor-apply-status-loading">查詢申請狀態中⋯</div>
 
         /* 已送出（pending） */
@@ -220,7 +217,6 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
                     className="btn-ghost"
                     style={{ fontSize: 13, padding: '4px 10px' }}
                     onClick={() => {
-                      if (logoPreview?.startsWith('blob:')) URL.revokeObjectURL(logoPreview);
                       setLogoPreview(null);
                       setLogoFile(null);
                     }}
