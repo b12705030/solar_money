@@ -729,12 +729,22 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               </div>
             ) : (
               <>
-                <div>
-                  <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>{r.selfSufficiency}</span>
-                  <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>%</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '4px 8px' }}>
+                  <span className="num" style={{ fontSize: 48, fontWeight: 700, lineHeight: 1, color: r.selfSufficiency > 100 ? 'var(--green-500)' : 'var(--green-900)' }}>
+                    {r.selfSufficiency}
+                  </span>
+                  <span style={{ fontSize: 16, color: 'var(--ink-500)' }}>%</span>
+                  {r.selfSufficiency > 100 && (
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--green-700)', background: 'var(--green-100)', padding: '2px 8px', borderRadius: 10 }}>
+                      盈餘電力
+                    </span>
+                  )}
                 </div>
                 <div className="results-kpi-progress">
-                  <div className="results-kpi-progress-fill" style={{ width: `${r.selfSufficiency}%` }} />
+                  <div
+                    className={`results-kpi-progress-fill${r.selfSufficiency > 100 ? ' results-kpi-progress-fill--overflow' : ''}`}
+                    style={{ width: `${Math.min(100, r.selfSufficiency)}%` }}
+                  />
                 </div>
               </>
             )}

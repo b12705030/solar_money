@@ -698,6 +698,23 @@ input[type="range"]::-moz-range-thumb {
   background: linear-gradient(90deg, var(--green-500), var(--green-700));
   transition: width 1s var(--ease-out);
 }
+.results-kpi-progress-fill--overflow {
+  background: linear-gradient(90deg, var(--green-300), var(--green-500));
+  position: relative;
+  overflow: hidden;
+}
+.results-kpi-progress-fill--overflow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 50%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent);
+  animation: kpi-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes kpi-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
 
 /* Results tab navigation (underline style) */
 .results-tab-nav {

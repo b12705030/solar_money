@@ -169,10 +169,10 @@ describe('computeResults — multi-goal differentiation', () => {
 // ─── 能源自給率 ──────────────────────────────────────────────────────────────
 
 describe('computeResults — self sufficiency', () => {
-  it('selfSufficiency is clamped to 100', () => {
-    // 大型系統：年發電量遠超年用電量
+  it('selfSufficiency exceeds 100 when generation > consumption', () => {
+    // 大型系統：年發電量遠超年用電量，自給率應超過 100%
     const r = computeResults({ ...BASE, capacity: 100, monthlyKwh: 100 });
-    expect(r.selfSufficiency).toBeLessThanOrEqual(100);
+    expect(r.selfSufficiency).toBeGreaterThan(100);
   });
 
   it('selfSufficiency is 0 when annualKwh is 0', () => {

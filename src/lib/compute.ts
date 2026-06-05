@@ -186,7 +186,7 @@ export function computeResults(
     : TEPCO_MONTHLY_NORM.map(w => monthlyUse * w);
   const annualUsageTotal = monthlyUsageArr.reduce((a, b) => a + b, 0);
 
-  const selfSufficiency = Math.min(100, Math.round((annualKwh / annualUsageTotal) * 100));
+  const selfSufficiency = Math.round((annualKwh / annualUsageTotal) * 100);
 
   // selfUseRatio：受實際用電量上限約束（不可能自用超過消費量）
   // 上限依用電習慣：0.88 在宅 / 0.75 一般 / 0.42 外出（無電池儲能）
