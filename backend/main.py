@@ -1020,14 +1020,7 @@ async def me_vendor_leads(
         return []
     is_paid = vendor.get('subscriptionStatus') not in (None, 'free', 'mock')
     fetch_limit = limit if is_paid else _FREE_LEADS_LIMIT
-    leads = await get_potential_leads(vendor['id'], vendor['counties'], fetch_limit)
-    if not is_paid:
-        # free 方案：遮蔽個資，只留技術參數讓廠商評估是否升級
-        leads = [
-            {**lead, 'accountEmail': None, 'address': lead.get('county')}
-            for lead in leads
-        ]
-    return leads
+    return await get_potential_leads(vendor['id'], vendor['counties'], fetch_limit)
 
 
 @app.post('/api/me/vendor/inquiries/{inquiry_id}/reply')

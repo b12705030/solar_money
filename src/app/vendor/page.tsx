@@ -941,9 +941,8 @@ function LeadsTab({
   leads: PotentialLead[];
   subscriptionStatus: string;
 }) {
-  const isAdvanced = subscriptionStatus === 'mock' || subscriptionStatus === 'advanced';
-  const visibleLeads = isAdvanced ? leads : leads.slice(0, 3);
-  const lockedCount = isAdvanced ? 0 : Math.max(0, leads.length - 3);
+  const isAdvanced = subscriptionStatus !== 'free' && subscriptionStatus !== 'mock' && !!subscriptionStatus;
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   return (
     <div>
@@ -958,7 +957,7 @@ function LeadsTab({
             <div className="leads-plan-banner-title">進階方案功能</div>
             <div className="leads-plan-banner-sub">升級可查看所有潛在客戶聯絡資訊，主動開發業務</div>
           </div>
-          <button className="btn btn-primary btn-sm">升級進階方案</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowUpgrade(true)}>升級進階方案</button>
         </div>
       )}
 
@@ -968,9 +967,7 @@ function LeadsTab({
           <div className="dash-stat-label">潛在客戶數</div>
         </div>
         <div className="dash-stat">
-          <div className="dash-stat-value">
-            {leads.filter(l => l.capacityKw > 0).length}
-          </div>
+          <div className="dash-stat-value">{leads.filter(l => l.capacityKw > 0).length}</div>
           <div className="dash-stat-label">有評估資料</div>
         </div>
       </div>
@@ -979,9 +976,9 @@ function LeadsTab({
         <div className="dash-empty">目前服務縣市內暫無潛在評估資料</div>
       ) : (
         <div className="leads-grid">
-          {visibleLeads.map(lead => (
+          {leads.map(lead => (
             <div key={lead.id} className="lead-card">
-              <div className="lead-card-header">
+              <div className="lead-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <div className="lead-card-email">{lead.accountEmail}</div>
                 <div className="lead-card-date">
                   {new Date(lead.createdAt).toLocaleDateString('zh-TW')}
@@ -997,15 +994,78 @@ function LeadsTab({
               {lead.address && (
                 <div className="lead-card-address">{lead.address}</div>
               )}
+              <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                <a
+                  href={`mailto:${lead.accountEmail}`}
+                  className="btn-outline-sm"
+                  style={{ textDecoration: 'none' }}
+                >
+                  寄送 Email
+                </a>
+              </div>
             </div>
           ))}
 
-          {lockedCount > 0 && (
-            <div className="lead-card lead-card--locked">
-              <div className="lead-locked-count">+{lockedCount} 筆</div>
-              <div className="lead-locked-label">升級進階方案查看更多</div>
+          {!isAdvanced && leads.length > 0 && (
+            <div
+              className="lead-card"
+              style={{ position: 'relative', overflow: 'hidden', cursor: 'pointer' }}
+              onClick={() => setShowUpgrade(true)}
+            >
+              {/* 假資料模糊背景 */}
+              <div style={{ filter: 'blur(6px)', userSelect: 'none', pointerEvents: 'none' }}>
+                <div className="lead-card-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div className="lead-card-email">user@example.com</div>
+                  <div className="lead-card-date">2026/5/12</div>
+                </div>
+                <div className="dash-inquiry-chips" style={{ marginTop: 8 }}>
+                  <span>台北市</span><span>9.2 kWp</span><span>10,450 kWh/年</span><span>回本 9.1 年</span>
+                </div>
+                <div className="lead-card-address" style={{ marginTop: 6 }}>台北市大安區某某路 88 號</div>
+              </div>
+              {/* 解鎖 overlay */}
+              <div style={{
+                position: 'absolute', inset: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(255,255,255,0.55)', gap: 6,
+              }}>
+                <span style={{ fontSize: 22 }}>🔒</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>升級查看更多客戶</span>
+              </div>
             </div>
           )}
+        </div>
+      )}
+
+      {showUpgrade && (
+        <div className="modal-backdrop" onClick={() => setShowUpgrade(false)}>
+          <div className="modal" style={{ maxWidth: 420, padding: 32 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ marginBottom: 20 }}>
+              <div className="modal-title">升級進階方案</div>
+              <button className="modal-close" onClick={() => setShowUpgrade(false)}>×</button>
+            </div>
+            <p style={{ fontSize: 14, color: 'var(--ink-600)', lineHeight: 1.7, marginBottom: 20 }}>
+              進階方案開通後可查看所有潛在客戶的完整聯絡資訊（Email、詳細地址），
+              主動開發服務縣市內有安裝意願的用戶。
+            </p>
+            <div style={{ background: 'var(--green-50)', borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 14 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>進階方案包含</div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--ink-600)', lineHeight: 2 }}>
+                <li>無限筆潛在客戶聯絡資訊</li>
+                <li>完整地址與 Email</li>
+                <li>優先出現在廠商推薦列表</li>
+              </ul>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 20 }}>
+              如需升級，請聯繫我們：
+              <a href="mailto:tca940120@gmail.com" style={{ color: 'var(--green-700)', marginLeft: 4 }}>
+                tca940120@gmail.com
+              </a>
+            </p>
+            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setShowUpgrade(false)}>
+              我知道了
+            </button>
+          </div>
         </div>
       )}
     </div>
