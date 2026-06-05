@@ -673,7 +673,7 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
                            ORDER BY is_featured DESC, created_at DESC
                            LIMIT 1
                        ) p ON TRUE
-                       WHERE v.approved = TRUE AND $1 = ANY(v.counties)
+                       WHERE v.approved = TRUE AND $1::text = ANY(v.counties)
                        ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
                        LIMIT $2 OFFSET $3''',
                     county,
@@ -718,7 +718,8 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
                 }
                 for r in rows
             ]
-    except Exception:
+    except Exception as e:
+        print(f'[list_vendors] error: {e}')
         return []
 
 
