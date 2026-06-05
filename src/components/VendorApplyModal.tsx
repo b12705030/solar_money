@@ -55,6 +55,11 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Logo 檔案超過 5 MB 上限');
+      e.target.value = '';
+      return;
+    }
     setLogoFile(file);
     setLogoPreview(URL.createObjectURL(file));
   };
