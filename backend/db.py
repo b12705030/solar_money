@@ -889,7 +889,7 @@ async def approve_vendor_application(vendor_id: str) -> bool:
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            async with conn.transaction():
+            if True:
                 result = await conn.execute(
                     '''UPDATE vendors
                        SET approved = TRUE,

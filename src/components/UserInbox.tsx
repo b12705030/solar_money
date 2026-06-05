@@ -58,7 +58,7 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
         const data: UserInquiry[] = await res.json();
         setInquiries(data);
         setSelected(prev => {
-          const next = prev ? (data.find(i => i.id === prev.id) ?? data[0] ?? null) : (data[0] ?? null);
+          const next = prev ? (data.find(i => i.id === prev.id) ?? null) : null;
           // 自動選到的對話若有未讀，馬上 mark read
           if (next && !prev) {
             const lastVendorMsg = [...(next.messages ?? [])].reverse().find(m => m.sender === 'vendor');
@@ -227,7 +227,7 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
             </div>
 
             {/* Right: chat */}
-            {selected && (
+            {selected ? (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 {/* Chat header */}
                 <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--ink-100)', flexShrink: 0 }}>
@@ -348,6 +348,10 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
                     </button>
                   </div>
                 </div>
+              </div>
+            ) : (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-400)', fontSize: 14 }}>
+                從左側選擇一段對話吧！
               </div>
             )}
           </div>
