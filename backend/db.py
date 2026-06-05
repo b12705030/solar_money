@@ -355,24 +355,15 @@ async def init_db() -> None:
             await conn.execute(
                 f"ALTER TABLE vendor_portfolios ADD COLUMN IF NOT EXISTS {col} {definition}"
             )
-        # CHECK constraints（idempotent：constraint 已存在時 DO NOTHING）
-        for stmt in [
-            """DO $$ BEGIN
-               IF NOT EXISTS (
-                 SELECT 1 FROM pg_constraint WHERE conname = 'accounts_role_check'
-               ) THEN
-                 ALTER TABLE accounts ADD CONSTRAINT accounts_role_check
-                   CHECK (role IN ('user', 'admin', 'vendor'));
-               END IF; END $$""",
-            """DO $$ BEGIN
-               IF NOT EXISTS (
-                 SELECT 1 FROM pg_constraint WHERE conname = 'vendors_application_status_check'
-               ) THEN
-                 ALTER TABLE vendors ADD CONSTRAINT vendors_application_status_check
-                   CHECK (application_status IN ('pending', 'approved', 'rejected'));
-               END IF; END $$""",
-        ]:
-            await conn.execute(stmt)
+        # CHECK constraints（IF NOT EXISTS → idempotent，CockroachDB 原生支援）
+        await conn.execute(
+            "ALTER TABLE accounts ADD CONSTRAINT IF NOT EXISTS accounts_role_check"
+            " CHECK (role IN ('user', 'admin', 'vendor'))"
+        )
+        await conn.execute(
+            "ALTER TABLE vendors ADD CONSTRAINT IF NOT EXISTS vendors_application_status_check"
+            " CHECK (application_status IN ('pending', 'approved', 'rejected'))"
+        )
         await seed_vendors(conn)
 
 

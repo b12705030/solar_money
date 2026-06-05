@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / '.env')
 from typing import List, Optional
 
+import time
 import uuid
 import boto3
 from botocore.config import Config
@@ -1243,19 +1244,31 @@ _PLACES_AC_URL = 'https://places.googleapis.com/v1/places:autocomplete'
 _PLACES_DETAIL_URL = 'https://places.googleapis.com/v1/places/{place_id}'
 
 
+def _normalize_ac_key(q: str) -> str:
+    q = q.lower().replace('臺', '台')
+    q = _re.sub(r'^(台灣|taiwan)\s*', '', q)
+    return q
+
+
 @app.get('/api/places/autocomplete')
 async def places_autocomplete(q: str = ''):
     q = q.strip()
     if not q or len(q) < 2:
         return []
-    cache_key = f'ac_{q.lower()}'
+    cache_key = f'ac_{_normalize_ac_key(q)}'
+
+    t0 = time.perf_counter()
     cached = await get_places_cache(cache_key)
+    elapsed = int((time.perf_counter() - t0) * 1000)
     if cached is not None:
+        print(f'[Places] L3 hit  key={cache_key} ({elapsed}ms)')
         return cached
+    print(f'[Places] L3 miss key={cache_key} ({elapsed}ms)')
 
     if not _GMAPS_KEY:
         raise HTTPException(status_code=503, detail='GOOGLE_MAPS_API_KEY not configured')
     try:
+        t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
                 _PLACES_AC_URL,
@@ -1264,6 +1277,7 @@ async def places_autocomplete(q: str = ''):
             )
             resp.raise_for_status()
             raw = resp.json()
+        elapsed = int((time.perf_counter() - t0) * 1000)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f'Google API error: {e}')
 
@@ -1277,7 +1291,15 @@ async def places_autocomplete(q: str = ''):
         for s in raw.get('suggestions', [])
         if 'placePrediction' in s
     ]
-    await set_places_cache(cache_key, suggestions)
+    print(f'[Places] L4 ac   q={q!r} → {len(suggestions)} results ({elapsed}ms)')
+
+    if suggestions:
+        t0 = time.perf_counter()
+        await set_places_cache(cache_key, suggestions)
+        elapsed = int((time.perf_counter() - t0) * 1000)
+        print(f'[Places] L3 write key={cache_key} {len(suggestions)} results ({elapsed}ms)')
+    else:
+        print(f'[Places] L3 skip  key={cache_key} (empty)')
     return suggestions
 
 
@@ -1286,13 +1308,19 @@ async def places_details(id: str = ''):
     if not id:
         raise HTTPException(status_code=400, detail='id required')
     cache_key = f'detail_{id}'
+
+    t0 = time.perf_counter()
     cached = await get_places_cache(cache_key)
+    elapsed = int((time.perf_counter() - t0) * 1000)
     if cached is not None:
+        print(f'[Places] L3 hit  key={cache_key} ({elapsed}ms)')
         return cached
+    print(f'[Places] L3 miss key={cache_key} ({elapsed}ms)')
 
     if not _GMAPS_KEY:
         raise HTTPException(status_code=503, detail='GOOGLE_MAPS_API_KEY not configured')
     try:
+        t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
                 _PLACES_DETAIL_URL.format(place_id=id),
@@ -1300,6 +1328,7 @@ async def places_details(id: str = ''):
             )
             resp.raise_for_status()
             raw = resp.json()
+        elapsed = int((time.perf_counter() - t0) * 1000)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f'Google API error: {e}')
 
@@ -1309,7 +1338,12 @@ async def places_details(id: str = ''):
         'lon': loc.get('longitude', 0),
         'formattedAddress': raw.get('formattedAddress', ''),
     }
+    print(f'[Places] L4 detail id={id} ({elapsed}ms)')
+
+    t0 = time.perf_counter()
     await set_places_cache(cache_key, result)
+    elapsed = int((time.perf_counter() - t0) * 1000)
+    print(f'[Places] L3 write key={cache_key} ({elapsed}ms)')
     return result
 
 

@@ -48,27 +48,47 @@ export async function getPlaceAutocomplete(input: string): Promise<PlacePredicti
   const key = input.trim().toLowerCase();
   if (!key || key.length < 2) return [];
 
+  const t0 = performance.now();
+
   // L1: session memory
-  if (_acSession.has(key)) return _acSession.get(key)!;
+  if (_acSession.has(key)) {
+    console.log(`[Places] L1 hit  key=${key} (${Math.round(performance.now() - t0)}ms)`);
+    return _acSession.get(key)!;
+  }
 
   // L2: localStorage (same device, across sessions)
   const lsCached = lsGet<PlacePrediction[]>(AC_LS_PREFIX + key);
   if (lsCached) {
     _acSession.set(key, lsCached);
+    console.log(`[Places] L2 hit  key=${key} (${Math.round(performance.now() - t0)}ms)`);
     return lsCached;
   }
 
   // L3 + L4: backend proxy (checks DB cache, then calls Google API)
+  console.log(`[Places] L3+ fetch key=${key}`);
   try {
     const resp = await fetch(`${_apiBase}/api/places/autocomplete?q=${encodeURIComponent(key)}`);
     if (!resp.ok) return [];
     const results: PlacePrediction[] = await resp.json();
-    _acSession.set(key, results);
-    lsSet(AC_LS_PREFIX + key, results);
+    const elapsed = Math.round(performance.now() - t0);
+    if (results.length > 0) {
+      _acSession.set(key, results);
+      lsSet(AC_LS_PREFIX + key, results);
+      console.log(`[Places] L3+ done  key=${key} ${results.length} results (${elapsed}ms)`);
+    } else {
+      console.log(`[Places] L3+ done  key=${key} empty (${elapsed}ms)`);
+    }
     return results;
   } catch {
     return [];
   }
+}
+
+export function warmAutocompleteCache(description: string, prediction: PlacePrediction): void {
+  const key = description.trim().toLowerCase();
+  if (!key) return;
+  _acSession.set(key, [prediction]);
+  lsSet(AC_LS_PREFIX + key, [prediction]);
 }
 
 export async function getPlaceDetails(placeId: string): Promise<PlaceDetails> {

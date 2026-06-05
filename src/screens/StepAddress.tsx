@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Info } from '@/components/ui';
 import { Slider } from '@/components/Slider';
-import { getPlaceAutocomplete, getPlaceDetails } from '@/utils/places';
+import { getPlaceAutocomplete, getPlaceDetails, warmAutocompleteCache } from '@/utils/places';
 import type { PlacePrediction } from '@/utils/places';
 import type { SolarState, AddressOption, Region } from '@/lib/types';
 
@@ -67,6 +67,7 @@ export default function StepAddress({
     return h >= 6 && h <= 18 ? h : 12;
   });
   const containerRef = useRef<HTMLDivElement>(null);
+  const isComposingRef = useRef(false);
 
   // Reset local state when parent clears address (e.g. user starts a new evaluation)
   useEffect(() => {
@@ -87,6 +88,7 @@ export default function StepAddress({
       return;
     }
     const timer = setTimeout(async () => {
+      if (isComposingRef.current) return;
       setSuggestionsLoading(true);
       try {
         const results = await getPlaceAutocomplete(query);
@@ -113,6 +115,7 @@ export default function StepAddress({
   }, []);
 
   const pick = async (prediction: PlacePrediction) => {
+    warmAutocompleteCache(prediction.description, prediction);
     setQuery(prediction.description);
     setShowSuggestions(false);
     setSuggestions([]);
@@ -245,6 +248,8 @@ export default function StepAddress({
               <input
                 value={query}
                 onChange={e => { setQuery(e.target.value); setSelected(null); }}
+                onCompositionStart={() => { isComposingRef.current = true; }}
+                onCompositionEnd={() => { isComposingRef.current = false; }}
                 onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
                 placeholder="輸入地址或地點名稱"
                 style={{
