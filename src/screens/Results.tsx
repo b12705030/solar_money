@@ -359,8 +359,13 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
   const pendingContactVendorRef = useRef<VendorRecommendation | null>(null);
 
   useEffect(() => {
+    setAnonymousUserId(getUserId());
+  }, []);
+
+  // 等 township API 回來（tiltLoading 變 false）再存，確保 r 包含最終 GHI / 最佳角度
+  useEffect(() => {
+    if (tiltLoading || assessmentStored) return;
     const userId = getUserId();
-    setAnonymousUserId(userId);
     const payload = {
       user_id: userId,
       address: state.address?.label ?? null,
@@ -387,12 +392,11 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-      .then(res => {
-        if (res.ok) setAssessmentStored(true);
-      })
+      .then(res => { if (res.ok) setAssessmentStored(true); })
       .catch(() => {});
+  // assessmentStored 刻意不放進 deps：它從 false→true 後不需要再觸發
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tiltLoading]);
 
   // 地區潛力 badge
   useEffect(() => {

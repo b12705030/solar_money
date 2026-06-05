@@ -128,6 +128,11 @@ export default function VendorPage() {
               onStatusChange={(id, s) =>
                 setInquiries(prev => prev.map(i => i.id === id ? { ...i, caseStatus: s } : i))
               }
+              onMessageSent={(id, msg) =>
+                setInquiries(prev => prev.map(i =>
+                  i.id === id ? { ...i, messages: [...(i.messages ?? []), msg] } : i
+                ))
+              }
               onMarkRead={(id) => {
                 setInquiries(prev => prev.map(i =>
                   i.id === id ? { ...i, vendorLastReadAt: new Date().toISOString() } : i
@@ -274,6 +279,7 @@ function ProfileEditForm({
   const [tags,        setTags]        = useState(vendor.tags.join('、'));
   const [logoPreview, setLogoPreview] = useState<string | null>(vendor.logoUrl);
   const [logoFile,    setLogoFile]    = useState<File | null>(null);
+  const [removeLogo,  setRemoveLogo]  = useState(false);
   const [saving,      setSaving]      = useState(false);
   const [msg,         setMsg]         = useState('');
 
@@ -283,8 +289,15 @@ function ProfileEditForm({
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setMsg('檔案超過 5 MB 上限');
+      e.target.value = '';
+      return;
+    }
+    setMsg('');
     setLogoFile(file);
     setLogoPreview(URL.createObjectURL(file));
+    setRemoveLogo(false);
   };
 
   const save = async () => {
@@ -306,6 +319,7 @@ function ProfileEditForm({
         headers: authHeaders,
         body: JSON.stringify({
           name, phone, email, counties,
+          remove_logo: removeLogo,
           tags: tags.split(/[、,，\s]+/).map(t => t.trim()).filter(Boolean),
         }),
       });
@@ -345,7 +359,12 @@ function ProfileEditForm({
               <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleLogoChange} style={{ display: 'none' }} />
             </label>
             {logoPreview && (
-              <button type="button" className="btn-ghost" style={{ fontSize: 13, padding: '4px 10px' }} onClick={() => setLogoPreview(null)}>
+              <button type="button" className="btn-ghost" style={{ fontSize: 13, padding: '4px 10px' }} onClick={() => {
+                if (logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview);
+                setLogoPreview(null);
+                setLogoFile(null);
+                setRemoveLogo(true);
+              }}>
                 移除
               </button>
             )}
@@ -550,6 +569,12 @@ function AddPortfolioForm({
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setErr('檔案超過 5 MB 上限');
+      e.target.value = '';
+      return;
+    }
+    setErr('');
     setPhotoFile(file);
     setPhoto(URL.createObjectURL(file));
   };
@@ -567,7 +592,11 @@ function AddPortfolioForm({
           headers: { Authorization: authHeaders.Authorization },
           body: form,
         });
-        if (uploadRes.ok) photoUrl = (await uploadRes.json()).url;
+        if (!uploadRes.ok) {
+          const detail = await uploadRes.json().catch(() => ({}));
+          throw new Error(detail?.detail ?? '照片上傳失敗，請重試');
+        }
+        photoUrl = (await uploadRes.json()).url;
       }
       const res = await fetch(`${API}/api/me/vendor/portfolios`, {
         method: 'POST',
@@ -589,61 +618,71 @@ function AddPortfolioForm({
   };
 
   return (
-    <div className="dash-add-form-card">
-      <div className="dash-add-form-title">新增作品</div>
-      <div className="dash-edit-form">
-        {/* Photo upload */}
-        <div className="form-field">
-          <label className="form-label">施工照片 <span className="form-label-opt">選填</span></label>
-          <div className="portfolio-photo-upload-row">
-            <label className="portfolio-photo-upload">
-              {photo ? (
-                <img src={photo} className="portfolio-photo-preview" alt="施工照" />
-              ) : (
-                <div className="vendor-apply-logo-placeholder">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-                    <polyline points="21 15 16 10 5 21"/>
-                  </svg>
-                  <span>上傳施工照</span>
-                  <span className="vendor-apply-logo-hint">JPG / PNG</span>
-                </div>
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" style={{ maxWidth: 720, width: '92vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">新增作品</div>
+          <button className="modal-close" onClick={onCancel}>×</button>
+        </div>
+
+        <div className="dash-edit-form" style={{ padding: '0 24px 24px' }}>
+          {/* Photo upload */}
+          <div className="form-field">
+            <label className="form-label">施工照片 <span className="form-label-opt">選填</span></label>
+            <div className="portfolio-photo-upload-row">
+              <label className="portfolio-photo-upload">
+                {photo ? (
+                  <img src={photo} className="portfolio-photo-preview" alt="施工照" />
+                ) : (
+                  <div className="vendor-apply-logo-placeholder">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                    <span>上傳施工照</span>
+                    <span className="vendor-apply-logo-hint">JPG / PNG</span>
+                  </div>
+                )}
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} style={{ display: 'none' }} />
+              </label>
+              {photo && (
+                <button type="button" className="btn-ghost" style={{ fontSize: 13 }} onClick={() => {
+                  URL.revokeObjectURL(photo);
+                  setPhoto(null);
+                  setPhotoFile(null);
+                }}>移除</button>
               )}
-              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} style={{ display: 'none' }} />
-            </label>
-            {photo && (
-              <button type="button" className="btn-ghost" style={{ fontSize: 13 }} onClick={() => setPhoto(null)}>移除</button>
-            )}
-          </div>
-        </div>
-        <div className="form-field">
-          <label className="form-label">案場標題</label>
-          <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="信義區集合住宅屋頂型案場" />
-        </div>
-        <div className="form-field">
-          <label className="form-label">案場說明</label>
-          <input className="form-input" value={meta} onChange={e => setMeta(e.target.value)} placeholder="住宅大樓 · 22.4 kWp · 2025 完工" />
-        </div>
-        <div className="form-field">
-          <label className="form-label">客戶描述 <span className="form-label-opt">選填，說明建築類型、挑戰與解法</span></label>
-          <textarea className="form-input" rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="屋主為三層透天厝，南向屋頂，安裝 8 片高效模組，成功申請台北市補助 12 萬元..." />
-        </div>
-        <div className="dash-edit-form-row">
-          <div className="form-field">
-            <label className="form-label">裝置容量 (kWp)<span className="form-label-opt">選填</span></label>
-            <input className="form-input" type="number" min="0" step="0.1" value={capKw} onChange={e => setCapKw(e.target.value)} />
+            </div>
           </div>
           <div className="form-field">
-            <label className="form-label">完工年份<span className="form-label-opt">選填</span></label>
-            <input className="form-input" type="number" min="2000" max="2099" value={year} onChange={e => setYear(e.target.value)} />
+            <label className="form-label">案場標題</label>
+            <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="信義區集合住宅屋頂型案場" />
           </div>
-        </div>
-        {err && <div className="form-error">{err}</div>}
-        <div className="dash-edit-form-actions">
-          <button className="btn btn-secondary btn-sm" onClick={onCancel} disabled={adding}>取消</button>
-          <button className="btn btn-primary btn-sm" disabled={adding} onClick={add}>
-            {adding ? '新增中⋯' : '新增作品'}
-          </button>
+          <div className="form-field">
+            <label className="form-label">案場說明</label>
+            <input className="form-input" value={meta} onChange={e => setMeta(e.target.value)} placeholder="住宅大樓 · 22.4 kWp · 2025 完工" />
+          </div>
+          <div className="form-field">
+            <label className="form-label">客戶描述 <span className="form-label-opt">選填</span></label>
+            <textarea className="form-input" rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="屋主為三層透天厝，南向屋頂，安裝 8 片高效模組，成功申請台北市補助 12 萬元..." />
+          </div>
+          <div className="dash-edit-form-row">
+            <div className="form-field">
+              <label className="form-label">裝置容量 (kWp)<span className="form-label-opt">選填</span></label>
+              <input className="form-input" type="number" min="0" step="0.1" value={capKw} onChange={e => setCapKw(e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label className="form-label">完工年份<span className="form-label-opt">選填</span></label>
+              <input className="form-input" type="number" min="2000" max="2099" value={year} onChange={e => setYear(e.target.value)} />
+            </div>
+          </div>
+          {err && <div className="form-error">{err}</div>}
+          <div className="dash-edit-form-actions">
+            <button className="btn btn-secondary btn-sm" onClick={onCancel} disabled={adding}>取消</button>
+            <button className="btn btn-primary btn-sm" disabled={adding} onClick={add}>
+              {adding ? '新增中⋯' : '新增作品'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -654,11 +693,12 @@ function AddPortfolioForm({
 // ── Inquiries Tab — chat-style ───────────────────────────────────────────────
 
 function InquiriesTab({
-  inquiries, authHeaders, onStatusChange, onMarkRead,
+  inquiries, authHeaders, onStatusChange, onMessageSent, onMarkRead,
 }: {
   inquiries: Inquiry[];
   authHeaders: Record<string, string>;
   onStatusChange: (id: string, s: CaseStatus) => void;
+  onMessageSent: (id: string, msg: InquiryMessage) => void;
   onMarkRead: (id: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -747,9 +787,10 @@ function InquiriesTab({
               inquiry={selected}
               authHeaders={authHeaders}
               onStatusChange={(s) => onStatusChange(selected.id, s)}
-              onReplySent={(reply) =>
-                onStatusChange(selected.id, selected.caseStatus === 'new' ? 'contacted' : selected.caseStatus)
-              }
+              onReplySent={(msg) => {
+                onMessageSent(selected.id, msg);
+                if (selected.caseStatus === 'new') onStatusChange(selected.id, 'contacted');
+              }}
             />
           ) : (
             <div className="inq-chat-empty">選擇左側聯絡人查看對話</div>
@@ -766,7 +807,7 @@ function ChatWindow({
   inquiry: Inquiry;
   authHeaders: Record<string, string>;
   onStatusChange: (s: CaseStatus) => void;
-  onReplySent: (reply: string) => void;
+  onReplySent: (msg: InquiryMessage) => void;
 }) {
   const [replyText,    setReplyText]    = useState('');
   const [localMessages, setLocalMessages] = useState<import('@/lib/types').InquiryMessage[]>(inquiry.messages ?? []);
@@ -788,7 +829,7 @@ function ChatWindow({
       const newMsg: InquiryMessage = data;
       setLocalMessages(prev => [...prev, newMsg]);
       setReplyText('');
-      onReplySent(replyText.trim());
+      onReplySent(newMsg);
       // auto-advance status
       if (localStatus === 'new') {
         await updateStatus('contacted');
@@ -801,13 +842,21 @@ function ChatWindow({
   };
 
   const updateStatus = async (s: CaseStatus) => {
+    const prev = localStatus;
     setLocalStatus(s);
     onStatusChange(s);
-    await fetch(`${API}/api/me/vendor/inquiries/${inquiry.id}/status`, {
-      method: 'PATCH',
-      headers: authHeaders,
-      body: JSON.stringify({ status: s }),
-    }).catch(() => {});
+    try {
+      const res = await fetch(`${API}/api/me/vendor/inquiries/${inquiry.id}/status`, {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify({ status: s }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setLocalStatus(prev);
+      onStatusChange(prev);
+      setErr('狀態更新失敗，請重試');
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -910,9 +959,8 @@ function LeadsTab({
   leads: PotentialLead[];
   subscriptionStatus: string;
 }) {
-  const isAdvanced = subscriptionStatus === 'mock' || subscriptionStatus === 'advanced';
-  const visibleLeads = isAdvanced ? leads : leads.slice(0, 3);
-  const lockedCount = isAdvanced ? 0 : Math.max(0, leads.length - 3);
+  const isAdvanced = subscriptionStatus !== 'free' && subscriptionStatus !== 'mock' && !!subscriptionStatus;
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   return (
     <div>
@@ -927,7 +975,7 @@ function LeadsTab({
             <div className="leads-plan-banner-title">進階方案功能</div>
             <div className="leads-plan-banner-sub">升級可查看所有潛在客戶聯絡資訊，主動開發業務</div>
           </div>
-          <button className="btn btn-primary btn-sm">升級進階方案</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowUpgrade(true)}>升級進階方案</button>
         </div>
       )}
 
@@ -937,9 +985,7 @@ function LeadsTab({
           <div className="dash-stat-label">潛在客戶數</div>
         </div>
         <div className="dash-stat">
-          <div className="dash-stat-value">
-            {leads.filter(l => l.capacityKw > 0).length}
-          </div>
+          <div className="dash-stat-value">{leads.filter(l => l.capacityKw > 0).length}</div>
           <div className="dash-stat-label">有評估資料</div>
         </div>
       </div>
@@ -948,9 +994,9 @@ function LeadsTab({
         <div className="dash-empty">目前服務縣市內暫無潛在評估資料</div>
       ) : (
         <div className="leads-grid">
-          {visibleLeads.map(lead => (
+          {leads.map(lead => (
             <div key={lead.id} className="lead-card">
-              <div className="lead-card-header">
+              <div className="lead-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <div className="lead-card-email">{lead.accountEmail}</div>
                 <div className="lead-card-date">
                   {new Date(lead.createdAt).toLocaleDateString('zh-TW')}
@@ -966,15 +1012,78 @@ function LeadsTab({
               {lead.address && (
                 <div className="lead-card-address">{lead.address}</div>
               )}
+              <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                <a
+                  href={`mailto:${lead.accountEmail}`}
+                  className="btn-outline-sm"
+                  style={{ textDecoration: 'none' }}
+                >
+                  寄送 Email
+                </a>
+              </div>
             </div>
           ))}
 
-          {lockedCount > 0 && (
-            <div className="lead-card lead-card--locked">
-              <div className="lead-locked-count">+{lockedCount} 筆</div>
-              <div className="lead-locked-label">升級進階方案查看更多</div>
+          {!isAdvanced && leads.length > 0 && (
+            <div
+              className="lead-card"
+              style={{ position: 'relative', overflow: 'hidden', cursor: 'pointer' }}
+              onClick={() => setShowUpgrade(true)}
+            >
+              {/* 假資料模糊背景 */}
+              <div style={{ filter: 'blur(6px)', userSelect: 'none', pointerEvents: 'none' }}>
+                <div className="lead-card-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div className="lead-card-email">user@example.com</div>
+                  <div className="lead-card-date">2026/5/12</div>
+                </div>
+                <div className="dash-inquiry-chips" style={{ marginTop: 8 }}>
+                  <span>台北市</span><span>9.2 kWp</span><span>10,450 kWh/年</span><span>回本 9.1 年</span>
+                </div>
+                <div className="lead-card-address" style={{ marginTop: 6 }}>台北市大安區某某路 88 號</div>
+              </div>
+              {/* 解鎖 overlay */}
+              <div style={{
+                position: 'absolute', inset: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(255,255,255,0.55)', gap: 6,
+              }}>
+                <span style={{ fontSize: 22 }}>🔒</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>升級查看更多客戶</span>
+              </div>
             </div>
           )}
+        </div>
+      )}
+
+      {showUpgrade && (
+        <div className="modal-backdrop" onClick={() => setShowUpgrade(false)}>
+          <div className="modal" style={{ maxWidth: 420, padding: 32 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ marginBottom: 20 }}>
+              <div className="modal-title">升級進階方案</div>
+              <button className="modal-close" onClick={() => setShowUpgrade(false)}>×</button>
+            </div>
+            <p style={{ fontSize: 14, color: 'var(--ink-600)', lineHeight: 1.7, marginBottom: 20 }}>
+              進階方案開通後可查看所有潛在客戶的完整聯絡資訊（Email、詳細地址），
+              主動開發服務縣市內有安裝意願的用戶。
+            </p>
+            <div style={{ background: 'var(--green-50)', borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 14 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>進階方案包含</div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--ink-600)', lineHeight: 2 }}>
+                <li>無限筆潛在客戶聯絡資訊</li>
+                <li>完整地址與 Email</li>
+                <li>優先出現在廠商推薦列表</li>
+              </ul>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 20 }}>
+              如需升級，請聯繫我們：
+              <a href="mailto:tca940120@gmail.com" style={{ color: 'var(--green-700)', marginLeft: 4 }}>
+                tca940120@gmail.com
+              </a>
+            </p>
+            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setShowUpgrade(false)}>
+              我知道了
+            </button>
+          </div>
         </div>
       )}
     </div>
