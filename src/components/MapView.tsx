@@ -11,7 +11,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 type Props = {
   selectedAddress?: AddressOption | null;
   onBuildingFound?: (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => void;
-  onDetectionStart?: () => void;
+  onDetectionStart?: (early?: { lat: number; lng: number; height: number; areaPing: number }) => void;
   sunHour?: number; // local Taiwan time (UTC+8), 0–23
 };
 
@@ -73,6 +73,8 @@ function pointInPolygon(point: [number, number], ring: [number, number][]): bool
 
 // ─── All-buildings shadow API ─────────────────────────────────────────────────
 
+const SHADOW_BUILDINGS_MAX = 500; // matches backend _SHADOW_MAX_BUILDINGS
+
 type HourData = { type: string; features: GeoJSON.Feature[]; roofShadows: GeoJSON.Feature[] };
 
 // AbortController for the in-flight precompute fetch
@@ -108,6 +110,7 @@ async function refreshAllShadows(
   buildingsRef: React.MutableRefObject<{ footprint: [number, number][]; height: number }[]>,
   setLoading?: (v: boolean) => void,
   setBuildingLoading?: (v: boolean) => void,
+  setTooManyBuildings?: (v: boolean) => void,
 ): Promise<void> {
   _shadowFetchCtrl?.abort();
   _shadowFetchCtrl = new AbortController();
@@ -150,7 +153,18 @@ async function refreshAllShadows(
   setBuildingLoading?.(false);
 
   const source = map.getSource('all-shadows') as mapboxgl.GeoJSONSource | undefined;
+  const roofSource = map.getSource('roof-shadows') as mapboxgl.GeoJSONSource | undefined;
   if (!source || signal.aborted || buildings.length === 0) { setLoading?.(false); return; }
+
+  if (buildings.length > SHADOW_BUILDINGS_MAX) {
+    source.setData({ type: 'FeatureCollection', features: [] });
+    roofSource?.setData({ type: 'FeatureCollection', features: [] });
+    cacheRef.current.clear();
+    setTooManyBuildings?.(true);
+    setLoading?.(false);
+    return;
+  }
+  setTooManyBuildings?.(false);
   setLoading?.(true);
 
   const bodyBase = { buildings, lat: center.lat, lng: center.lng };
@@ -279,6 +293,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
   const [mapLoaded, setMapLoaded] = useState(false);
   const [buildingDataLoading, setBuildingDataLoading] = useState(false);
   const [shadowLoading, setShadowLoading] = useState(false);
+  const [tooManyBuildings, setTooManyBuildings] = useState(false);
   const [terrainEnabled, setTerrainEnabled] = useState(true);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const onBuildingFoundRef = useRef(onBuildingFound);
@@ -427,13 +442,13 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
           properties: { height: primary.height },
         };
         const areaPing = Math.max(1, Math.round(polygonAreaM2(primary.footprint) * PING_PER_M2));
-        onDetectionStartRef.current?.();
+        buildingCacheRef.current = { features: [primaryFeat], footprint: primary.footprint, height: primary.height, lat: clickLat, lng: clickLng };
+        onDetectionStartRef.current?.({ lat: clickLat, lng: clickLng, height: primary.height, areaPing });
         showHighlight(map, [primaryFeat]);
 
         const usableFraction = await fetchUsableFractionForBuilding(
           primary.footprint, clickLat, clickLng, buildingsRef,
         );
-        buildingCacheRef.current = { features: [primaryFeat], footprint: primary.footprint, height: primary.height, lat: clickLat, lng: clickLng };
         onBuildingFoundRef.current?.({ height: primary.height, areaPing, usableFraction, lat: clickLat, lng: clickLng });
       });
 
@@ -441,7 +456,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
 
       // style.load fires before building tiles are downloaded.
       // Wait for the first idle (all tiles loaded + rendered) before querying features.
-      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading));
+      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading, setTooManyBuildings));
     });
 
     // After panning, refresh shadows once tiles are settled.
@@ -450,7 +465,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     map.on('moveend', () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       moveDebounceRef.current = setTimeout(() => {
-        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading);
+        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading, setTooManyBuildings);
         if (map.loaded()) {
           doRefresh();
         } else {
@@ -487,7 +502,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     }
     // Cache miss 或全空 → 即時呼叫 from-features，結果回填記憶體快取
     const buildings = buildingsRef.current;
-    if (!buildings.length) return;
+    if (!buildings.length || buildings.length > SHADOW_BUILDINGS_MAX) return;
     const center = mapInstance.getCenter();
     fetch(`${API_URL}/api/shadows/from-features`, {
       method: 'POST',
@@ -596,7 +611,16 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {(buildingDataLoading || shadowLoading) && (
+      {tooManyBuildings && !buildingDataLoading && !shadowLoading ? (
+        <div style={{
+          position: 'absolute', top: 10, left: 10, zIndex: 10,
+          background: 'rgba(255,255,255,0.88)', borderRadius: 8,
+          padding: '5px 10px', fontSize: 12, color: '#888',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.12)', pointerEvents: 'none',
+        }}>
+          請放大地圖以查看陰影
+        </div>
+      ) : (buildingDataLoading || shadowLoading) ? (
         <div style={{
           position: 'absolute', top: 10, left: 10, zIndex: 10,
           background: 'rgba(255,255,255,0.88)', borderRadius: 8,
@@ -611,7 +635,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
           }} />
           {buildingDataLoading ? '正在載入建物資料…' : '計算陰影中…'}
         </div>
-      )}
+      ) : null}
       {mapLoaded && (
         <button
           onClick={() => setTerrainEnabled(v => !v)}
