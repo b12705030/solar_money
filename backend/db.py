@@ -82,7 +82,10 @@ async def get_pool() -> asyncpg.Pool:
         url = os.environ.get('DATABASE_URL', '')
         if not url:
             raise RuntimeError('DATABASE_URL 未設定')
-        _pool = await asyncpg.create_pool(url, min_size=1, max_size=5)
+        _pool = await asyncpg.create_pool(
+            url, min_size=1, max_size=5,
+            server_settings={'timezone': 'Asia/Taipei'},
+        )
     return _pool
 
 
