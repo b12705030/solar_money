@@ -97,7 +97,7 @@ a { text-decoration: none; }
   letter-spacing: 0.01em;
 }
 .brand-mark {
-  width: 70px; height: 70px;
+  width: 32px; height: 32px;
   object-fit: contain;
   flex-shrink: 0;
 }

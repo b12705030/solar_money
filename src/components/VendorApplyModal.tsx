@@ -7,8 +7,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 const COUNTIES = Object.keys(SUBSIDIES);
 
 interface Props {
-  onClose: () => void;
-  onLoginClick?: () => void;
+  readonly onClose: () => void;
 }
 
 type AppStatus = 'none' | 'pending' | 'approved' | 'rejected';
@@ -18,7 +17,7 @@ interface StatusResult {
   rejectionReason: string | null;
 }
 
-export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
+export default function VendorApplyModal({ onClose }: Props) {
   const { user } = useAuth();
   const [appStatus, setAppStatus] = useState<StatusResult | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -118,6 +117,8 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
 
   const isReApply = appStatus?.status === 'rejected';
 
+  if (!user) return null;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal vendor-apply-modal" onClick={e => e.stopPropagation()}>
@@ -126,22 +127,8 @@ export default function VendorApplyModal({ onClose, onLoginClick }: Props) {
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
-        {/* 未登入 */}
-        {!user ? (
-          <div className="vendor-apply-login-required">
-            <div className="vendor-apply-login-icon">🏢</div>
-            <div className="vendor-apply-login-title">請先登入帳號</div>
-            <div className="body-sm">廠商入駐需要先有帳號，審核通過後才能使用廠商後台管理服務。</div>
-            <div className="vendor-apply-login-actions">
-              <button className="btn btn-primary" onClick={() => { onClose(); onLoginClick?.(); }}>
-                登入 / 註冊
-              </button>
-              <button className="btn-ghost" onClick={onClose}>稍後再說</button>
-            </div>
-          </div>
-
-        /* 狀態載入中 */
-        ) : statusLoading ? (
+        {/* 狀態載入中 */}
+        {statusLoading ? (
           <div className="vendor-apply-status-loading">查詢申請狀態中⋯</div>
 
         /* 已送出（pending） */

@@ -35,6 +35,16 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [vendorApplyOpen, setVendorApplyOpen] = useState(false);
+  const [pendingVendorApply, setPendingVendorApply] = useState(false);
+  const [vendorLoginToast, setVendorLoginToast] = useState(false);
+
+  useEffect(() => {
+    if (user && pendingVendorApply) {
+      setPendingVendorApply(false);
+      setAuthOpen(false);
+      setVendorApplyOpen(true);
+    }
+  }, [user, pendingVendorApply]);
 
   useEffect(() => { applyTheme(tweaks.theme); }, [tweaks.theme]);
   useEffect(() => { applyDensity(tweaks.density); }, [tweaks.density]);
@@ -91,7 +101,12 @@ export default function App() {
     onLoginClick:       () => setAuthOpen(true),
     onHistoryClick:     () => setHistoryOpen(true),
     onInboxClick:       () => setInboxOpen(true),
-    onVendorApplyClick: () => setVendorApplyOpen(true),
+    onVendorApplyClick: () => {
+      if (user) { setVendorApplyOpen(true); return; }
+      setPendingVendorApply(true);
+      setVendorLoginToast(true);
+      setTimeout(() => { setVendorLoginToast(false); setAuthOpen(true); }, 2000);
+    },
     onVendorDashClick:  () => router.push('/vendor'),
     onAdminPanelClick:  () => router.push('/admin'),
     onLogout:           logout,
@@ -100,8 +115,13 @@ export default function App() {
   const modals = (
     <>
       {tweaksOpen      && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+      {vendorLoginToast && (
+        <div className="results-save-toast" role="status" aria-live="polite">
+          需先登入才能申請廠商入駐，即將開啟登入...
+        </div>
+      )}
       {authOpen        && <AuthModal onClose={() => setAuthOpen(false)} />}
-      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} onLoginClick={() => { setVendorApplyOpen(false); setAuthOpen(true); }} />}
+      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} />}
       {historyOpen     && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
       {inboxOpen       && user && <UserInbox onClose={() => setInboxOpen(false)} />}
     </>
