@@ -15,7 +15,7 @@ export default function StepParams({
   const area = state.roofArea ?? 78;
   const grade = state.panelGrade ?? 'standard';
   const gradeInfo = PANEL_GRADES.find(g => g.id === grade) ?? PANEL_GRADES[1];
-  const maxCapacity = parseFloat((area * 3.3 * (state.usableFraction ?? 0.6) * gradeInfo.kWpPerM2).toFixed(1));
+  const maxCapacity = parseFloat((area * 3.3 * gradeInfo.kWpPerM2).toFixed(1));
   const county = guessCounty(state.address?.label);
   const subsidy = SUBSIDIES[county] ?? SUBSIDIES['台北市'];
 
@@ -97,7 +97,7 @@ export default function StepParams({
         {PANEL_GRADES.map(g => {
           const active = grade === g.id;
           const gNet = g.costPerKw - subsidy.amount;
-          const gMaxCap = parseFloat((area * 3.3 * (state.usableFraction ?? 0.6) * g.kWpPerM2).toFixed(1));
+          const gMaxCap = parseFloat((area * 3.3 * g.kWpPerM2).toFixed(1));
           const gCap = parseFloat(Math.min(gMaxCap, gNet > 0 ? Math.floor((budgetCeiling / gNet) * 10) / 10 : gMaxCap).toFixed(1));
           const isFull = gCap >= gMaxCap - 0.05;
           return (

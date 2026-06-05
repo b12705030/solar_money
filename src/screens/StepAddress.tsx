@@ -147,7 +147,8 @@ export default function StepAddress({
   const handleBuildingFound = async (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => {
     // Immediate UI update — don't wait for the async township fetch
     setBuildingInfo({ height: info.height, areaPing: info.areaPing, usableFraction: info.usableFraction });
-    update({ roofArea: info.areaPing, roofAreaMax: info.areaPing, roofAreaError: false, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
+    const usableAreaVal = Math.round(info.areaPing * (info.usableFraction ?? 0.6));
+    update({ roofArea: usableAreaVal, roofAreaMax: usableAreaVal, roofAreaError: false, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
 
     if (!selected || selected.meta === '') {
       // 地圖點選（非手打地址）→ 反向 geocoding 取得地址
@@ -179,6 +180,7 @@ export default function StepAddress({
   const [areaError, setAreaError] = useState(false);
   useEffect(() => { setAreaRaw(String(roofArea)); setAreaError(false); }, [roofArea]);
   const estFloors = buildingInfo ? Math.round(buildingInfo.height / 3.2) : null;
+  const usableArea = buildingInfo ? Math.round(buildingInfo.areaPing * (state.usableFraction ?? 0.6)) : null;
 
   return (
     <div>
@@ -280,8 +282,8 @@ export default function StepAddress({
               {/* Building info row + roof area slider */}
               {buildingLoading ? (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    {[0, 1].map(i => (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                    {[0, 1, 2].map(i => (
                       <div key={i} className="card" style={{ padding: '14px 18px', minHeight: 66 }}>
                         <div style={{ height: 10, width: '45%', borderRadius: 4, background: 'var(--ink-100)', marginBottom: 10 }} />
                         <div style={{ height: 22, width: '60%', borderRadius: 4, background: 'var(--ink-100)' }} />
@@ -299,7 +301,7 @@ export default function StepAddress({
               ) : (
                 <>
                   {buildingInfo && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                       <div className="card" style={{ padding: '14px 18px' }}>
                         <div className="caption" style={{ marginBottom: 4 }}>建物高度</div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
@@ -317,6 +319,16 @@ export default function StepAddress({
                           <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
                         </div>
                       </div>
+                      <div className="card" style={{ padding: '14px 18px' }}>
+                        <div className="caption" style={{ marginBottom: 4 }}>
+                          預估可用面積
+                          <Info tip={`依陰影遮蔽模擬與邊緣退縮估算，約為基地面積的 ${Math.round((state.usableFraction ?? 0.6) * 100)}%`} />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                          <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)' }}>{usableArea}</span>
+                          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -324,13 +336,13 @@ export default function StepAddress({
                   <div className="card" style={{ padding: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 12 }}>
                       <div className="caption">
-                        可用屋頂面積<Info tip="扣除水塔、梯間後約可鋪設面積" />
+                        可用屋頂面積<Info tip="上限為系統依陰影模擬估算的可鋪設面積。若屋頂尚有水塔或其他設施，請向下調整坪數" />
                       </div>
                       <div style={{ flex: 1, textAlign: 'right', paddingRight: 8, minWidth: 0 }}>
                         {areaError && (
                           <span style={{ fontSize: 12, color: 'var(--red-600, #dc2626)', whiteSpace: 'nowrap' }}>
                             {Number(areaRaw) > (state.roofAreaMax ?? 500)
-                              ? `不可超過建物面積 ${state.roofAreaMax} 坪`
+                              ? `不可超過可用面積 ${state.roofAreaMax} 坪`
                               : '請輸入有效坪數'}
                           </span>
                         )}
@@ -360,14 +372,19 @@ export default function StepAddress({
                       </div>
                     </div>
                     <Slider
-                      min={1} max={buildingInfo ? buildingInfo.areaPing : 200}
+                      min={1} max={usableArea ?? 200}
                       value={roofArea}
                       onChange={v => { update({ roofArea: v, roofAreaError: false }); setAreaError(false); }}
                     />
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
                       <span className="caption">1 坪</span>
-                      <span className="caption">{buildingInfo ? buildingInfo.areaPing : 200} 坪</span>
+                      <span className="caption">{usableArea ?? 200} 坪（系統估算上限）</span>
                     </div>
+                    {usableArea && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-400)' }}>
+                        若屋頂有水塔或其他設施，請向下調整坪數
+                      </div>
+                    )}
                   </div>
                 </>
               )}
