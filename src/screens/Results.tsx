@@ -682,77 +682,89 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       <div className="card elevated results-kpi-card" style={{ marginBottom: 28, background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
         <div className="results-kpi-grid">
           <div>
-            <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="caption" style={{ marginBottom: 10 }}>
               年發電量<Info tip="各月：裝置容量(kW) × 日射量(kWh/m²/d) × 月天數 × 動態PR × 目標調整係數，12 月加總" />
-              {tiltLoading && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
-                  計算中
-                </span>
-              )}
             </div>
-            <div>
-              <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
-                {r.annualKwh.toLocaleString()}
-              </span>
-              <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>kWh</span>
-            </div>
-            <div className="body-sm" style={{ marginTop: 8 }}>相當於 {(r.annualKwh / (state.monthlyKwh || 350)).toFixed(1)} 個月用電量</div>
+            {tiltLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', color: 'var(--ink-400)', fontSize: 13 }}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                計算中…
+              </div>
+            ) : (
+              <>
+                <div>
+                  <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
+                    {r.annualKwh.toLocaleString()}
+                  </span>
+                  <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>kWh</span>
+                </div>
+                <div className="body-sm" style={{ marginTop: 8 }}>相當於 {(r.annualKwh / (state.monthlyKwh || 350)).toFixed(1)} 個月用電量</div>
+              </>
+            )}
           </div>
 
           <div className="results-kpi-item--divided">
-            <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="caption" style={{ marginBottom: 10 }}>
               能源自給率<Info tip="自發電量 ÷ 總用電量" />
-              {tiltLoading && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
-                  計算中
-                </span>
-              )}
             </div>
-            <div>
-              <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>{r.selfSufficiency}</span>
-              <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>%</span>
-            </div>
-            <div className="results-kpi-progress">
-              <div className="results-kpi-progress-fill" style={{ width: `${r.selfSufficiency}%` }} />
-            </div>
+            {tiltLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', color: 'var(--ink-400)', fontSize: 13 }}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                計算中…
+              </div>
+            ) : (
+              <>
+                <div>
+                  <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>{r.selfSufficiency}</span>
+                  <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>%</span>
+                </div>
+                <div className="results-kpi-progress">
+                  <div className="results-kpi-progress-fill" style={{ width: `${r.selfSufficiency}%` }} />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="results-kpi-item--divided">
-            <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="caption" style={{ marginBottom: 10 }}>
               預估回本年限<Info tip="自付金額 ÷ 年度總收益（自用省電費 + FIT 躉購收入）" />
-              {tiltLoading && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
-                  計算中
-                </span>
-              )}
             </div>
-            <div>
-              <span className="num" style={{ fontSize: 48, fontWeight: 700, color: '#C8861E', lineHeight: 1 }}>{r.paybackYears}</span>
-              <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>年</span>
-            </div>
-            <div className="body-sm" style={{ marginTop: 8 }}>保固 25 年 · 剩餘純收益 {(25 - r.paybackYears).toFixed(1)} 年</div>
+            {tiltLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', color: 'var(--ink-400)', fontSize: 13 }}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                計算中…
+              </div>
+            ) : (
+              <>
+                <div>
+                  <span className="num" style={{ fontSize: 48, fontWeight: 700, color: '#C8861E', lineHeight: 1 }}>{r.paybackYears}</span>
+                  <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>年</span>
+                </div>
+                <div className="body-sm" style={{ marginTop: 8 }}>保固 25 年 · 剩餘純收益 {(25 - r.paybackYears).toFixed(1)} 年</div>
+              </>
+            )}
           </div>
 
           <div className="results-kpi-item--divided">
-            <div className="caption" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="caption" style={{ marginBottom: 10 }}>
               20 年總收益<Info tip="年度收益逐年以 0.5% 衰退並加總（共 20 年）；0.5%/年為 c-Si 面板業界標準功率衰退" />
-              {tiltLoading && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 999, background: 'var(--ink-100)', color: 'var(--ink-500)', fontSize: 10, fontWeight: 500 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
-                  計算中
-                </span>
-              )}
             </div>
-            <div>
-              <span className="num" style={{ fontSize: 34, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
-                NT$ {Math.round(r.total20yr / 10000)}
-              </span>
-              <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 4 }}>萬</span>
-            </div>
-            <div className="body-sm" style={{ marginTop: 8, fontFamily: 'var(--font-num)' }}>NT$ {r.total20yr.toLocaleString()}</div>
+            {tiltLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', color: 'var(--ink-400)', fontSize: 13 }}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                計算中…
+              </div>
+            ) : (
+              <>
+                <div>
+                  <span className="num" style={{ fontSize: 34, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
+                    NT$ {Math.round(r.total20yr / 10000)}
+                  </span>
+                  <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 4 }}>萬</span>
+                </div>
+                <div className="body-sm" style={{ marginTop: 8, fontFamily: 'var(--font-num)' }}>NT$ {r.total20yr.toLocaleString()}</div>
+              </>
+            )}
           </div>
         </div>
       </div>
