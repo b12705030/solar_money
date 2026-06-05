@@ -570,6 +570,7 @@ class VendorResponse(BaseModel):
     phone: str
     email: str
     tags: List[str]
+    logoUrl: Optional[str] = None
 
 
 class VendorPortfolioResponse(BaseModel):

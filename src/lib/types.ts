@@ -91,6 +91,7 @@ export interface VendorRecommendation {
   phone: string;
   email: string;
   tags: string[];
+  logoUrl?: string | null;
 }
 
 export interface VendorPortfolio {

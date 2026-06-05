@@ -661,7 +661,7 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
             if county:
                 rows = await conn.fetch(
                     '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
-                              v.phone, v.email, v.tags,
+                              v.phone, v.email, v.tags, v.logo_url,
                               p.title AS portfolio_title,
                               p.meta AS portfolio_meta,
                               p.capacity_kw
@@ -673,7 +673,7 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
                            ORDER BY is_featured DESC, created_at DESC
                            LIMIT 1
                        ) p ON TRUE
-                       WHERE v.approved = TRUE AND $1 = ANY(v.counties)
+                       WHERE v.approved = TRUE AND $1::text = ANY(v.counties)
                        ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
                        LIMIT $2 OFFSET $3''',
                     county,
@@ -683,7 +683,7 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
             else:
                 rows = await conn.fetch(
                     '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
-                              v.phone, v.email, v.tags,
+                              v.phone, v.email, v.tags, v.logo_url,
                               p.title AS portfolio_title,
                               p.meta AS portfolio_meta,
                               p.capacity_kw
@@ -714,10 +714,12 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
                     'phone': r['phone'] or '',
                     'email': r['email'] or '',
                     'tags': list(r['tags'] or []),
+                    'logoUrl': r['logo_url'],
                 }
                 for r in rows
             ]
-    except Exception:
+    except Exception as e:
+        print(f'[list_vendors] error: {e}')
         return []
 
 
