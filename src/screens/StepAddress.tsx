@@ -135,6 +135,7 @@ export default function StepAddress({
         address: addressOption,
         addressQuery: prediction.description,
         roofArea: 50,
+        roofAreaError: false,
         townshipCode: township?.townshipCode,
         townshipName: township?.townshipName,
       });
@@ -146,7 +147,7 @@ export default function StepAddress({
   const handleBuildingFound = async (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => {
     // Immediate UI update — don't wait for the async township fetch
     setBuildingInfo({ height: info.height, areaPing: info.areaPing, usableFraction: info.usableFraction });
-    update({ roofArea: info.areaPing, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
+    update({ roofArea: info.areaPing, roofAreaMax: info.areaPing, roofAreaError: false, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
 
     if (!selected || selected.meta === '') {
       // 地圖點選（非手打地址）→ 反向 geocoding 取得地址
@@ -174,6 +175,9 @@ export default function StepAddress({
 
   const a = state.address;
   const roofArea = state.roofArea ?? (a?.area ?? 0);
+  const [areaRaw, setAreaRaw] = useState(String(roofArea));
+  const [areaError, setAreaError] = useState(false);
+  useEffect(() => { setAreaRaw(String(roofArea)); setAreaError(false); }, [roofArea]);
   const estFloors = buildingInfo ? Math.round(buildingInfo.height / 3.2) : null;
 
   return (
@@ -273,55 +277,100 @@ export default function StepAddress({
                 )}
               </div>
 
-              {/* Building info row */}
+              {/* Building info row + roof area slider */}
               {buildingLoading ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {[0, 1].map(i => (
-                    <div key={i} className="card" style={{ padding: '14px 18px', minHeight: 66 }}>
-                      <div style={{ height: 10, width: '45%', borderRadius: 4, background: 'var(--ink-100)', marginBottom: 10 }} />
-                      <div style={{ height: 22, width: '60%', borderRadius: 4, background: 'var(--ink-100)' }} />
-                    </div>
-                  ))}
-                </div>
-              ) : buildingInfo ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div className="card" style={{ padding: '14px 18px' }}>
-                    <div className="caption" style={{ marginBottom: 4 }}>建物高度</div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                      <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.height.toFixed(1)}</span>
-                      <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>m</span>
-                      {estFloors !== null && (
-                        <span style={{ fontSize: 12, color: 'var(--ink-400)', marginLeft: 4 }}>≈ {estFloors} 樓</span>
-                      )}
-                    </div>
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {[0, 1].map(i => (
+                      <div key={i} className="card" style={{ padding: '14px 18px', minHeight: 66 }}>
+                        <div style={{ height: 10, width: '45%', borderRadius: 4, background: 'var(--ink-100)', marginBottom: 10 }} />
+                        <div style={{ height: 22, width: '60%', borderRadius: 4, background: 'var(--ink-100)' }} />
+                      </div>
+                    ))}
                   </div>
-                  <div className="card" style={{ padding: '14px 18px' }}>
-                    <div className="caption" style={{ marginBottom: 4 }}>建物基地面積</div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                      <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.areaPing}</span>
-                      <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
+                  <div className="card" style={{ padding: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                      <div style={{ height: 10, width: '38%', borderRadius: 4, background: 'var(--ink-100)' }} />
+                      <div style={{ height: 28, width: '15%', borderRadius: 4, background: 'var(--ink-100)' }} />
                     </div>
+                    <div style={{ height: 6, borderRadius: 4, background: 'var(--ink-100)' }} />
                   </div>
-                </div>
-              ) : null}
+                </>
+              ) : (
+                <>
+                  {buildingInfo && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div className="card" style={{ padding: '14px 18px' }}>
+                        <div className="caption" style={{ marginBottom: 4 }}>建物高度</div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                          <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.height.toFixed(1)}</span>
+                          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>m</span>
+                          {estFloors !== null && (
+                            <span style={{ fontSize: 12, color: 'var(--ink-400)', marginLeft: 4 }}>≈ {estFloors} 樓</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="card" style={{ padding: '14px 18px' }}>
+                        <div className="caption" style={{ marginBottom: 4 }}>建物基地面積</div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                          <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.areaPing}</span>
+                          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-              {/* Roof area slider */}
-              <div className="card" style={{ padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-                  <div className="caption">
-                    可用屋頂面積<Info tip="扣除水塔、梯間後約可鋪設面積" />
+                  {/* Roof area slider */}
+                  <div className="card" style={{ padding: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 12 }}>
+                      <div className="caption">
+                        可用屋頂面積<Info tip="扣除水塔、梯間後約可鋪設面積" />
+                      </div>
+                      <div style={{ flex: 1, textAlign: 'right', paddingRight: 8, minWidth: 0 }}>
+                        {areaError && (
+                          <span style={{ fontSize: 12, color: 'var(--red-600, #dc2626)', whiteSpace: 'nowrap' }}>
+                            {Number(areaRaw) > (state.roofAreaMax ?? 500)
+                              ? `不可超過建物面積 ${state.roofAreaMax} 坪`
+                              : '請輸入有效坪數'}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+                        <input
+                          type="number" min="1" max="500"
+                          value={areaRaw}
+                          onChange={e => { setAreaRaw(e.target.value); setAreaError(false); }}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                          onBlur={e => {
+                            const v = Math.round(+e.target.value);
+                            const max = state.roofAreaMax ?? 500;
+                            if (!v || v < 1 || v > max) { setAreaError(true); update({ roofAreaError: true }); return; }
+                            setAreaError(false);
+                            update({ roofArea: v, roofAreaError: false });
+                          }}
+                          className="num"
+                          style={{
+                            fontSize: 28, fontWeight: 700, width: `${Math.max(2, areaRaw.length) + 1}ch`,
+                            color: areaError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
+                            border: 'none', outline: 'none', background: 'transparent', padding: 0,
+                            textAlign: 'right',
+                          }}
+                        />
+                        <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>坪</span>
+                      </div>
+                    </div>
+                    <Slider
+                      min={1} max={buildingInfo ? buildingInfo.areaPing : 200}
+                      value={roofArea}
+                      onChange={v => { update({ roofArea: v, roofAreaError: false }); setAreaError(false); }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+                      <span className="caption">1 坪</span>
+                      <span className="caption">{buildingInfo ? buildingInfo.areaPing : 200} 坪</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="num" style={{ fontSize: 28, fontWeight: 700, color: 'var(--green-700)' }}>{roofArea}</span>
-                    <span style={{ fontSize: 13, color: 'var(--ink-500)', marginLeft: 4 }}>坪</span>
-                  </div>
-                </div>
-                <Slider min={10} max={buildingInfo ? buildingInfo.areaPing : 200} value={roofArea} onChange={v => update({ roofArea: v })} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-                  <span className="caption">10 坪</span>
-                  <span className="caption">{buildingInfo ? buildingInfo.areaPing : 200} 坪</span>
-                </div>
-              </div>
+                </>
+              )}
 
             </div>
           )}

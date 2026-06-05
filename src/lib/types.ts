@@ -39,6 +39,10 @@ export interface SolarState {
   billAmount?: number;
   /** 帳單所在季節，決定夏月/非夏月費率 */
   billSeason?: 'summer' | 'nonSummer';
+  /** 建物最大可用坪數（來自 /api/building-info），用於輸入驗證 */
+  roofAreaMax?: number;
+  /** 使用者輸入的可用坪數超出建物面積或無效，阻擋進入下一步 */
+  roofAreaError?: boolean;
   /** 六份雙月帳單明細（NT$），null 表示該份未填；有值時由 disaggregateBills 推算 monthlyUsage */
   billAmounts?: (number | null)[];
   /** 六份帳單各自的季節（'summer' | 'nonSummer'），未設時依 BILL_PAIR_META 預設值 */

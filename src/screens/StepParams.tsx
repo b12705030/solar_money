@@ -1,5 +1,5 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Info } from '@/components/ui';
 import { Slider } from '@/components/Slider';
 import { SUBSIDIES, PANEL_GRADES } from '@/lib/constants';
@@ -24,6 +24,9 @@ export default function StepParams({
     Math.round(maxCapacity * (PANEL_GRADES[1].costPerKw - subsidy.amount) / 10000) * 10000,
   );
   const budgetCeiling = state.budgetCeiling ?? defaultBudget;
+  const [budgetRaw, setBudgetRaw] = useState(String(budgetCeiling));
+  const [budgetError, setBudgetError] = useState(false);
+  useEffect(() => { setBudgetRaw(String(budgetCeiling)); setBudgetError(false); }, [budgetCeiling]);
 
   const costPerKw = gradeInfo.costPerKw;
   const netCostPerKw = costPerKw - subsidy.amount;
@@ -56,7 +59,27 @@ export default function StepParams({
             預算上限（補助後自付）
             <Info tip="扣除政府補助後，你願意支付的最高金額" />
           </div>
-          <span className="num budget-amount">NT$ {budgetCeiling.toLocaleString()}</span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span className="num" style={{ fontSize: 15, color: 'var(--ink-500)' }}>NT$</span>
+            <input
+              type="number" min="50000" max="800000"
+              value={budgetRaw}
+              onChange={e => { setBudgetRaw(e.target.value); setBudgetError(false); }}
+              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              onBlur={e => {
+                const v = +e.target.value;
+                if (!v || v < 50000) { setBudgetError(true); return; }
+                setBudgetError(false);
+                update({ budgetCeiling: Math.min(800000, Math.round(v)) });
+              }}
+              className="num budget-amount"
+              style={{
+                color: budgetError ? 'var(--red-600, #dc2626)' : undefined,
+                border: 'none', outline: 'none', background: 'transparent', padding: 0,
+                width: `${Math.max(6, budgetRaw.length) + 1}ch`,
+              }}
+            />
+          </div>
         </div>
         <Slider
           min={50000} max={800000} step={10000}

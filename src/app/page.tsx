@@ -77,7 +77,7 @@ export default function App() {
   };
 
   const canAdvance = () => {
-    if (step === 0) return !!state.address;
+    if (step === 0) return !!state.address && !state.roofAreaError && (!state.roofAreaMax || (state.roofArea ?? 0) <= state.roofAreaMax);
     if (step === 1) return state.monthlyKwh > 0;
     if (step === 2) return !!state.goal;
     return true;
