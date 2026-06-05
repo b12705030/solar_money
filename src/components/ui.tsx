@@ -1,7 +1,44 @@
 'use client';
+import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 export function Info({ tip }: { tip: string }) {
-  return <span className="info" data-tip={tip}>i</span>;
+  const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  const show = () => {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const isRight = r.left > window.innerWidth / 2;
+    setPos({
+      top: r.top - 8,
+      ...(isRight ? { right: window.innerWidth - r.right } : { left: r.left }),
+    });
+  };
+
+  return (
+    <>
+      <span ref={ref} className="info" onMouseEnter={show} onMouseLeave={() => setPos(null)}>i</span>
+      {pos && createPortal(
+        <div style={{
+          position: 'fixed',
+          bottom: window.innerHeight - pos.top,
+          left: pos.left,
+          right: pos.right,
+          background: 'var(--ink-900)', color: 'var(--white)',
+          fontSize: 12, fontWeight: 400, lineHeight: 1.55,
+          padding: '8px 12px', borderRadius: 8,
+          whiteSpace: 'normal', wordBreak: 'break-word',
+          width: 'max-content', maxWidth: 320,
+          zIndex: 9999, boxShadow: 'var(--shadow-md)',
+          pointerEvents: 'none',
+        }}>
+          {tip}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
 }
 
 export function Badge({ children, tone = 'green' }: { children: React.ReactNode; tone?: 'green' | 'amber' | 'ink' }) {
