@@ -635,45 +635,56 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         return (
           <div style={{
             marginBottom: 20, padding: '16px 20px',
-            background: s.bg, border: `1px solid ${s.border}`, borderRadius: 12,
+            background: tiltLoading ? 'var(--ink-50)' : s.bg,
+            border: `1px solid ${tiltLoading ? 'var(--ink-200)' : s.border}`,
+            borderRadius: 12,
             display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 20,
           }}>
-            <div style={{ flex: '0 0 auto' }}>
-              <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性<Info tip="依 Han et al. (2026) Fig.11 ±σ 門檻分類；年效率 = 年發電量(kWh) ÷ 裝置容量(kWp)：≥ 1418 kWh/kWp → 優良；≥ 1148 → 尚可；< 1148 → 偏低（台灣均值 1283 kWh/kWp）" /></div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{
-                  padding: '3px 10px', borderRadius: 6, fontSize: 13, fontWeight: 700,
-                  background: s.color, color: '#fff',
-                }}>{s.label}</span>
+            {tiltLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', color: 'var(--ink-400)', fontSize: 14 }}>
+                <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                依當地氣候資料計算中…
               </div>
-            </div>
+            ) : (
+              <>
+                <div style={{ flex: '0 0 auto' }}>
+                  <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性<Info tip="依 Han et al. (2026) Fig.11 ±σ 門檻分類；年效率 = 年發電量(kWh) ÷ 裝置容量(kWp)：≥ 1418 kWh/kWp → 優良；≥ 1148 → 尚可；< 1148 → 偏低（台灣均值 1283 kWh/kWp）" /></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      padding: '3px 10px', borderRadius: 6, fontSize: 13, fontWeight: 700,
+                      background: s.color, color: '#fff',
+                    }}>{s.label}</span>
+                  </div>
+                </div>
 
-            <div style={{ flex: '0 0 auto' }}>
-              <div className="caption" style={{ marginBottom: 2 }}>年發電效率<Info tip="年發電量(kWh) ÷ 裝置容量(kWp)；數值越高表示當地氣候對發電越有利" /></div>
-              <div>
-                <span className="num" style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{r.pvYieldPerKwp}</span>
-                <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 4 }}>kWh/kWp</span>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                台灣均值 {twAvg} · <span style={{ color: s.color }}>{yieldSign}{yieldDiff.toFixed(0)} kWh/kWp</span>
-              </div>
-            </div>
+                <div style={{ flex: '0 0 auto' }}>
+                  <div className="caption" style={{ marginBottom: 2 }}>年發電效率<Info tip="年發電量(kWh) ÷ 裝置容量(kWp)；數值越高表示當地氣候對發電越有利" /></div>
+                  <div>
+                    <span className="num" style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{r.pvYieldPerKwp}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 4 }}>kWh/kWp</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                    台灣均值 {twAvg} · <span style={{ color: s.color }}>{yieldSign}{yieldDiff.toFixed(0)} kWh/kWp</span>
+                  </div>
+                </div>
 
-            <div style={{ flex: '0 0 auto' }}>
-              <div className="caption" style={{ marginBottom: 2 }}>
-                溫度效率修正<Info tip="月均動態 PR 與固定基準 PR=0.78 的百分差；高溫導致效率熱衰減（負值），低溫+強風可提升效率（正值）" />
-              </div>
-              <div>
-                <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-700)' }}>{prSign}{prDeltaPct}%</span>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>相對固定 PR=0.78 的月均修正</div>
-            </div>
+                <div style={{ flex: '0 0 auto' }}>
+                  <div className="caption" style={{ marginBottom: 2 }}>
+                    溫度效率修正<Info tip="月均動態 PR 與固定基準 PR=0.78 的百分差；高溫導致效率熱衰減（負值），低溫+強風可提升效率（正值）" />
+                  </div>
+                  <div>
+                    <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-700)' }}>{prSign}{prDeltaPct}%</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>相對固定 PR=0.78 的月均修正</div>
+                </div>
 
-            <div style={{ flex: '1 1 200px', borderTop: 'none', alignSelf: 'center' }}>
-              <div style={{ fontSize: 11, color: 'var(--ink-400)', lineHeight: 1.5 }}>
-                依 Han et al. (2026) Faiman T<sub>cell</sub> 模型計算，考量月均溫度與風速對電池片效率之影響
-              </div>
-            </div>
+                <div style={{ flex: '1 1 200px', borderTop: 'none', alignSelf: 'center' }}>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', lineHeight: 1.5 }}>
+                    依 Han et al. (2026) Faiman T<sub>cell</sub> 模型計算，考量月均溫度與風速對電池片效率之影響
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         );
       })()}
@@ -939,28 +950,37 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             {/* Comparison */}
             <div className="card" style={{ padding: 24 }}>
               <div className="caption" style={{ marginBottom: 12 }}>與台灣平均比較</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {[
-                  { label: '你的屋頂', value: r.annualKwh, color: 'var(--green-700)', emphasis: true },
-                  { label: '台灣平均（同容量）', value: Math.round(r.annualKwh * 0.92), color: 'var(--ink-300)', emphasis: false },
-                ].map((row, i) => {
-                  const pct = (row.value / r.annualKwh) * 100;
-                  return (
-                    <div key={i}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 13 }}>
-                        <span style={{ color: row.emphasis ? 'var(--green-900)' : 'var(--ink-500)', fontWeight: row.emphasis ? 600 : 400 }}>{row.label}</span>
-                        <span className="num" style={{ fontWeight: 600, color: row.emphasis ? 'var(--green-900)' : 'var(--ink-500)' }}>{row.value.toLocaleString()} kWh</span>
-                      </div>
-                      <div style={{ height: 8, background: 'var(--ink-100)', borderRadius: 4, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: row.color, transition: 'width 1s' }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ marginTop: 14, fontSize: 12, color: 'var(--green-700)', fontWeight: 500 }}>
-                ↑ 比台灣平均高 {(((r.annualKwh / Math.round(r.annualKwh * 0.92)) - 1) * 100).toFixed(1)}%
-              </div>
+              {tiltLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0', color: 'var(--ink-400)', fontSize: 13 }}>
+                  <div style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                  計算中…
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {[
+                      { label: '你的屋頂', value: r.annualKwh, color: 'var(--green-700)', emphasis: true },
+                      { label: '台灣平均（同容量）', value: Math.round(r.annualKwh * 0.92), color: 'var(--ink-300)', emphasis: false },
+                    ].map((row, i) => {
+                      const pct = (row.value / r.annualKwh) * 100;
+                      return (
+                        <div key={i}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 13 }}>
+                            <span style={{ color: row.emphasis ? 'var(--green-900)' : 'var(--ink-500)', fontWeight: row.emphasis ? 600 : 400 }}>{row.label}</span>
+                            <span className="num" style={{ fontWeight: 600, color: row.emphasis ? 'var(--green-900)' : 'var(--ink-500)' }}>{row.value.toLocaleString()} kWh</span>
+                          </div>
+                          <div style={{ height: 8, background: 'var(--ink-100)', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: row.color, transition: 'width 1s' }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: 14, fontSize: 12, color: 'var(--green-700)', fontWeight: 500 }}>
+                    ↑ 比台灣平均高 {(((r.annualKwh / Math.round(r.annualKwh * 0.92)) - 1) * 100).toFixed(1)}%
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1141,13 +1161,23 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>自用省電費<Info tip="月電費(原用電量) − 月電費(原用電量 − 自用量)；依台電六段累進費率，夏月(6–9月)費率較高" /></div>
                   <div className="num" style={{ fontSize: 18, fontWeight: 700, color: 'var(--green-900)' }}>
-                    NT$ {r.selfUseRevenue.toLocaleString()}
+                    {tiltLoading ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--ink-400)', fontSize: 13, fontWeight: 400 }}>
+                        <div style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                        計算中…
+                      </span>
+                    ) : `NT$ ${r.selfUseRevenue.toLocaleString()}`}
                   </div>
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>台電躉購<Info tip="餘電(kWh) × FIT費率；115年度屋頂型：≤10kW→5.63元/度，容量越大費率階梯遞減" /></div>
                   <div className="num" style={{ fontSize: 18, fontWeight: 700, color: 'var(--green-900)' }}>
-                    NT$ {(r.annualRevenue - r.selfUseRevenue).toLocaleString()}
+                    {tiltLoading ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--ink-400)', fontSize: 13, fontWeight: 400 }}>
+                        <div style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                        計算中…
+                      </span>
+                    ) : `NT$ ${(r.annualRevenue - r.selfUseRevenue).toLocaleString()}`}
                   </div>
                 </div>
               </div>
@@ -1191,7 +1221,14 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                 依面板年衰退率 {(DEFAULT_DEGRADATION_RATE * 100).toFixed(1)}% 估算（矽晶太陽能板業界標準，每年輸出功率微幅下降）
               </div>
             </div>
-            <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} />
+            {tiltLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, height: 220, color: 'var(--ink-400)', fontSize: 14 }}>
+                <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-700)', animation: 'spin 0.6s linear infinite' }} />
+                依日照資料計算年度收益…
+              </div>
+            ) : (
+              <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} />
+            )}
 
             <div className="results-inv-summary">
               <div>
@@ -1202,8 +1239,13 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               </div>
               <div>
                 <div className="caption">年均收益<Info tip="自用省電費節省 + FIT 售電收入" /></div>
-                <div className="num" style={{ fontSize: 16, fontWeight: 600, color: 'var(--green-700)', marginTop: 4 }}>
-                  +NT$ {Math.round(r.annualRevenue / 1000)}K
+                <div className="num" style={{ fontSize: 16, fontWeight: 600, color: tiltLoading ? 'var(--ink-400)' : 'var(--green-700)', marginTop: 4 }}>
+                  {tiltLoading ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 400 }}>
+                      <div style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
+                      計算中…
+                    </span>
+                  ) : `+NT$ ${Math.round(r.annualRevenue / 1000)}K`}
                 </div>
               </div>
               <div>
