@@ -186,7 +186,15 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
                 return (
                   <div
                     key={inq.id}
-                    onClick={() => { setSelected(inq); if (unread(inq)) markRead(inq); }}
+                    onClick={() => {
+                      setSelected(inq);
+                      setReviewOpen(false);
+                      setReviewRating(0);
+                      setReviewComment('');
+                      setReviewError('');
+                      setSendError('');
+                      if (unread(inq)) markRead(inq);
+                    }}
                     style={{
                       padding: '12px 16px', cursor: 'pointer', display: 'flex', gap: 10, alignItems: 'center',
                       background: active ? 'var(--green-50)' : 'transparent',

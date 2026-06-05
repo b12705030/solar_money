@@ -84,6 +84,7 @@ async def get_pool() -> asyncpg.Pool:
             raise RuntimeError('DATABASE_URL 未設定')
         _pool = await asyncpg.create_pool(
             url, min_size=1, max_size=5,
+            statement_cache_size=0,
             server_settings={'timezone': 'Asia/Taipei'},
         )
     return _pool
@@ -333,6 +334,20 @@ async def init_db() -> None:
             await conn.execute(
                 f"ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS {col} {definition}"
             )
+        for col, definition in [
+            ('vendor_id',  'TEXT REFERENCES vendors(id) ON DELETE CASCADE'),
+            ('inquiry_id', 'UUID REFERENCES inquiries(id) ON DELETE CASCADE'),
+            ('account_id', 'UUID REFERENCES accounts(id)'),
+            ('rating',     'INT'),
+            ('comment',    'TEXT'),
+        ]:
+            await conn.execute(
+                f"ALTER TABLE vendor_reviews ADD COLUMN IF NOT EXISTS {col} {definition}"
+            )
+        await conn.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_reviews_inquiry_id_unique '
+            'ON vendor_reviews (inquiry_id)'
+        )
         for col, definition in [
             ('photo_url',   'TEXT'),
             ('description', 'TEXT'),
@@ -1372,35 +1387,36 @@ async def add_vendor_review(
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            async with conn.transaction():
-                inq = await conn.fetchrow(
-                    'SELECT id FROM inquiries WHERE id = $1::uuid AND account_id = $2::uuid AND vendor_id = $3',
-                    inquiry_id, account_id, vendor_id,
-                )
-                if not inq:
-                    return 'not_found'
-                row = await conn.fetchrow(
-                    '''INSERT INTO vendor_reviews (vendor_id, inquiry_id, account_id, rating, comment)
-                       VALUES ($1, $2::uuid, $3::uuid, $4, $5)
-                       ON CONFLICT (inquiry_id) DO NOTHING
-                       RETURNING id''',
-                    vendor_id, inquiry_id, account_id, rating, comment,
-                )
-                if not row:
-                    return 'duplicate'
-                await conn.execute(
-                    '''UPDATE vendors
-                       SET rating       = sub.avg_rating,
-                           review_count = sub.cnt
-                       FROM (
-                           SELECT AVG(rating)::double precision AS avg_rating,
-                                  COUNT(*)::int AS cnt
-                           FROM vendor_reviews
-                           WHERE vendor_id = $1
-                       ) sub
-                       WHERE vendors.id = $1''',
-                    vendor_id,
-                )
+            inq = await conn.fetchrow(
+                'SELECT id, vendor_id FROM inquiries WHERE id = $1::uuid AND account_id = $2::uuid',
+                inquiry_id, account_id,
+            )
+            if not inq:
+                return 'not_found'
+            if vendor_id and inq['vendor_id'] != vendor_id:
+                return 'not_found'
+            row = await conn.fetchrow(
+                '''INSERT INTO vendor_reviews (vendor_id, inquiry_id, account_id, rating, comment)
+                   VALUES ($1, $2::uuid, $3::uuid, $4, $5)
+                   ON CONFLICT (inquiry_id) DO NOTHING
+                   RETURNING id''',
+                inq['vendor_id'], inquiry_id, account_id, rating, comment,
+            )
+            if not row:
+                return 'duplicate'
+            await conn.execute(
+                '''UPDATE vendors
+                   SET rating       = sub.avg_rating,
+                       review_count = sub.cnt
+                   FROM (
+                       SELECT AVG(rating)::double precision AS avg_rating,
+                              COUNT(*)::int AS cnt
+                       FROM vendor_reviews
+                       WHERE vendor_id = $1
+                   ) sub
+                   WHERE vendors.id = $1''',
+                inq['vendor_id'],
+            )
         return 'ok'
     except Exception as e:
         print(f'[add_vendor_review] error: {e}')
