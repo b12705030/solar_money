@@ -108,11 +108,14 @@ async function refreshAllShadows(
   sunHourRef: React.MutableRefObject<number>,
   cacheRef: React.MutableRefObject<Map<number, HourData>>,
   buildingsRef: React.MutableRefObject<{ footprint: [number, number][]; height: number }[]>,
+  sliderFetchCtrlRef: React.MutableRefObject<AbortController | null>,
   setLoading?: (v: boolean) => void,
   setBuildingLoading?: (v: boolean) => void,
   setTooManyBuildings?: (v: boolean) => void,
 ): Promise<void> {
   _shadowFetchCtrl?.abort();
+  sliderFetchCtrlRef.current?.abort();
+  sliderFetchCtrlRef.current = null;
   _shadowFetchCtrl = new AbortController();
   const { signal } = _shadowFetchCtrl;
   // Phase 1: show "building data loading" spinner, ensure shadow spinner is off
@@ -166,6 +169,7 @@ async function refreshAllShadows(
   }
   setTooManyBuildings?.(false);
   setLoading?.(true);
+  cacheRef.current.clear();
 
   const bodyBase = { buildings, lat: center.lat, lng: center.lng };
 
@@ -303,6 +307,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
   const moveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shadowCacheRef = useRef<Map<number, HourData>>(new Map());
   const buildingsRef = useRef<{ footprint: [number, number][]; height: number }[]>([]);
+  const sliderFetchCtrl = useRef<AbortController | null>(null);
 
   useEffect(() => { onBuildingFoundRef.current = onBuildingFound; });
   useEffect(() => { onDetectionStartRef.current = onDetectionStart; });
@@ -456,7 +461,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
 
       // style.load fires before building tiles are downloaded.
       // Wait for the first idle (all tiles loaded + rendered) before querying features.
-      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading, setTooManyBuildings));
+      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, sliderFetchCtrl, setShadowLoading, setBuildingDataLoading, setTooManyBuildings));
     });
 
     // After panning, refresh shadows once tiles are settled.
@@ -465,7 +470,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     map.on('moveend', () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       moveDebounceRef.current = setTimeout(() => {
-        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading, setTooManyBuildings);
+        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, sliderFetchCtrl, setShadowLoading, setBuildingDataLoading, setTooManyBuildings);
         if (map.loaded()) {
           doRefresh();
         } else {
@@ -479,6 +484,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     return () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       _shadowFetchCtrl?.abort();
+      sliderFetchCtrl.current?.abort();
       map.remove();
       mapDiv.remove();
       setMapInstance(null);
@@ -504,14 +510,18 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     const buildings = buildingsRef.current;
     if (!buildings.length || buildings.length > SHADOW_BUILDINGS_MAX) return;
     const center = mapInstance.getCenter();
+    sliderFetchCtrl.current?.abort();
+    sliderFetchCtrl.current = new AbortController();
+    const { signal } = sliderFetchCtrl.current;
     fetch(`${API_URL}/api/shadows/from-features`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ buildings, lat: center.lat, lng: center.lng, local_hour: sunHour }),
+      signal,
     })
       .then(r => r.ok ? r.json() : null)
       .then((data: HourData | null) => {
-        if (data) {
+        if (data && !signal.aborted) {
           shadowCacheRef.current.set(sunHour, data);  // 回填，下次拖到同小時立即回應
           _applyHourData(mapInstance!, data);
         }

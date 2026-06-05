@@ -96,8 +96,8 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
 from .mada import topsis
 from .shadow import (compute_bbox_shadows, compute_optimal_tilt,
                      compute_shadows_from_features,
-                     compute_usable_roof_fraction, get_buildings, load_dem,
-                     precompute_shadows_all_hours, project_shadow)
+                     compute_usable_roof_fraction, get_buildings, get_sun_times,
+                     load_dem, precompute_shadows_all_hours, project_shadow)
 from .dem_tiles import render_dem_tile
 
 
@@ -278,6 +278,22 @@ class UsableFractionRequest(BaseModel):
     lng: float
 
 
+_sun_times_cache: dict[str, dict] = {}  # keyed by YYYY-MM-DD, at most 1 entry
+
+@app.get('/api/sun-times/taiwan')
+async def taiwan_sun_times():
+    """Return today's sunrise/sunset for Taiwan (computed once per day, cached in memory)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    today = str(datetime.now(ZoneInfo('Asia/Taipei')).date())
+    if today not in _sun_times_cache:
+        _sun_times_cache.clear()
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, lambda: get_sun_times(23.97, 120.97))
+        _sun_times_cache[today] = result
+    return _sun_times_cache[today]
+
+
 @app.post('/api/usable-fraction')
 async def usable_fraction_endpoint(req: UsableFractionRequest):
     """
@@ -455,7 +471,7 @@ async def cleanup_stale_caches(admin=Depends(require_admin)):
     """
     清除過期快取與廢棄資料，用於 Neon 免費 512 MB 容量管理。
     - dem_cache：.npy 已 commit 進 git，DB 備份永遠不需要
-    - shadow_cache：只保留當前版本 (v3_*)，舊版 v1/v2 已失效
+    - shadow_cache：只保留當前版本 (v4_*)，舊版 v1/v2/v3 已失效
     - osm_cache：刪除超過 7 天（永遠不會再被讀取）
     - gba_cache：刪除超過 30 天（永遠不會再被讀取）
     """
@@ -465,7 +481,7 @@ async def cleanup_stale_caches(admin=Depends(require_admin)):
         r = await conn.execute('DELETE FROM dem_cache')
         deleted['dem_cache'] = int(r.split()[-1])
 
-        r = await conn.execute("DELETE FROM shadow_cache WHERE cache_key NOT LIKE 'v3_%'")
+        r = await conn.execute("DELETE FROM shadow_cache WHERE cache_key NOT LIKE 'v4_%'")
         deleted['shadow_cache_old_versions'] = int(r.split()[-1])
 
         r = await conn.execute("DELETE FROM osm_cache WHERE fetched_at < NOW() - INTERVAL '7 days'")

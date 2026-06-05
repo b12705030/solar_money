@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from functools import lru_cache
 from pathlib import Path
 
@@ -120,6 +121,45 @@ def _make_timestamp(local_hour: int) -> pd.Timestamp:
     today = date.today()
     return pd.Timestamp(year=today.year, month=today.month, day=today.day,
                         hour=local_hour, tz='Asia/Taipei')
+
+
+def get_sun_times(lat: float, lng: float) -> dict:
+    """Return today's sunrise/sunset display strings and first/last integer shadow hours."""
+    today = datetime.now(ZoneInfo('Asia/Taipei')).date()
+    loc = pvlib.location.Location(lat, lng, tz='Asia/Taipei')
+
+    # Minute-level scan 04:00–20:00 → precise sunrise/sunset label
+    times_min = pd.date_range(
+        start=pd.Timestamp(today.year, today.month, today.day, 4, 0, tz='Asia/Taipei'),
+        end=pd.Timestamp(today.year, today.month, today.day, 20, 0, tz='Asia/Taipei'),
+        freq='1min',
+    )
+    alts_min = loc.get_solarposition(times_min)['apparent_elevation']
+    above = alts_min > 0
+
+    if not above.any():
+        return {'first_shadow_hour': 6, 'last_shadow_hour': 18, 'sunrise': '06:00', 'sunset': '18:00'}
+
+    sunrise = times_min[above][0].strftime('%H:%M')
+    sunset = times_min[above][-1].strftime('%H:%M')
+
+    # Hourly scan 05:00–19:00 → slider min/max (only show hours where alt > 0 at :00)
+    times_hr = pd.date_range(
+        start=pd.Timestamp(today.year, today.month, today.day, 5, 0, tz='Asia/Taipei'),
+        end=pd.Timestamp(today.year, today.month, today.day, 19, 0, tz='Asia/Taipei'),
+        freq='1h',
+    )
+    alts_hr = loc.get_solarposition(times_hr)['apparent_elevation']
+    shadow_hours = [t.hour for t, a in zip(times_hr, alts_hr) if a > 0]
+    first_h = shadow_hours[0] if shadow_hours else 6
+    last_h = shadow_hours[-1] if shadow_hours else 18
+
+    return {
+        'first_shadow_hour': first_h,
+        'last_shadow_hour': last_h,
+        'sunrise': sunrise,
+        'sunset': sunset,
+    }
 
 
 # ─── Optimal tilt calculation ────────────────────────────────────────────────
