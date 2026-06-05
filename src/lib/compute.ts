@@ -27,6 +27,9 @@ function calcMonthlyPR(ghiArr: number[], tempArr: number[], windArr: number[], b
   });
 }
 
+// Fallback goalAdj when /api/township is unavailable (no lat/lng).
+// These are seasonal preference multipliers, NOT true POA/GHI ratios.
+// When the API is available it returns real pvlib POA/GHI values (always ≥ 1 for optimal tilt in Taiwan).
 const GOAL_ADJ: Record<string, number[]> = {
   annual: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
   summer: [0.85, 0.88, 0.95, 1.05, 1.10, 1.15, 1.18, 1.15, 1.05, 0.95, 0.90, 0.85],
