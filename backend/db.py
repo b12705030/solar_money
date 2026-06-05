@@ -470,10 +470,10 @@ async def set_gba_cache(bbox_key: str, buildings: list[dict]) -> None:
 # ─── 陰影預計算 cache（月份粒度，相同區域同月份直接回傳）────────────────────
 
 def shadow_cache_key(lat: float, lng: float) -> str:
-    """以 ~1km 網格 × 月份為 key，同月份陰影差異很小可共用。
-    v3：陰影計算加入地形高差修正（per-building terrain elevation），舊 v2 快取自動失效。"""
+    """以 ~100m 網格 × 月份為 key。
+    v4：精度從 2 位提升至 3 位（~100m），減少不同 viewport 共用同一快取的機率。"""
     today = date.today()
-    return f'v3_{lat:.2f}_{lng:.2f}_{today.year}_{today.month:02d}'
+    return f'v4_{lat:.3f}_{lng:.3f}_{today.year}_{today.month:02d}'
 
 
 async def get_shadow_cache(key: str) -> dict | None:

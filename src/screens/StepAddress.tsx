@@ -42,6 +42,19 @@ async function fetchTownshipCode(
   }
 }
 
+type SunTimes = { firstHour: number; lastHour: number; sunrise: string; sunset: string };
+
+async function fetchTaiwanSunTimes(): Promise<SunTimes | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/sun-times/taiwan`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { firstHour: data.first_shadow_hour, lastHour: data.last_shadow_hour, sunrise: data.sunrise, sunset: data.sunset };
+  } catch {
+    return null;
+  }
+}
+
 function detectRegion(address: string): Region {
   if (/台中|臺中|彰化|南投|苗栗|雲林/.test(address)) return '中部';
   if (/台南|臺南|高雄|屏東|嘉義|花蓮|台東|臺東|澎湖|金門/.test(address)) return '南部';
@@ -64,10 +77,20 @@ export default function StepAddress({
   const geocodingStartedRef = useRef(false);
   const [sunHour, setSunHour] = useState<number>(() => {
     const h = new Date().getHours(); // local hour
-    return h >= 6 && h <= 18 ? h : 12;
+    return h >= 6 && h <= 18 ? h : 8;
   });
+  const [sunTimes, setSunTimes] = useState<SunTimes | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
+
+  // Fetch Taiwan sunrise/sunset once on mount — backend caches by date, costs one compute per day
+  useEffect(() => {
+    fetchTaiwanSunTimes().then(data => {
+      if (!data) return;
+      setSunTimes(data);
+      setSunHour(h => Math.min(Math.max(h, data.firstHour), data.lastHour));
+    });
+  }, []);
 
   // Reset local state when parent clears address (e.g. user starts a new evaluation)
   useEffect(() => {
@@ -467,10 +490,10 @@ export default function StepAddress({
                 </span>
               </div>
             </div>
-            <Slider min={5} max={19} value={sunHour} onChange={setSunHour} />
+            <Slider min={sunTimes?.firstHour ?? 6} max={sunTimes?.lastHour ?? 18} value={sunHour} onChange={setSunHour} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-              <span className="caption">05:00 日出</span>
-              <span className="caption">19:00 日落</span>
+              <span className="caption">日出 {sunTimes?.sunrise ?? '—'}</span>
+              <span className="caption">日落 {sunTimes?.sunset ?? '—'}</span>
             </div>
           </div>
         </div>

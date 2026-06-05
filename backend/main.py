@@ -96,8 +96,8 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
 from .mada import topsis
 from .shadow import (compute_bbox_shadows, compute_optimal_tilt,
                      compute_shadows_from_features,
-                     compute_usable_roof_fraction, get_buildings, load_dem,
-                     precompute_shadows_all_hours, project_shadow)
+                     compute_usable_roof_fraction, get_buildings, get_sun_times,
+                     load_dem, precompute_shadows_all_hours, project_shadow)
 from .dem_tiles import render_dem_tile
 
 
@@ -276,6 +276,21 @@ class UsableFractionRequest(BaseModel):
     target_footprint: List[List[float]]  # [[lng, lat], ...] EPSG:4326
     lat: float
     lng: float
+
+
+_sun_times_cache: dict[str, dict] = {}  # keyed by YYYY-MM-DD, at most 1 entry
+
+@app.get('/api/sun-times/taiwan')
+async def taiwan_sun_times():
+    """Return today's sunrise/sunset for Taiwan (computed once per day, cached in memory)."""
+    from datetime import date as _date
+    today = str(_date.today())
+    if today not in _sun_times_cache:
+        _sun_times_cache.clear()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, lambda: get_sun_times(23.97, 120.97))
+        _sun_times_cache[today] = result
+    return _sun_times_cache[today]
 
 
 @app.post('/api/usable-fraction')
