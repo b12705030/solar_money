@@ -289,6 +289,12 @@ function ProfileEditForm({
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setMsg('檔案超過 5 MB 上限');
+      e.target.value = '';
+      return;
+    }
+    setMsg('');
     setLogoFile(file);
     setLogoPreview(URL.createObjectURL(file));
     setRemoveLogo(false);
@@ -563,6 +569,12 @@ function AddPortfolioForm({
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setErr('檔案超過 5 MB 上限');
+      e.target.value = '';
+      return;
+    }
+    setErr('');
     setPhotoFile(file);
     setPhoto(URL.createObjectURL(file));
   };
@@ -606,65 +618,71 @@ function AddPortfolioForm({
   };
 
   return (
-    <div className="dash-add-form-card">
-      <div className="dash-add-form-title">新增作品</div>
-      <div className="dash-edit-form">
-        {/* Photo upload */}
-        <div className="form-field">
-          <label className="form-label">施工照片 <span className="form-label-opt">選填</span></label>
-          <div className="portfolio-photo-upload-row">
-            <label className="portfolio-photo-upload">
-              {photo ? (
-                <img src={photo} className="portfolio-photo-preview" alt="施工照" />
-              ) : (
-                <div className="vendor-apply-logo-placeholder">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-                    <polyline points="21 15 16 10 5 21"/>
-                  </svg>
-                  <span>上傳施工照</span>
-                  <span className="vendor-apply-logo-hint">JPG / PNG</span>
-                </div>
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" style={{ maxWidth: 720, width: '92vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">新增作品</div>
+          <button className="modal-close" onClick={onCancel}>×</button>
+        </div>
+
+        <div className="dash-edit-form" style={{ padding: '0 24px 24px' }}>
+          {/* Photo upload */}
+          <div className="form-field">
+            <label className="form-label">施工照片 <span className="form-label-opt">選填</span></label>
+            <div className="portfolio-photo-upload-row">
+              <label className="portfolio-photo-upload">
+                {photo ? (
+                  <img src={photo} className="portfolio-photo-preview" alt="施工照" />
+                ) : (
+                  <div className="vendor-apply-logo-placeholder">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                    <span>上傳施工照</span>
+                    <span className="vendor-apply-logo-hint">JPG / PNG</span>
+                  </div>
+                )}
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} style={{ display: 'none' }} />
+              </label>
+              {photo && (
+                <button type="button" className="btn-ghost" style={{ fontSize: 13 }} onClick={() => {
+                  URL.revokeObjectURL(photo);
+                  setPhoto(null);
+                  setPhotoFile(null);
+                }}>移除</button>
               )}
-              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} style={{ display: 'none' }} />
-            </label>
-            {photo && (
-              <button type="button" className="btn-ghost" style={{ fontSize: 13 }} onClick={() => {
-                URL.revokeObjectURL(photo);
-                setPhoto(null);
-                setPhotoFile(null);
-              }}>移除</button>
-            )}
-          </div>
-        </div>
-        <div className="form-field">
-          <label className="form-label">案場標題</label>
-          <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="信義區集合住宅屋頂型案場" />
-        </div>
-        <div className="form-field">
-          <label className="form-label">案場說明</label>
-          <input className="form-input" value={meta} onChange={e => setMeta(e.target.value)} placeholder="住宅大樓 · 22.4 kWp · 2025 完工" />
-        </div>
-        <div className="form-field">
-          <label className="form-label">客戶描述 <span className="form-label-opt">選填，說明建築類型、挑戰與解法</span></label>
-          <textarea className="form-input" rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="屋主為三層透天厝，南向屋頂，安裝 8 片高效模組，成功申請台北市補助 12 萬元..." />
-        </div>
-        <div className="dash-edit-form-row">
-          <div className="form-field">
-            <label className="form-label">裝置容量 (kWp)<span className="form-label-opt">選填</span></label>
-            <input className="form-input" type="number" min="0" step="0.1" value={capKw} onChange={e => setCapKw(e.target.value)} />
+            </div>
           </div>
           <div className="form-field">
-            <label className="form-label">完工年份<span className="form-label-opt">選填</span></label>
-            <input className="form-input" type="number" min="2000" max="2099" value={year} onChange={e => setYear(e.target.value)} />
+            <label className="form-label">案場標題</label>
+            <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="信義區集合住宅屋頂型案場" />
           </div>
-        </div>
-        {err && <div className="form-error">{err}</div>}
-        <div className="dash-edit-form-actions">
-          <button className="btn btn-secondary btn-sm" onClick={onCancel} disabled={adding}>取消</button>
-          <button className="btn btn-primary btn-sm" disabled={adding} onClick={add}>
-            {adding ? '新增中⋯' : '新增作品'}
-          </button>
+          <div className="form-field">
+            <label className="form-label">案場說明</label>
+            <input className="form-input" value={meta} onChange={e => setMeta(e.target.value)} placeholder="住宅大樓 · 22.4 kWp · 2025 完工" />
+          </div>
+          <div className="form-field">
+            <label className="form-label">客戶描述 <span className="form-label-opt">選填</span></label>
+            <textarea className="form-input" rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="屋主為三層透天厝，南向屋頂，安裝 8 片高效模組，成功申請台北市補助 12 萬元..." />
+          </div>
+          <div className="dash-edit-form-row">
+            <div className="form-field">
+              <label className="form-label">裝置容量 (kWp)<span className="form-label-opt">選填</span></label>
+              <input className="form-input" type="number" min="0" step="0.1" value={capKw} onChange={e => setCapKw(e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label className="form-label">完工年份<span className="form-label-opt">選填</span></label>
+              <input className="form-input" type="number" min="2000" max="2099" value={year} onChange={e => setYear(e.target.value)} />
+            </div>
+          </div>
+          {err && <div className="form-error">{err}</div>}
+          <div className="dash-edit-form-actions">
+            <button className="btn btn-secondary btn-sm" onClick={onCancel} disabled={adding}>取消</button>
+            <button className="btn btn-primary btn-sm" disabled={adding} onClick={add}>
+              {adding ? '新增中⋯' : '新增作品'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
