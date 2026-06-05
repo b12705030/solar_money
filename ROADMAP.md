@@ -214,7 +214,7 @@
 
 ### DEM 數值地形模型
 - [x] `scripts/build_dem_cache.py` — 20m GeoTIFF rasterio average 降采樣至 100m `.npy`
-- [x] `scripts/upload_dem.py` — 上傳 `.npy` 至 Neon `dem_cache`（bytea 28.9 MB）
+- [x] `scripts/upload_dem.py` — 上傳 `.npy` 至 Neon `dem_cache`（bytea 28.9 MB）（此為舊 Neon 階段紀錄；目前 runtime 為 CockroachDB）
 - [x] `backend/shadow.py` — `load_dem()` 非同步載入（本機 .npy → DB fallback，自動寫回）
 - [x] `backend/shadow.py` — `get_elevation(lat, lng)` TWD97 索引查詢，O(1) numpy
 - [x] `data/taiwan_dem_100m.npy` 進 repo（28.9 MB，clone 即用）
@@ -239,7 +239,7 @@
 - [x] `scripts/import_gba_to_db.py` — 串流匯入 GBA tile（ODbLPolygon + Polygon + LoD1 高度索引）
   - bbox clip（避免匯入非台灣建物）
   - ON CONFLICT DO NOTHING（安全重試）
-  - 自動重連（Neon serverless 閒置斷線處理）
+  - 自動重連（Neon serverless 閒置斷線處理）（此為舊 Neon 階段紀錄；目前 runtime 為 CockroachDB）
 - [x] `backend/db.py` — `gba_buildings` 表（510K 棟，bbox 索引）
 - [x] `backend/shadow.py` — `get_buildings()` 改為 GBA DB 優先（3 層 fallback：GBA DB → Polygon fallback → OSM）
 - [x] 台灣主島（北部 + 南部，e120_n25 + e120_n30 tiles）

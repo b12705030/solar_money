@@ -52,7 +52,7 @@
 
 | 層級 | 來源 | 精度 | 啟用條件 |
 |------|------|------|---------|
-| 主要 | **GBA 離線 DB**（510K 棟，Neon `gba_buildings`） | ML 估算高度 + footprint | 預設啟用；半徑查詢 bbox index |
+| 主要 | **GBA 離線 DB**（510K 棟，CockroachDB `gba_buildings`） | ML 估算高度 + footprint | 預設啟用；半徑查詢 bbox index |
 | 本地 fallback | **Polygon fallback**（`taiwan_polygon_fallback.ndjson.gz`，2.56M 棟） | ML 估算高度 + footprint | 後端啟動時載入 RAM；DB miss 自動切換 |
 | 最終備援 | **OSM Overpass API** | 估算（levels × 3.2m 或 tag） | GBA DB + 本地 fallback 均無結果時呼叫 |
 
@@ -64,7 +64,7 @@
 
 | 資料 | 來源 | 解析度 | 實作 |
 |------|------|--------|------|
-| **全台 DEM** | 內政部 2025 年 20m GeoTIFF | 降采樣至 100m | RAM 常駐 numpy array，O(1) 查詢；同時存 Neon DB (bytea) 供其他環境自動下載 |
+| **全台 DEM** | 內政部 2025 年 20m GeoTIFF | 降采樣至 100m | RAM 常駐 numpy array，O(1) 查詢；同時存 DB (bytea) 供其他環境自動下載 |
 
 DEM 用於計算地點的真實地表海拔，提供地形遮蔽（如中央山脈對東部的影響）輸入。
 

@@ -7,9 +7,9 @@
 | 永久儲存 | CockroachDB Serverless | PostgreSQL wire-compatible；10 GiB 免費；asia-southeast1 節點 |
 | 短期快取 | PostgreSQL shadow_cache | 現階段流量低，不需要另外架 Redis；若日後需要水平擴展可再加 |
 
-> **為什麼從 Neon 遷移到 CockroachDB？** Neon 免費方案上限 0.5 GB，無法容納 1.9M 棟 GBA 建物（~694 MB）。CockroachDB Serverless 提供 10 GiB 免費空間，完整容納建物資料庫。
+> **為什麼從 Neon 遷移到 CockroachDB？** 本專案最初使用 Neon PostgreSQL；Neon 免費方案上限 0.5 GB，無法容納 1.9M 棟 GBA 建物（~694 MB）。CockroachDB Serverless 提供 10 GiB 免費空間，完整容納建物資料庫。
 
-> **為什麼不用 Redis？** `shadow_cache` 以月份為粒度，命中率高且不需要 sub-second 過期精度。PostgreSQL 的查詢延遲（~5ms）對這個場景已足夠。
+> **為什麼不用 Redis？** `shadow_cache` 以月份為粒度，同一區域一個月只算一次，命中率高且不需要 sub-second 過期精度。PostgreSQL 的查詢延遲（~5ms）對這個場景已足夠。
 
 ### CockroachDB 相容性注意事項
 
@@ -62,6 +62,7 @@ GlobalBuildingAtlas (GBA) 離線建物資料，ML 估算高度 + footprint，為
 
 **索引**：`gba_buildings_bbox ON (min_lon, max_lon, min_lat, max_lat)`  
 **資料來源**：`data/taiwan_polygon_fallback.ndjson.gz`（1.9M 棟，LoD1 合併 ODbL + GBA ML + 高度）  
+**原始資料**：HuggingFace `zhu-xlab/GBA.LoD1`（ODbLPolygon + Polygon GeoJSON + LoD1 高度 JSON）  
 **匯入方式**：`python scripts/import_fallback_to_db.py`  
 **CockroachDB 佔用**：~694 MiB（1,905,108 棟；全台含澎湖 / 金門 / 馬祖）  
 **查詢邏輯**：`WHERE min_lon < $max_lon AND max_lon > $min_lon AND min_lat < $max_lat AND max_lat > $min_lat`
@@ -376,6 +377,7 @@ Email + 密碼 → 建立帳號 / 登入 → 回傳 JWT token。
 ## 連線設定
 
 ```
+<<<<<<< HEAD
 # backend/.env
 DATABASE_URL=postgresql://solar:<password>@solar-money-27240.j77.aws-ap-southeast-1.cockroachlabs.cloud:26257/defaultdb?sslmode=require
 GOOGLE_MAPS_API_KEY=AIzaSy...   # 後端專用，不暴露於瀏覽器
@@ -383,6 +385,16 @@ GOOGLE_MAPS_API_KEY=AIzaSy...   # 後端專用，不暴露於瀏覽器
 
 連線池：`min_size=1, max_size=5`。  
 時區：`server_settings={'timezone': 'Asia/Taipei'}`。
+=======
+DATABASE_URL=postgresql://<user>:<password>@<host>:26257/defaultdb?sslmode=require
+```
+
+放在 `backend/.env`，由 `load_dotenv(Path(__file__).parent / '.env')` 在啟動時載入。
+
+連線池：`min_size=1, max_size=5`。
+
+> **（舊 Neon 部署備註）Neon 免費方案 cold start**：Neon 在無流量時會自動暫停資料庫，第一次請求需要 1–2 秒喚醒。目前 runtime 為 CockroachDB，此行為不適用。後端已做 graceful fallback：DB 無法連線時會印出警告並繼續以無 DB 模式運行（陰影仍可計算，只是不快取）。
+>>>>>>> 5d56f5fa2fa32f14afe79eca8d3707490078db10
 
 ---
 

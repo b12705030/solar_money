@@ -2,6 +2,8 @@
 
 台灣屋頂太陽能自助評估系統，整合 3D 地圖陰影分析、各縣市政府補助資料、台電躉購費率，讓使用者在 5 分鐘內完成評估。
 
+> **資料庫現況**：目前正式 runtime 的 `DATABASE_URL` 指向 CockroachDB（通常是 `cockroachlabs.cloud`）。早期文件與部分一次性匯入腳本仍會提到 Neon；Neon 是原 PostgreSQL 來源/舊方案，現有 app 後端需以 CockroachDB 相容性為準。
+
 ---
 
 ## 功能總覽
@@ -59,7 +61,7 @@
   └─ asyncpg
         │
         ▼
-PostgreSQL（Neon serverless，~480 MB / 512 MB 上限）
+CockroachDB（Neon 為舊資料來源 / 遷移前 PostgreSQL 方案）
   ├─ gba_buildings        GBA 建物永久資料庫（510,408 棟，含全台主島 + 澎湖 / 金門 / 馬祖）
   ├─ climate_annual       368 鄉鎮市年均 GHI / 溫度 / 風速（13 年均值）
   ├─ climate_monthly      368 × 12 月典型氣候（4,416 筆，NASA POWER）
@@ -216,7 +218,7 @@ cp backend/.env.example backend/.env
 
 | 變數 | 說明 | 本地未設定時的行為 |
 |------|------|-------------------|
-| `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` | 必填，無預設 |
+| `DATABASE_URL` | `postgresql://user:pass@host:26257/defaultdb?sslmode=require`（CockroachDB）| 必填，無預設 |
 | `JWT_SECRET` | 任意隨機字串 | 自動產生臨時 key，重啟後 token 失效（本地開發可接受） |
 | `ADMIN_SECRET` | 管理員 API secret | 預設 `dev-admin-secret`（本地開發可接受，部署前必改） |
 | `CORS_ORIGINS` | 允許的前端來源（逗號分隔） | 允許所有來源，本地開發可不設 |
@@ -457,7 +459,7 @@ moveend + 600ms debounce
 
 ## 部署
 
-前端（Next.js）和後端（FastAPI）分開部署，資料庫使用現有的 Neon serverless PostgreSQL。
+前端（Next.js）和後端（FastAPI）分開部署，資料庫使用 CockroachDB（Neon 為舊資料來源 / 遷移前方案）。
 
 ### 前端 — Vercel
 
@@ -478,7 +480,7 @@ moveend + 600ms debounce
 
 | 變數 | 說明 | 本地未設定時的行為 |
 |------|------|-------------------|
-| `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` | 必填，無預設 |
+| `DATABASE_URL` | `postgresql://user:pass@host:26257/defaultdb?sslmode=require`（CockroachDB）；目前部署使用 CockroachDB，Neon URL 僅供舊資料來源/遷移使用 | 必填，無預設 |
 | `JWT_SECRET` | 長隨機字串，例如 `python -c "import secrets; print(secrets.token_hex(32))"` 的輸出 | **自動產生臨時 key，重啟後所有用戶 token 失效** |
 | `ADMIN_SECRET` | 自訂管理員 API secret，例如 `solar-admin-2026-xxx` | **預設為 `dev-admin-secret`，生產環境必須改掉** |
 | `CORS_ORIGINS` | 允許的前端來源，逗號分隔，例如 `https://your-app.vercel.app,http://localhost:3000` | 未設定時允許所有來源（`*`） |
@@ -493,7 +495,7 @@ moveend + 600ms debounce
 ### 注意事項
 
 - **圖片儲存**：廠商 Logo 和作品集施工照上傳至 **Cloudflare R2**（免費方案：10 GB 儲存 + 零 egress 費用），DB 只存公開 URL。現有 base64 資料可用 `python -m backend.migrate_logos` 遷移。
-- **Neon cold start**：Neon serverless 免費方案有連線數限制，後端已用 asyncpg connection pool 處理，應對短暫高峰沒問題。
+- **（舊 Neon 部署備註）Neon cold start**：Neon serverless 免費方案有連線數限制，後端已用 asyncpg connection pool 處理，應對短暫高峰沒問題。目前 runtime 為 CockroachDB，此行為不適用。
 - **Railway free tier**：每月 $5 額度，睡眠機制會讓第一個請求慢幾秒；如需避免可升級 Hobby 方案（$5/月）。
 
 ---
@@ -523,7 +525,7 @@ python scripts/import_climate.py
 
 主要建物資料來自 [GlobalBuildingAtlas（GBA）](https://huggingface.co/datasets/zhu-xlab/GBA.LoD1)，以 ML 估算建物高度，搭配 OSM / 非 OSM 建物輪廓。
 
-### DB 現況（Neon gba_buildings，510,408 棟）
+### DB 現況（CockroachDB gba_buildings，510,408 棟）
 
 | 地區 | 來源 tile | 建物數 |
 |------|-----------|--------|
@@ -551,4 +553,4 @@ python scripts/download_gba_tiles.py          # 下載 + 自動匯入
 python scripts/export_polygon_fallback.py --bbox 118.0,21.0,123.0,26.5
 ```
 
-> **Neon 512 MB 上限**：e115 tile 包含大量中國大陸建物，匯入時需使用精確的離島 bbox（見 `download_gba_tiles.py` 中的 `OFFSHORE_TILES`）。e120_n20_e125_n15（15–20°N，菲律賓）請勿匯入。
+> **容量限制**（舊 Neon 512 MB 免費方案上限；CockroachDB 仍應避免匯入不必要 tile）：e115 tile 包含大量中國大陸建物，匯入時需使用精確的離島 bbox（見 `download_gba_tiles.py` 中的 `OFFSHORE_TILES`）。e120_n20_e125_n15（15–20°N，菲律賓）請勿匯入。
