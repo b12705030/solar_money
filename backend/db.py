@@ -268,6 +268,11 @@ async def init_db() -> None:
                 centroid_lat            DOUBLE PRECISION,
                 centroid_lon            DOUBLE PRECISION
             );
+            CREATE TABLE IF NOT EXISTS places_cache (
+                cache_key  TEXT        PRIMARY KEY,
+                data       JSONB       NOT NULL,
+                cached_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
         ''')
         # 相容舊版 schema（補齊新欄位）
         for col, definition in [
@@ -1687,3 +1692,37 @@ async def get_all_region_potential() -> list[dict]:
             return [dict(r) for r in rows]
     except Exception:
         return []
+
+
+# ─── Google Places 快取（TTL = 90 天）────────────────────────────────────────
+
+async def get_places_cache(key: str) -> list | dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT data FROM places_cache "
+                "WHERE cache_key = $1 AND cached_at > NOW() - INTERVAL '90 days'",
+                key,
+            )
+            if not row:
+                await conn.execute('DELETE FROM places_cache WHERE cache_key = $1', key)
+                return None
+            return json.loads(row['data'])
+    except Exception:
+        return None
+
+
+async def set_places_cache(key: str, data: list | dict) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO places_cache (cache_key, data)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (cache_key) DO UPDATE
+                   SET data = EXCLUDED.data, cached_at = NOW()''',
+                key, json.dumps(data, ensure_ascii=False),
+            )
+    except Exception:
+        pass

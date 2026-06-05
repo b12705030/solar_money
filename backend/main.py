@@ -49,6 +49,7 @@ async def upload_logo_to_r2(file: UploadFile) -> str:
     ))
     return f'{os.environ["R2_PUBLIC_URL"].rstrip("/")}/{key}'
 
+import httpx
 import numpy as np
 import pandas as pd
 
@@ -59,6 +60,7 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  delete_portfolio, get_account_assessments,
                  get_account_by_email, get_account_by_id, get_application_status,
                  get_climate, get_climate_monthly, get_my_vendor, get_pool, get_potential_leads,
+                 get_places_cache, set_places_cache,
                  get_region_potential, get_all_region_potential,
                  get_shadow_cache, get_user_assessments, get_user_inquiries,
                  get_vendor_detail, get_vendor_inquiries_by_account, init_db,
@@ -1109,6 +1111,83 @@ async def get_address_township(lat: float = Query(...), lng: float = Query(...))
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ─── Google Places Proxy（四層快取：session → localStorage → DB → Google API）────
+
+_GMAPS_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+_PLACES_AC_URL = 'https://places.googleapis.com/v1/places:autocomplete'
+_PLACES_DETAIL_URL = 'https://places.googleapis.com/v1/places/{place_id}'
+
+
+@app.get('/api/places/autocomplete')
+async def places_autocomplete(q: str = ''):
+    q = q.strip()
+    if not q or len(q) < 2:
+        return []
+    cache_key = f'ac_{q.lower()}'
+    cached = await get_places_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    if not _GMAPS_KEY:
+        raise HTTPException(status_code=503, detail='GOOGLE_MAPS_API_KEY not configured')
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                _PLACES_AC_URL,
+                headers={'X-Goog-Api-Key': _GMAPS_KEY, 'Content-Type': 'application/json'},
+                json={'input': q, 'languageCode': 'zh-TW', 'includedRegionCodes': ['tw']},
+            )
+            resp.raise_for_status()
+            raw = resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f'Google API error: {e}')
+
+    suggestions = [
+        {
+            'placeId': s['placePrediction']['placeId'],
+            'description': s['placePrediction'].get('text', {}).get('text', ''),
+            'mainText': (s['placePrediction'].get('structuredFormat') or {}).get('mainText', {}).get('text', ''),
+            'secondaryText': (s['placePrediction'].get('structuredFormat') or {}).get('secondaryText', {}).get('text', ''),
+        }
+        for s in raw.get('suggestions', [])
+        if 'placePrediction' in s
+    ]
+    await set_places_cache(cache_key, suggestions)
+    return suggestions
+
+
+@app.get('/api/places/details')
+async def places_details(id: str = ''):
+    if not id:
+        raise HTTPException(status_code=400, detail='id required')
+    cache_key = f'detail_{id}'
+    cached = await get_places_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    if not _GMAPS_KEY:
+        raise HTTPException(status_code=503, detail='GOOGLE_MAPS_API_KEY not configured')
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                _PLACES_DETAIL_URL.format(place_id=id),
+                headers={'X-Goog-Api-Key': _GMAPS_KEY, 'X-Goog-FieldMask': 'location,formattedAddress'},
+            )
+            resp.raise_for_status()
+            raw = resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f'Google API error: {e}')
+
+    loc = raw.get('location', {})
+    result = {
+        'lat': loc.get('latitude', 0),
+        'lon': loc.get('longitude', 0),
+        'formattedAddress': raw.get('formattedAddress', ''),
+    }
+    await set_places_cache(cache_key, result)
+    return result
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
