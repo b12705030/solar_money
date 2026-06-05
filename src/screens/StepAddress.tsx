@@ -21,7 +21,8 @@ async function reverseGeocode(lat: number, lng: number): Promise<string | null> 
     );
     if (!res.ok) return null;
     const data = await res.json();
-    return data.features?.[0]?.place_name ?? null;
+    const name: string | undefined = data.features?.[0]?.place_name;
+    return name ? name.replace(/台湾/g, '台灣') : null;
   } catch {
     return null;
   }
