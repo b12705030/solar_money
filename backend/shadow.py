@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from functools import lru_cache
 from pathlib import Path
 
@@ -124,7 +125,7 @@ def _make_timestamp(local_hour: int) -> pd.Timestamp:
 
 def get_sun_times(lat: float, lng: float) -> dict:
     """Return today's sunrise/sunset display strings and first/last integer shadow hours."""
-    today = date.today()
+    today = datetime.now(ZoneInfo('Asia/Taipei')).date()
     loc = pvlib.location.Location(lat, lng, tz='Asia/Taipei')
 
     # Minute-level scan 04:00–20:00 → precise sunrise/sunset label

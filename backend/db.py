@@ -6,7 +6,8 @@ import json
 import os
 import pickle
 import uuid
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Optional
 
@@ -472,7 +473,7 @@ async def set_gba_cache(bbox_key: str, buildings: list[dict]) -> None:
 def shadow_cache_key(lat: float, lng: float) -> str:
     """以 ~100m 網格 × 月份為 key。
     v4：精度從 2 位提升至 3 位（~100m），減少不同 viewport 共用同一快取的機率。"""
-    today = date.today()
+    today = datetime.now(ZoneInfo('Asia/Taipei')).date()
     return f'v4_{lat:.3f}_{lng:.3f}_{today.year}_{today.month:02d}'
 
 
