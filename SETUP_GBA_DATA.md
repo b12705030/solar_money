@@ -8,7 +8,7 @@
 
 ```
 /api/buildings 查詢順序
-  1. gba_buildings (Neon DB)          ← 主要來源（510K 棟，全台主島 + 所有離島）
+  1. gba_buildings（目前正式 DB 為 CockroachDB；舊資料來源為 Neon）← 主要來源（510K 棟，全台主島 + 所有離島）
         ↓ DB miss
   2. taiwan_polygon_fallback.ndjson.gz ← 本地 fallback（2.56M 棟，啟動時載入 RAM）
         ↓ fallback miss
@@ -27,7 +27,7 @@
 | e115_n30_e120_n25 | 馬祖南竿 / 莒光 / 北竿 | ODbL + Polygon | ~4.6K |
 | **合計** | | | **510,408** |
 
-> **⚠️ 注意**：`e120_n20_e125_n15`（15–20°N，菲律賓）**不要匯入**，會使 Neon 512 MB 上限溢出。
+> **⚠️ 注意**：`e120_n20_e125_n15`（15–20°N，菲律賓）**不要匯入**。舊 Neon 免費方案 512 MB 上限已不適用，但 CockroachDB 仍應避免匯入無效 tile。
 
 ---
 
@@ -152,15 +152,15 @@ curl "http://localhost:8000/api/buildings?lat=26.160&lng=119.940&radius_m=300"
 
 ---
 
-## Neon 容量
+## 容量參考（原 Neon 資料來源）
 
 | 項目 | 狀態 |
 |------|------|
-| gba_buildings（510K 棟） | ~480 MB |
-| Neon 免費上限 | 512 MB |
-| 剩餘空間 | ~32 MB（不再匯入新 tile） |
+| gba_buildings（510K 棟，目前正式 DB 為 CockroachDB） | ~480 MB |
+| 舊 Neon 免費上限 | 512 MB（CockroachDB 無此限制） |
+| 原 Neon 剩餘空間 | ~32 MB（歷史紀錄） |
 
-> **e115 tile 包含大量中國大陸建物**。未來若需重新匯入，務必使用上方的精確 bbox；使用整個 tile bbox（如 `118,20,120,25`）會匯入福建/廣東沿海數十萬棟建物，立即超出 512 MB 上限。
+> 512 MB 是舊 Neon 免費方案限制；CockroachDB 仍應避免匯入不必要 tile。**e115 tile 包含大量中國大陸建物**，未來若需重新匯入，務必使用上方的精確 bbox；使用整個 tile bbox（如 `118,20,120,25`）會匯入福建/廣東沿海數十萬棟建物。
 
 ---
 

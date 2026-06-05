@@ -4,8 +4,10 @@
 
 | 功能 | 選擇 | 原因 |
 |------|------|------|
-| 永久儲存 | PostgreSQL (Neon) | 結構化查詢、JSONB 支援、免費 serverless 方案 |
+| 永久儲存 | CockroachDB | 結構化查詢、JSONB 支援、相容 PostgreSQL wire protocol |
 | 短期快取 | PostgreSQL shadow_cache | 現階段流量低，不需要另外架 Redis；若日後需要水平擴展可再加 |
+
+> 本專案最初使用 Neon PostgreSQL；目前 runtime 已遷移至 CockroachDB。文件中提到 Neon 的容量與匯入流程，多半是歷史資料來源或舊部署限制。
 
 > **為什麼不用 Redis？** 目前的 `shadow_cache` 以月份為粒度，同一區域一個月只算一次，命中率高且不需要 sub-second 過期精度。PostgreSQL 的查詢延遲（~5ms）對這個場景已足夠。
 
@@ -31,7 +33,7 @@ GlobalBuildingAtlas (GBA) 離線建物資料，ML 估算高度 + footprint，為
 **Neon 佔用**：~480 MB（510,408 棟；主島 + 澎湖 + 金門 + 馬祖）  
 **查詢邏輯**：`WHERE min_lon <= :lng AND max_lon >= :lng AND min_lat <= :lat AND max_lat >= :lat`，取半徑內建物。
 
-> ⚠️ Neon 免費上限 512 MB，目前剩餘約 32 MB。勿再匯入新 tile；詳見 `SETUP_GBA_DATA.md`。
+> ⚠️ **（舊 Neon 部署備註）** Neon 免費上限 512 MB，目前剩餘約 32 MB。勿再匯入新 tile；詳見 `SETUP_GBA_DATA.md`。CockroachDB 仍應避免匯入不必要 tile。
 
 ---
 
@@ -452,14 +454,14 @@ Email + 密碼驗證 → 回傳 JWT token。
 ## 連線設定
 
 ```
-DATABASE_URL=postgresql://<user>:<password>@<host>/neondb?sslmode=require&channel_binding=require
+DATABASE_URL=postgresql://<user>:<password>@<host>:26257/defaultdb?sslmode=require
 ```
 
 放在 `backend/.env`，由 `load_dotenv(Path(__file__).parent / '.env')` 在啟動時載入。
 
-連線池：`min_size=1, max_size=5`（相容 Neon serverless 免費方案的連線數限制）。
+連線池：`min_size=1, max_size=5`。
 
-> **Neon 免費方案 cold start**：Neon 在無流量時會自動暫停資料庫，第一次請求需要 1–2 秒喚醒。之後維持活躍狀態不受影響。後端已做 graceful fallback：DB 無法連線時會印出警告並繼續以無 DB 模式運行（陰影仍可計算，只是不快取）。
+> **（舊 Neon 部署備註）Neon 免費方案 cold start**：Neon 在無流量時會自動暫停資料庫，第一次請求需要 1–2 秒喚醒。目前 runtime 為 CockroachDB，此行為不適用。後端已做 graceful fallback：DB 無法連線時會印出警告並繼續以無 DB 模式運行（陰影仍可計算，只是不快取）。
 
 ---
 
