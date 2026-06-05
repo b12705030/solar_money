@@ -1381,7 +1381,7 @@ async def add_vendor_review(
                 if not row:
                     return 'duplicate'
                 await conn.execute(
-                    '''UPDATE vendors v
+                    '''UPDATE vendors
                        SET rating       = sub.avg_rating,
                            review_count = sub.cnt
                        FROM (
@@ -1390,11 +1390,12 @@ async def add_vendor_review(
                            FROM vendor_reviews
                            WHERE vendor_id = $1
                        ) sub
-                       WHERE v.id = $1''',
+                       WHERE vendors.id = $1''',
                     vendor_id,
                 )
         return 'ok'
-    except Exception:
+    except Exception as e:
+        print(f'[add_vendor_review] error: {e}')
         return 'not_found'
 
 
