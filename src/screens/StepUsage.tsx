@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Badge, SunIcon } from '@/components/ui';
 import { Slider } from '@/components/Slider';
 import type { SolarState } from '@/lib/types';
-import { TEPCO_MONTHLY_NORM, SELF_USE_CAP, computeMonthlyBill, convertBillToMonthlyKwh } from '@/lib/compute';
+import { TEPCO_MONTHLY_NORM, SELF_USE_CAP, computeMonthlyBill, convertBillToMonthlyKwh, disaggregateBills, BILL_PAIR_META } from '@/lib/compute';
 
 const MONTH_LABELS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
@@ -34,9 +34,26 @@ export default function StepUsage({
   const kwh         = state.monthlyKwh ?? 350;
   const habit       = state.selfUseHabit ?? 'normal';
   const [expanded, setExpanded] = useState(false);
+  const [billExpanded, setBillExpanded] = useState(false);
+  const [billInfoOpen, setBillInfoOpen] = useState(false);
 
   const defaultBill = computeMonthlyBill(kwh, isSummer) * 2;
   const billAmount  = state.billAmount ?? defaultBill;
+  const billAmounts: (number | null)[] = state.billAmounts ?? Array(6).fill(null);
+  const hasBillAmounts = billAmounts.some(v => v !== null && (v ?? 0) >= 50);
+  // Per-bill season: user can override; default from BILL_PAIR_META
+  const billSeasons: ('summer' | 'nonSummer')[] =
+    state.billSeasons ?? BILL_PAIR_META.map(p => p.isSummer ? 'summer' : 'nonSummer');
+
+  // Dynamic placeholders: run disaggregateBills once so filled cells influence empty cell estimates.
+  // When nothing is filled, globalScale = kwh (fallback), result is identical to kwh × TEPCO norm.
+  const disaggregatedEstimate = disaggregateBills(billAmounts, kwh, billSeasons);
+  const dynamicPlaceholders: number[] = BILL_PAIR_META.map(({ months: [m1, m2] }, k) =>
+    Math.round(computeMonthlyBill(
+      (disaggregatedEstimate[m1] + disaggregatedEstimate[m2]) / 2,
+      billSeasons[k] === 'summer',
+    ) * 2),
+  );
 
   // Local raw string states so the user can clear/type without being snapped to min
   const [billRaw,   setBillRaw]   = useState(String(Math.round(billAmount)));
@@ -72,6 +89,29 @@ export default function StepUsage({
 
   function handleReset() {
     update({ monthlyUsage: undefined });
+  }
+
+  function handleBillAmountChange(k: number, raw: string) {
+    const next = [...billAmounts] as (number | null)[];
+    next[k] = raw === '' ? null : +raw;
+    const anyFilled = next.some(v => v !== null && (v ?? 0) >= 50);
+    update({
+      billAmounts: next,
+      monthlyUsage: anyFilled ? disaggregateBills(next, kwh, billSeasons) : undefined,
+    });
+  }
+
+  function handleBillSeasonChange(k: number, season: 'summer' | 'nonSummer') {
+    const next = [...billSeasons] as ('summer' | 'nonSummer')[];
+    next[k] = season;
+    update({
+      billSeasons: next,
+      monthlyUsage: hasBillAmounts ? disaggregateBills(billAmounts, kwh, next) : undefined,
+    });
+  }
+
+  function handleResetBills() {
+    update({ billAmounts: undefined, billSeasons: undefined, monthlyUsage: undefined });
   }
 
   function onBillBlur(value: number) {
@@ -197,6 +237,118 @@ export default function StepUsage({
                   {kwh.toLocaleString()}
                 </span>
                 &ensp;度 / 月
+              </div>
+
+              {/* 六份帳單展開（bill mode 專屬） */}
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--ink-100)' }}>
+                <button
+                  onClick={() => setBillExpanded(v => !v)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                    fontSize: 13, fontWeight: 600, color: 'var(--green-700)',
+                  }}
+                >
+                  <span style={{ display: 'inline-block', transform: billExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▶</span>
+                  展開輸入六份帳單
+                  {hasBillAmounts && <Badge tone="green">已自訂</Badge>}
+                </button>
+
+                {billExpanded && (
+                  <div style={{ marginTop: 14 }}>
+                    {/* Hint row with ⓘ toggle */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 12 }}>
+                      <p className="body-sm" style={{ color: 'var(--ink-500)', margin: 0, flex: 1 }}>
+                        建議填入過去連續六份帳單，留空欄位由台電用電曲線補估。
+                      </p>
+                      <button
+                        onClick={() => setBillInfoOpen(v => !v)}
+                        style={{
+                          flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
+                          fontSize: 14, color: billInfoOpen ? 'var(--green-700)' : 'var(--ink-400)',
+                          padding: '0 2px', lineHeight: 1,
+                        }}
+                        title="說明"
+                      >ⓘ</button>
+                    </div>
+                    {billInfoOpen && (
+                      <div style={{
+                        marginBottom: 12, padding: '10px 12px',
+                        background: 'var(--ink-50, #f8f9fa)', borderRadius: 'var(--radius-md)',
+                        fontSize: 12, color: 'var(--ink-500)', lineHeight: 1.6,
+                      }}>
+                        台電住宅用戶每兩個月計費一次。請依帳單上標示的「用電期間」選擇夏月（6–9月）或非夏月；不確定可先選非夏月，誤差約 5% 以內。六份帳單恰好涵蓋一整年，系統以台電住宅用電曲線進行時序分解（Denton 1971），推算各月用電量。
+                      </div>
+                    )}
+
+                    {/* 6-bill grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                      {BILL_PAIR_META.map((pair, k) => {
+                        const val = billAmounts[k];
+                        const hasVal = val !== null;
+                        const isValidBill = hasVal && val! >= 50;
+                        const season = billSeasons[k];
+                        const isSummerCell = season === 'summer';
+                        const billForHint = isValidBill ? val! : dynamicPlaceholders[k];
+                        const derivedMonthly = convertBillToMonthlyKwh(billForHint, isSummerCell);
+                        return (
+                          <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            {/* Bill number label */}
+                            <div className="caption" style={{ color: 'var(--ink-400)', textAlign: 'center' }}>
+                              帳單 {k + 1}
+                            </div>
+                            {/* Season toggle */}
+                            <div style={{ display: 'flex', gap: 3 }}>
+                              {(['nonSummer', 'summer'] as const).map(s => (
+                                <button key={s} onClick={() => handleBillSeasonChange(k, s)} style={{
+                                  flex: 1, fontSize: 10, padding: '3px 0', cursor: 'pointer',
+                                  borderRadius: 4, fontWeight: 500,
+                                  border: `1px solid ${season === s ? 'var(--green-600)' : 'var(--ink-200)'}`,
+                                  background: season === s ? 'var(--green-700)' : 'transparent',
+                                  color: season === s ? 'white' : 'var(--ink-400)',
+                                  transition: 'all 0.15s',
+                                }}>
+                                  {s === 'nonSummer' ? '非夏' : '夏月'}
+                                </button>
+                              ))}
+                            </div>
+                            {/* NT$ input */}
+                            <input
+                              type="number" min="50" max="100000"
+                              value={hasVal ? val! : ''}
+                              placeholder={String(dynamicPlaceholders[k])}
+                              onChange={e => handleBillAmountChange(k, e.target.value)}
+                              style={{
+                                width: '100%', textAlign: 'center', padding: '6px 4px',
+                                border: `1px solid ${isValidBill ? 'var(--green-400)' : 'var(--ink-200)'}`,
+                                borderRadius: 6,
+                                fontSize: 13, fontFamily: 'var(--font-num)',
+                                background: isSummerCell ? 'var(--amber-50, #fffbeb)' : 'white',
+                              }}
+                            />
+                            {/* kWh hint */}
+                            <div style={{ fontSize: 11, color: isValidBill ? 'var(--green-700)' : 'var(--ink-300)', textAlign: 'center', minHeight: 16 }}>
+                              ≈ {derivedMonthly.toLocaleString()} 度/月
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Footer: annual total + reset */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                      <div className="body-sm" style={{ color: 'var(--ink-400)' }}>
+                        估計年用電：<b>{disaggregatedEstimate.reduce((a, b) => a + b, 0).toLocaleString()}</b> kWh
+                      </div>
+                      {hasBillAmounts && (
+                        <button onClick={handleResetBills}
+                          style={{ fontSize: 12, color: 'var(--ink-400)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                          重設
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           ) : (
