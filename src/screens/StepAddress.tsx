@@ -74,7 +74,12 @@ export default function StepAddress({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [buildingInfo, setBuildingInfo] = useState<{ height: number; areaPing: number; usableFraction?: number } | null>(null);
   const [buildingLoading, setBuildingLoading] = useState(false);
+  type LoadingStage = 'idle' | 'buildings' | 'shadows' | 'done';
+  const [loadingStage, setLoadingStage] = useState<LoadingStage>('idle');
+  const [loadingElapsed, setLoadingElapsed] = useState(0);
+  const loadingStartRef = useRef<number>(0);
   const geocodingStartedRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [sunHour, setSunHour] = useState<number>(() => {
     const h = new Date().getHours(); // local hour
     return h >= 6 && h <= 18 ? h : 8;
@@ -101,6 +106,7 @@ export default function StepAddress({
       setShowSuggestions(false);
       setBuildingInfo(null);
       setBuildingLoading(false);
+      setLoadingStage('idle');
     }
   }, [state.address, state.addressQuery]);
 
@@ -137,6 +143,32 @@ export default function StepAddress({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // 手機鍵盤彈出時，確保輸入框不被遮住
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const handler = () => {
+      if (document.activeElement === inputRef.current) {
+        inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    };
+    viewport.addEventListener('resize', handler);
+    return () => viewport.removeEventListener('resize', handler);
+  }, []);
+
+  // loading 計時器：顯示等待秒數
+  useEffect(() => {
+    if (loadingStage === 'idle' || loadingStage === 'done') {
+      setLoadingElapsed(0);
+      return;
+    }
+    loadingStartRef.current = Date.now();
+    const interval = setInterval(() => {
+      setLoadingElapsed(Math.floor((Date.now() - loadingStartRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [loadingStage]);
+
   const pick = async (prediction: PlacePrediction) => {
     warmAutocompleteCache(prediction.description, prediction);
     setQuery(prediction.description);
@@ -167,6 +199,8 @@ export default function StepAddress({
         townshipCode: township?.townshipCode,
         townshipName: township?.townshipName,
       });
+      // 預熱後端最佳傾角快取，讓 Results 頁面載入更快
+      fetch(`${API_URL}/api/township?lat=${details.lat}&lng=${details.lon}&goal=annual`).catch(() => {});
     } catch (err) {
       console.error('Failed to get place details:', err);
     }
@@ -174,6 +208,7 @@ export default function StepAddress({
 
   const handleDetectionStart = (early?: { lat: number; lng: number; height: number; areaPing: number }) => {
     setBuildingLoading(true);
+    setLoadingStage('buildings');
     setBuildingInfo(null);
     geocodingStartedRef.current = false;
 
@@ -209,6 +244,7 @@ export default function StepAddress({
   };
 
   const handleBuildingFound = async (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => {
+    setLoadingStage('shadows');
     setBuildingInfo({ height: info.height, areaPing: info.areaPing, usableFraction: info.usableFraction });
     const usableAreaVal = Math.round(info.areaPing * (info.usableFraction ?? 0.6));
     update({ roofArea: usableAreaVal, roofAreaMax: usableAreaVal, roofAreaError: false, ...(info.usableFraction !== undefined && { usableFraction: info.usableFraction }) });
@@ -237,6 +273,7 @@ export default function StepAddress({
       if (township) update({ townshipCode: township.townshipCode, townshipName: township.townshipName });
     }
     setBuildingLoading(false);
+    setLoadingStage('done');
   };
 
   const a = state.address;
@@ -269,11 +306,19 @@ export default function StepAddress({
                 <circle cx="11" cy="11" r="7" /><path d="M20 20 L16 16" />
               </svg>
               <input
+                ref={inputRef}
+                inputMode="search"
+                autoComplete="street-address"
                 value={query}
                 onChange={e => { setQuery(e.target.value); setSelected(null); }}
                 onCompositionStart={() => { isComposingRef.current = true; }}
                 onCompositionEnd={() => { isComposingRef.current = false; }}
-                onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                onFocus={() => {
+                  if (suggestions.length > 0) setShowSuggestions(true);
+                  setTimeout(() => {
+                    inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 300);
+                }}
                 placeholder="輸入地址或地點名稱"
                 style={{
                   flex: 1, border: 'none', outline: 'none', background: 'transparent',
@@ -291,6 +336,7 @@ export default function StepAddress({
                 background: 'var(--white)', border: '1px solid var(--ink-200)',
                 borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
                 overflow: 'hidden', zIndex: 20,
+                maxHeight: '40vh', overflowY: 'auto',
               }}>
                 {suggestions.map((s, i) => (
                   <button
@@ -336,7 +382,12 @@ export default function StepAddress({
                       border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-600)',
                       animation: 'spin 0.6s linear infinite',
                     }} />
-                    正在載入建物資料…
+                    <span>
+                      {loadingStage === 'buildings' ? '1/3 取得建物資料' : '2/3 計算遮蔽分析'}
+                      {loadingElapsed >= 4 && (
+                        <span style={{ color: 'var(--ink-400)', marginLeft: 6 }}>（已等待 {loadingElapsed}s…）</span>
+                      )}
+                    </span>
                   </>
                 ) : (
                   <>
