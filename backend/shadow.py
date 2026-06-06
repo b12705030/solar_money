@@ -600,22 +600,22 @@ def _load_town_shp() -> None:
         print(f'[Township] SHP not found: {_TOWN_SHP}')
         return
     try:
-        import fiona
+        import shapefile                              # pyshp — 純 Python，無 GDAL 依賴
         from shapely.geometry import shape as shp_shape
 
         polys: list   = []
         records: list[tuple[str, str]] = []
-        with fiona.open(str(_TOWN_SHP)) as src:          # .cpg 指定 UTF-8
-            for feat in src:
-                geom = feat.get('geometry')
-                if not geom:
+        with shapefile.Reader(str(_TOWN_SHP), encoding='utf-8') as sf:
+            for sr in sf.shapeRecords():
+                geom_dict = sr.shape.__geo_interface__
+                if not geom_dict:
                     continue
-                props = feat.get('properties') or {}
+                props = sr.record.as_dict()
                 code   = str(props.get('TOWNCODE', '') or '').strip()
                 county = str(props.get('COUNTYNAME', '') or '').strip()
                 if not code:
                     continue
-                polys.append(shp_shape(geom))
+                polys.append(shp_shape(geom_dict))
                 records.append((code, county))
 
         _town_polys   = polys

@@ -12,6 +12,7 @@ bcrypt
 python-jose[cryptography]
 rasterio
 fiona
+pyshp
 Pillow
 boto3
 python-multipart
