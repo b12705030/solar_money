@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from functools import lru_cache
@@ -316,11 +317,13 @@ def compute_optimal_tilt(
     best_tilt = 20
     best_ratios: tuple = (1.0,) * 12
 
+    _t0 = time.perf_counter()
     for tilt in range(0, 61, 2):  # coarse: every 2°
         ratios = ratio_fn(lat_r, lon_r, tilt)
         score = sum(monthly_ghi[i] * ratios[i] * weights[i] for i in range(12))
         if score > best_score:
             best_score, best_tilt, best_ratios = score, tilt, ratios
+    print(f'[TIMER] optimal_tilt/coarse_scan: {(time.perf_counter()-_t0)*1000:.0f}ms')
 
     for tilt in [best_tilt - 1, best_tilt + 1]:  # fine: ±1° refinement
         if 0 <= tilt <= 60:
@@ -332,6 +335,7 @@ def compute_optimal_tilt(
     # goal_adj must be full-day ratios regardless of which ratio_fn was used
     # for the search, because ghi in compute.ts is a full-day quantity.
     full_ratios = _compute_poa_ratio(lat_r, lon_r, best_tilt) if goal == 'peak' else best_ratios
+    print(f'[TIMER] optimal_tilt/total: {(time.perf_counter()-_t0)*1000:.0f}ms best={best_tilt}°')
     return {'best_angle': best_tilt, 'goal_adj': [round(r, 4) for r in full_ratios]}
 
 
@@ -501,17 +505,20 @@ def compute_shadows_from_features(
     center_lon: float,
     local_hour: int,
 ) -> dict:
+    _t0 = time.perf_counter()
     if not buildings:
         return {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
     center_terrain_elev = get_elevation(center_lat, center_lon)
     azimuth, altitude = compute_solar_position(center_lat, center_lon, _make_timestamp(local_hour), altitude_m=center_terrain_elev)
     if altitude <= 0:
+        print(f'[TIMER] shadows_from_features/total: {(time.perf_counter()-_t0)*1000:.0f}ms (sun below horizon h={local_hour})')
         return {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
     to_3857 = Transformer.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True)
     to_4326 = Transformer.from_crs('EPSG:3857', 'EPSG:4326', always_xy=True)
     bldg_elevations = _compute_building_elevations(buildings)
     bldg_polys = _project_buildings(buildings, to_3857, bldg_elevations)
     features, roof_features = _shadows_for_sun(bldg_polys, azimuth, altitude, to_4326, center_terrain_elev)
+    print(f'[TIMER] shadows_from_features/total: {(time.perf_counter()-_t0)*1000:.0f}ms ({len(buildings)} 棟, h={local_hour})')
     return {'type': 'FeatureCollection', 'features': features, 'roofShadows': roof_features}
 
 
@@ -521,6 +528,7 @@ def precompute_shadows_all_hours(
     center_lon: float,
 ) -> dict:
     """Compute shadows for hours 6–19, projecting building footprints only once."""
+    _t0 = time.perf_counter()
     to_3857 = Transformer.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True)
     to_4326 = Transformer.from_crs('EPSG:3857', 'EPSG:4326', always_xy=True)
     empty = {'type': 'FeatureCollection', 'features': [], 'roofShadows': []}
@@ -528,15 +536,21 @@ def precompute_shadows_all_hours(
         return {str(h): empty for h in range(6, 20)}
     center_terrain_elev = get_elevation(center_lat, center_lon)
     bldg_elevations = _compute_building_elevations(buildings)
+    _t1 = time.perf_counter()
     bldg_polys = _project_buildings(buildings, to_3857, bldg_elevations)
+    print(f'[TIMER] precompute/project_buildings: {(time.perf_counter()-_t1)*1000:.0f}ms ({len(buildings)} 棟)')
     result = {}
     for hour in range(6, 20):
+        _th = time.perf_counter()
         az, alt = compute_solar_position(center_lat, center_lon, _make_timestamp(hour), altitude_m=center_terrain_elev)
         if alt <= 0:
             result[str(hour)] = empty
+            print(f'[TIMER] precompute/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms (below horizon)')
             continue
         features, roof_features = _shadows_for_sun(bldg_polys, az, alt, to_4326, center_terrain_elev)
         result[str(hour)] = {'type': 'FeatureCollection', 'features': features, 'roofShadows': roof_features}
+        print(f'[TIMER] precompute/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms')
+    print(f'[TIMER] precompute/total: {(time.perf_counter()-_t0)*1000:.0f}ms')
     return result
 
 
@@ -688,17 +702,21 @@ async def get_buildings(
     # DB 含 OSM-derived 建物；fallback ndjson 含 GBA ML-predicted 建物。
     # 兩者互補：DB 有覆蓋的區域 fallback 也可能有 DB 沒有的細小建物，
     # 因此永遠合併兩者，以 build_id 去重（DB 優先）。
+    _t0 = time.perf_counter()
     try:
         gba_db = await get_gba_buildings_from_db(min_lon, min_lat, max_lon, max_lat)
     except Exception as e:
         print(f'[GBA] DB query error: {type(e).__name__}: {e}')
         gba_db = []
+    print(f'[TIMER] get_buildings/gba_db: {(time.perf_counter()-_t0)*1000:.0f}ms ({len(gba_db)} 棟)')
 
+    _t1 = time.perf_counter()
     try:
         fallback = get_gba_buildings_from_fallback(min_lon, min_lat, max_lon, max_lat)
     except Exception as e:
         print(f'[GBA] Fallback query error: {type(e).__name__}: {e}')
         fallback = []
+    print(f'[TIMER] get_buildings/fallback: {(time.perf_counter()-_t1)*1000:.0f}ms ({len(fallback)} 棟)')
 
     db_ids = {b['build_id'] for b in gba_db}
     extra = [b for b in fallback if b['build_id'] not in db_ids]
@@ -714,9 +732,11 @@ async def get_buildings(
     # ── 2. OSM Overpass 立即 fallback ─────────────────────────────────────────
     print(f'[OSM] falling back to Overpass for bbox={min_lon:.4f},{min_lat:.4f},{max_lon:.4f},{max_lat:.4f}')
     osm_key = _bbox_key(min_lon, min_lat, max_lon, max_lat)
+    _t_osm = time.perf_counter()
     cached_osm = await get_osm_cache(osm_key)
     if cached_osm is not None:
         result = _osm_to_lod1(cached_osm)
+        print(f'[TIMER] get_buildings/osm_cache: {(time.perf_counter()-_t_osm)*1000:.0f}ms ({len(result)} 棟)')
         print(f'[OSM] cache hit: {len(result)} buildings')
         _log_bldg_sample('OSM-cache', result)
         return result
@@ -743,6 +763,7 @@ async def get_buildings(
                     if elements:
                         await set_osm_cache(osm_key, elements)
                     result = _osm_to_lod1(elements)
+                    print(f'[TIMER] get_buildings/osm_live: {(time.perf_counter()-_t_osm)*1000:.0f}ms ({len(result)} 棟)')
                     _log_bldg_sample('OSM-live', result)
                     return result
                 else:
@@ -802,6 +823,7 @@ def compute_usable_roof_fraction(
     usable_area = usable_poly.area
 
     # ── Neighbour polygons (skip the target building itself) ──────────────────
+    _t0 = time.perf_counter()
     target_elev = get_elevation(lat, lng)
     neighbour_polys: list[tuple] = []
     for b in buildings:
@@ -829,11 +851,14 @@ def compute_usable_roof_fraction(
         except Exception:
             continue
 
+    print(f'[TIMER] usable_fraction/build_neighbours: {(time.perf_counter()-_t0)*1000:.0f}ms ({len(neighbour_polys)} 棟)')
     # ── Sample hours ──────────────────────────────────────────────────────────
     fractions: list[float] = []
     for hour in [8, 10, 12, 14, 16]:
+        _th = time.perf_counter()
         az, alt = compute_solar_position(lat, lng, _make_timestamp(hour))
         if alt <= 2:
+            print(f'[TIMER] usable_fraction/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms (below horizon)')
             continue  # sun too low / below horizon
 
         angle = np.radians(az + 180)
@@ -854,6 +879,7 @@ def compute_usable_roof_fraction(
 
         if not shadow_polys:
             fractions.append(1.0)
+            print(f'[TIMER] usable_fraction/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms (no shadows)')
             continue
 
         all_shadows = unary_union(shadow_polys)
@@ -864,7 +890,9 @@ def compute_usable_roof_fraction(
 
         frac = max(0.0, (usable_area - shaded_area) / usable_area) if usable_area > 0 else 0.0
         fractions.append(frac)
+        print(f'[TIMER] usable_fraction/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms frac={frac:.2f}')
 
+    print(f'[TIMER] usable_fraction/total: {(time.perf_counter()-_t0)*1000:.0f}ms')
     if not fractions:
         return {'usable_fraction': 0.6, 'setback_area_m2': round(usable_area, 1)}
 

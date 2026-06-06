@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 import asyncio
+import hashlib
+import json
 import os
 from contextlib import asynccontextmanager
 
@@ -84,7 +86,9 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  get_climate, get_climate_monthly, get_my_vendor, get_pool, get_potential_leads,
                  get_places_cache, set_places_cache,
                  get_region_potential, get_all_region_potential,
-                 get_shadow_cache, get_user_assessments, get_user_inquiries,
+                 get_shadow_cache, get_tilt_cache, set_tilt_cache,
+                 get_uf_cache, set_uf_cache,
+                 get_user_assessments, get_user_inquiries,
                  get_vendor_detail, get_vendor_inquiries_by_account, init_db,
                  list_pending_vendor_applications, list_vendors, preload_polygon_fallback,
                  reject_vendor_application,
@@ -125,6 +129,13 @@ async def lifespan(app: FastAPI):
             print('[GBA] Polygon fallback loading in background...')
         except Exception as e:
             print(f'[GBA] Polygon preload warning: {e}')
+    # 預熱 pyproj CRS 定義：避免第一次座標轉換時的 ~500ms 初始化延遲
+    try:
+        from pyproj import Transformer as _T
+        _T.from_crs('EPSG:4326', 'EPSG:3857', always_xy=True)
+        print('[Startup] pyproj CRS 預熱完成')
+    except Exception:
+        pass
     yield
     await close_pool()
 
@@ -248,7 +259,9 @@ async def precompute(req: ShadowFromFeaturesRequest):
     """Compute shadows for all daylight hours (6–19). DB cache hit → instant; miss → compute + store."""
     key = shadow_cache_key(req.lat, req.lng)
 
+    _t0 = time.perf_counter()
     cached = await get_shadow_cache(key)
+    print(f'[TIMER] /api/shadows/precompute cache_lookup: {(time.perf_counter()-_t0)*1000:.0f}ms')
     if cached is not None:
         # 防護：舊空快取（buildings=[] 時遺留）視為 miss 重算
         has_shadows = any(isinstance(d, dict) and d.get('features') for d in cached.values())
@@ -259,10 +272,12 @@ async def precompute(req: ShadowFromFeaturesRequest):
 
     buildings = [{'footprint': b.footprint, 'height': b.height} for b in req.buildings]
     loop = asyncio.get_event_loop()
+    _t1 = time.perf_counter()
     result = await loop.run_in_executor(
         None,
         lambda: precompute_shadows_all_hours(buildings, req.lat, req.lng),
     )
+    print(f'[TIMER] /api/shadows/precompute compute: {(time.perf_counter()-_t1)*1000:.0f}ms')
 
     # 只有至少一個小時有陰影才寫入快取（避免空結果污染快取）
     has_any = any(isinstance(d, dict) and d.get('features') for d in result.values())
@@ -271,6 +286,7 @@ async def precompute(req: ShadowFromFeaturesRequest):
         print(f'[Shadow cache] MISS → computed + stored {key}')
     else:
         print(f'[Shadow cache] MISS → computed (empty, not cached) {key}')
+    print(f'[TIMER] /api/shadows/precompute total: {(time.perf_counter()-_t0)*1000:.0f}ms')
     return result
 
 
@@ -296,6 +312,12 @@ async def taiwan_sun_times():
     return _sun_times_cache[today]
 
 
+def usable_fraction_cache_key(target_footprint: list) -> str:
+    fp_str = json.dumps(target_footprint, separators=(',', ':'))
+    h = hashlib.md5(fp_str.encode()).hexdigest()[:12]
+    return f'v1_uf_{h}'
+
+
 @app.post('/api/usable-fraction')
 async def usable_fraction_endpoint(req: UsableFractionRequest):
     """
@@ -304,24 +326,53 @@ async def usable_fraction_endpoint(req: UsableFractionRequest):
     relying on whatever the frontend happens to have rendered.
     Returns usable_fraction (0–1) and setback_area_m2.
     """
+    # DB 快取查詢（以 footprint hash 為 key，TTL 180 天）
+    uf_key = usable_fraction_cache_key(req.target_footprint)
+    _tc = time.perf_counter()
+    cached_uf = await get_uf_cache(uf_key)
+    if cached_uf is not None:
+        print(f'[UF cache] HIT {uf_key} ({(time.perf_counter()-_tc)*1000:.0f}ms)')
+        return cached_uf
+
+    # cache miss → 正常計算
+    _t0 = time.perf_counter()
     D = 0.002  # ~200 m radius in degrees (Taiwan latitude)
     buildings = await get_buildings(req.lng - D, req.lat - D, req.lng + D, req.lat + D)
+    print(f'[TIMER] /api/usable-fraction get_buildings: {(time.perf_counter()-_t0)*1000:.0f}ms')
     loop = asyncio.get_event_loop()
+    _t1 = time.perf_counter()
     result = await loop.run_in_executor(
         None,
         lambda: compute_usable_roof_fraction(req.target_footprint, buildings, req.lat, req.lng),
     )
+    print(f'[TIMER] /api/usable-fraction compute: {(time.perf_counter()-_t1)*1000:.0f}ms')
+    print(f'[TIMER] /api/usable-fraction total: {(time.perf_counter()-_t0)*1000:.0f}ms')
+
+    # 寫入 DB 快取
+    await set_uf_cache(uf_key, result)
+    print(f'[UF cache] MISS → stored {uf_key}')
     return result
 
 
 @app.post('/api/shadows/from-features')
 async def shadows_from_features(req: ShadowFromFeaturesRequest):
+    # 嘗試從 precompute DB 快取取出當前小時資料（避免 4–7s 重算）
+    _tc = time.perf_counter()
+    precomputed = await get_shadow_cache(shadow_cache_key(req.lat, req.lng))
+    if precomputed is not None:
+        hour_str = str(req.local_hour)
+        if hour_str in precomputed and precomputed[hour_str].get('features'):
+            print(f'[TIMER] /api/shadows/from-features precompute_cache_hit: {(time.perf_counter()-_tc)*1000:.0f}ms')
+            return precomputed[hour_str]
+
     buildings = [{'footprint': b.footprint, 'height': b.height} for b in req.buildings]
     loop = asyncio.get_event_loop()
+    _t0 = time.perf_counter()
     result = await loop.run_in_executor(
         None,
         lambda: compute_shadows_from_features(buildings, req.lat, req.lng, req.local_hour),
     )
+    print(f'[TIMER] /api/shadows/from-features total: {(time.perf_counter()-_t0)*1000:.0f}ms')
     return result
 
 
@@ -492,6 +543,9 @@ async def cleanup_stale_caches(admin=Depends(require_admin)):
         r = await conn.execute("DELETE FROM gba_cache WHERE cached_at < NOW() - INTERVAL '30 days'")
         deleted['gba_cache_expired'] = int(r.split()[-1])
 
+        r = await conn.execute("DELETE FROM usable_fraction_cache WHERE computed_at < NOW() - INTERVAL '180 days'")
+        deleted['usable_fraction_cache_expired'] = int(r.split()[-1])
+
     print(f'[Cache cleanup] {deleted}')
     return {
         'deleted': deleted,
@@ -518,12 +572,16 @@ async def get_township_climate(
       goal_adj:     [12 floats]  (POA/GHI ratio，乘上 monthly_ghi 得有效輻照)
     }
     """
+    _t0 = time.perf_counter()
     from .shadow import _get_township_info
     info = await _get_township_info(lat, lng)
+    print(f'[TIMER] /api/township township_lookup: {(time.perf_counter()-_t0)*1000:.0f}ms')
     if not info:
         raise HTTPException(status_code=404, detail='找不到鄉鎮市資料，請確認 climate_annual 已匯入')
     township_code, county_name = info
+    _t1 = time.perf_counter()
     monthly = await get_climate_monthly(township_code)
+    print(f'[TIMER] /api/township climate_db: {(time.perf_counter()-_t1)*1000:.0f}ms ({len(monthly)} 月份)')
     if len(monthly) != 12:
         raise HTTPException(status_code=404,
                             detail=f'鄉鎮市 {township_code} 氣候資料不完整，請重新執行 import_climate.py')
@@ -539,11 +597,38 @@ async def get_township_climate(
         except ValueError:
             pass
 
+    # 非個人化請求（無 monthly_use）才使用 DB 快取
+    tilt_key = None if monthly_use_list else f'v1_tilt_{lat:.3f}_{lng:.3f}_{goal}'
+    if tilt_key:
+        _tc = time.perf_counter()
+        cached_tilt = await get_tilt_cache(tilt_key)
+        if cached_tilt is not None:
+            print(f'[Tilt cache] HIT {tilt_key} ({(time.perf_counter()-_tc)*1000:.0f}ms)')
+            print(f'[TIMER] /api/township total (tilt_cache_hit): {(time.perf_counter()-_t0)*1000:.0f}ms')
+            return {
+                'township_code': township_code,
+                'county_name':   county_name,
+                'monthly_ghi':      ghi_list,
+                'monthly_temp':     [row['temperature']  for row in rows],
+                'monthly_wind':     [row['wind_speed']   for row in rows],
+                'monthly_humidity': [row['humidity']     for row in rows],
+                'best_angle': cached_tilt['best_angle'],
+                'goal_adj':   cached_tilt['goal_adj'],
+            }
+
     loop = asyncio.get_event_loop()
+    _t2 = time.perf_counter()
     tilt = await loop.run_in_executor(
         None,
         lambda: compute_optimal_tilt(lat, lng, ghi_list, goal, monthly_use_list),
     )
+    print(f'[TIMER] /api/township optimal_tilt: {(time.perf_counter()-_t2)*1000:.0f}ms')
+    print(f'[TIMER] /api/township total: {(time.perf_counter()-_t0)*1000:.0f}ms')
+
+    # 計算完成後存入 DB 快取
+    if tilt_key:
+        await set_tilt_cache(tilt_key, tilt)
+        print(f'[Tilt cache] MISS → stored {tilt_key}')
 
     return {
         'township_code': township_code,

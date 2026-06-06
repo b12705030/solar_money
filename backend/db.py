@@ -12,8 +12,12 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from cachetools import TTLCache
 
 import asyncpg
+
+# Process-level bbox cache：避免地圖拖曳時重複查詢 CockroachDB（30s TTL）
+_bldg_cache: TTLCache = TTLCache(maxsize=100, ttl=30)
 
 _pool: asyncpg.Pool | None = None
 
@@ -110,6 +114,16 @@ async def init_db() -> None:
             CREATE TABLE IF NOT EXISTS shadow_cache (
                 cache_key   TEXT        PRIMARY KEY,
                 shadows     JSONB       NOT NULL,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS tilt_cache (
+                cache_key   TEXT        PRIMARY KEY,
+                result      JSONB       NOT NULL,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS usable_fraction_cache (
+                cache_key   TEXT        PRIMARY KEY,
+                result      JSONB       NOT NULL,
                 computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             CREATE TABLE IF NOT EXISTS accounts (
@@ -514,6 +528,64 @@ async def set_shadow_cache(key: str, shadows: dict) -> None:
                    ON CONFLICT (cache_key) DO UPDATE
                    SET shadows = EXCLUDED.shadows, computed_at = NOW()''',
                 key, json.dumps(shadows),
+            )
+    except Exception:
+        pass
+
+
+# ─── 最佳傾角 cache（pvlib 計算結果，永久有效，演算法改版時改 key 前綴）────────
+
+async def get_tilt_cache(key: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT result FROM tilt_cache WHERE cache_key = $1', key,
+            )
+            return json.loads(row['result']) if row else None
+    except Exception:
+        return None
+
+
+async def set_tilt_cache(key: str, result: dict) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO tilt_cache (cache_key, result)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (cache_key) DO UPDATE
+                   SET result = EXCLUDED.result, computed_at = NOW()''',
+                key, json.dumps(result),
+            )
+    except Exception:
+        pass
+
+
+# ─── 可用屋頂比例 cache（依 footprint hash，180 天 TTL）─────────────────────
+
+async def get_uf_cache(key: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT result FROM usable_fraction_cache WHERE cache_key = $1', key,
+            )
+            return json.loads(row['result']) if row else None
+    except Exception:
+        return None
+
+
+async def set_uf_cache(key: str, result: dict) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO usable_fraction_cache (cache_key, result)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (cache_key) DO UPDATE
+                   SET result = EXCLUDED.result, computed_at = NOW()''',
+                key, json.dumps(result),
             )
     except Exception:
         pass
@@ -1544,6 +1616,11 @@ async def get_gba_buildings_from_db(
     索引條件：min_lon < $max_lon AND max_lon > $min_lon
               AND min_lat < $max_lat AND max_lat > $min_lat
     """
+    cache_key = f'{min_lon:.3f},{min_lat:.3f},{max_lon:.3f},{max_lat:.3f}'
+    if cache_key in _bldg_cache:
+        cached = _bldg_cache[cache_key]
+        print(f'[TIMER] get_buildings/gba_db CACHE HIT: 0ms ({len(cached)} 棟)')
+        return cached
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -1553,7 +1630,7 @@ async def get_gba_buildings_from_db(
                      AND min_lat < $4 AND max_lat > $2''',
                 min_lon, min_lat, max_lon, max_lat,
             )
-        return [
+        result = [
             {
                 'build_id': r['id'],
                 'footprint': json.loads(r['footprint']),
@@ -1561,6 +1638,8 @@ async def get_gba_buildings_from_db(
             }
             for r in rows
         ]
+        _bldg_cache[cache_key] = result
+        return result
     except Exception as e:
         print(f'[DB] get_gba_buildings_from_db error: {type(e).__name__}: {e}')
         return []

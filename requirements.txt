@@ -15,3 +15,4 @@ fiona
 Pillow
 boto3
 python-multipart
+cachetools
