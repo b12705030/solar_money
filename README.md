@@ -57,6 +57,7 @@
   ├─ dem_tiles.py         DEM → Mapbox terrain-rgb PNG tile server（/api/dem/tile/{z}/{x}/{y}.png）
   ├─ bcrypt               密碼雜湊（直接使用，不透過 passlib）
   ├─ python-jose          JWT 簽發與驗證
+  ├─ cachetools           TTLCache 供 gba_buildings process-level bbox 快取（30s TTL）
   │
   └─ asyncpg
         │
@@ -67,7 +68,9 @@ CockroachDB（Neon 為舊資料來源 / 遷移前 PostgreSQL 方案）
   ├─ climate_monthly      368 × 12 月典型氣候（4,416 筆，NASA POWER）
   ├─ dem_cache            全台 100m DEM numpy bytea（28.9 MB，啟動時載入 RAM）
   ├─ osm_cache            OSM 建物備援快取（7 天 TTL）
-  ├─ shadow_cache         陰影預計算結果（月份粒度，cache key v3）
+  ├─ shadow_cache         陰影預計算結果（月份粒度，cache key v4，~100m 格子）
+  ├─ tilt_cache           pvlib 最佳傾角結果（永久，key = v1_tilt_{lat}_{lng}_{goal}）
+  ├─ usable_fraction_cache  可用屋頂比例（footprint MD5 hash，180 天 TTL）
   ├─ accounts             會員帳號與角色（user / vendor / admin）
   ├─ assessments          使用者評估紀錄（匿名 or 帳號綁定）
   ├─ vendors              廠商基本資料、服務縣市、評分、訂閱狀態
@@ -244,6 +247,9 @@ uvicorn backend.main:app --reload
 # 啟動時應看到：
 # [DB] 連線成功，資料表已就緒
 # [shadow] DEM 載入完成（本機）shape=(3770, 2007)，origin=(150970, 2799170)
+# [GBA] Polygon fallback loading in background...
+# [Startup] pyproj CRS 預熱完成
+# [DB] Polygon fallback ready: 1,905,108 buildings (cached)
 ```
 
 ---
@@ -262,8 +268,8 @@ uvicorn backend.main:app --reload
 |--------|----------|------|
 | `POST` | `/api/shadow` | 單一建物陰影計算 |
 | `GET` | `/api/shadows` | bbox 範圍內所有建物陰影（GBA DB 優先，OSM fallback） |
-| `POST` | `/api/shadows/from-features` | 前端送入建物清單，計算**當前時刻**陰影（含地形高差修正，~300ms） |
-| `POST` | `/api/shadows/precompute` | 前端送入建物清單，預計算 **6–19 時全天**陰影並存 DB cache（v3 key） |
+| `POST` | `/api/shadows/from-features` | 前端送入建物清單，計算**當前時刻**陰影；優先查 `shadow_cache`，命中時直接回傳對應小時資料（~600ms），miss 時實時計算（4–7s） |
+| `POST` | `/api/shadows/precompute` | 前端送入建物清單，預計算 **6–19 時全天**陰影並存 DB cache（v4 key，~100m 格子 × 月份） |
 
 ### DEM Tile Server
 
@@ -271,10 +277,11 @@ uvicorn backend.main:app --reload
 |--------|----------|------|
 | `GET` | `/api/dem/tile/{z}/{x}/{y}.png` | 台灣 20m DEM 以 Mapbox terrain-rgb 格式輸出（z ≤ 15），供前端 3D 地形使用；Cache-Control: 86400s |
 
-### 氣候資料
+### 氣候資料與最佳傾角
 
 | Method | Endpoint | 說明 |
 |--------|----------|------|
+| `GET` | `/api/township?lat=&lng=&goal=` | 依座標查詢最近鄉鎮市氣候（NASA POWER 13 年均值）並以 pvlib 計算最佳安裝傾角；結果快取至 `tilt_cache`（第一次 17–20s，後續重啟依然 ~300ms） |
 | `GET` | `/api/climate/{township_code}` | 回傳指定鄉鎮市的年均統計 + 12 個月典型 GHI／溫度／風速 |
 
 ### 評估紀錄
@@ -351,10 +358,11 @@ uvicorn backend.main:app --reload
 moveend + 600ms debounce
   │
   ├─ Phase 1 → /api/shadows/from-features（當前 1 小時）
-  │              ~300ms → 立刻顯示陰影，隱藏 spinner
+  │              shadow_cache hit → ~600ms；miss → 4–7s
+  │              → 立刻顯示陰影，隱藏 spinner
   │
   └─ Phase 2 → /api/shadows/precompute（全天 14 小時）
-                 DB cache hit → ~5ms，miss → 2–5s
+                 shadow_cache hit → ~10ms；miss → 9–11s → 存入 DB
                  完成後填入前端 cacheRef → 拖曳時間軸瞬間回應
 ```
 
