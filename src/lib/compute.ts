@@ -154,11 +154,10 @@ export function computeResults(
   degradationRateOverride?: number,
 ): ComputedResults {
   const region = (state.address?.region ?? '北部') as Region;
-  // When real climate data is available from the API, use it directly (no calibration needed —
-  // the correction factor is only for the simplified 4-region constants which overestimate).
-  const useRealClimate = monthlyGhi && monthlyGhi.length === 12;
-  const cal = useRealClimate ? 1.0 : REGION_CALIBRATION[region];
-  const rawIrr = useRealClimate ? monthlyGhi : TW_IRRADIANCE[region];
+  // REGION_CALIBRATION corrects ERA5/NASA POWER systematic GHI overestimation (South +11.9%,
+  // East +5.4%) and real-world losses (non-optimal tilt, soiling, shading). Applied to all paths.
+  const cal    = REGION_CALIBRATION[region];
+  const rawIrr = (monthlyGhi && monthlyGhi.length === 12) ? monthlyGhi : TW_IRRADIANCE[region];
   const irr  = rawIrr.map(v => v * cal);
   const temp = (monthlyTemp && monthlyTemp.length  === 12) ? monthlyTemp : DEFAULT_TEMP[region];
   const wind = (monthlyWind && monthlyWind.length  === 12) ? monthlyWind : DEFAULT_WIND[region];
