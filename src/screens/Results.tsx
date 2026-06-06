@@ -1050,16 +1050,17 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <h3 className="h-section" style={{ margin: 0 }}>氣候輸入參數<Info tip="NASA POWER 月均資料（GHI、氣溫、風速、濕度），用於 Faiman T_cell 模型計算各月動態PR" /></h3>
+                {(regionInfo || state.townshipName) && (
+                  <div style={{ fontSize: 12, color: 'var(--green-700)', fontWeight: 500, marginTop: 2 }}>
+                    {regionInfo ? `${regionInfo.countyname}${regionInfo.townname}` : state.townshipName}
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3, lineHeight: 1.7 }}>
                   這張表顯示影響你屋頂發電效率的四大氣候因子，以及系統據此計算出的每月動態 PR（實際效率比）
-                  {fromApi ? (
-                    <>
-                      <br />
-                      NASA POWER MERRA-2 · 2013–2025 年均值 · T2M = 月均氣溫（非日最高溫）· WS10M = 月均風速
-                    </>
-                  ) : (
-                    <> · 來源：CWA 長期月均值（fallback）</>
-                  )}
+                  <br />
+                  {fromApi
+                    ? '資料來源：NASA POWER API MERRA-2 · 2013–2025 年均值 · T2M = 月均氣溫（非日最高溫）· WS10M = 月均風速'
+                    : '資料來源：CWA 長期月均值（fallback）'}
                 </div>
               </div>
               <span style={{
