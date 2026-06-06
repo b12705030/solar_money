@@ -356,6 +356,21 @@ async def init_db() -> None:
             await conn.execute(
                 f"ALTER TABLE vendor_portfolios ADD COLUMN IF NOT EXISTS {col} {definition}"
             )
+        await conn.execute(
+            '''CREATE TABLE IF NOT EXISTS upgrade_requests (
+                id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                vendor_id  TEXT        NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+                status     TEXT        NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )'''
+        )
+        await conn.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_upgrade_requests_vendor_pending '
+            "ON upgrade_requests (vendor_id) WHERE status = 'pending'"
+        )
+        await conn.execute(
+            'ALTER TABLE upgrade_requests ADD COLUMN IF NOT EXISTS rejection_reason TEXT'
+        )
         # CHECK constraints（IF NOT EXISTS → idempotent，CockroachDB 原生支援）
         await conn.execute(
             "ALTER TABLE accounts ADD CONSTRAINT IF NOT EXISTS accounts_role_check"
@@ -666,7 +681,8 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
                            LIMIT 1
                        ) p ON TRUE
                        WHERE v.approved = TRUE AND $1::text = ANY(v.counties)
-                       ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
+                       ORDER BY CASE v.subscription_status WHEN 'advanced' THEN 1 WHEN 'mock' THEN 2 ELSE 3 END,
+                                v.rating DESC, v.review_count DESC
                        LIMIT $2 OFFSET $3''',
                     county,
                     limit,
@@ -688,7 +704,8 @@ async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 
                            LIMIT 1
                        ) p ON TRUE
                        WHERE v.approved = TRUE
-                       ORDER BY v.subscription_status DESC, v.rating DESC, v.review_count DESC
+                       ORDER BY CASE v.subscription_status WHEN 'advanced' THEN 1 WHEN 'mock' THEN 2 ELSE 3 END,
+                                v.rating DESC, v.review_count DESC
                        LIMIT $1 OFFSET $2''',
                     limit,
                     offset,
@@ -957,6 +974,14 @@ async def get_my_vendor(account_id: str) -> dict | None:
                 '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
                           v.phone, v.email, v.tags, v.application_status,
                           v.subscription_status, v.approved, v.logo_url,
+                          (SELECT status FROM upgrade_requests
+                           WHERE vendor_id = v.id
+                           ORDER BY created_at DESC, id DESC LIMIT 1
+                          ) AS upgrade_request_status,
+                          (SELECT rejection_reason FROM upgrade_requests
+                           WHERE vendor_id = v.id
+                           ORDER BY created_at DESC, id DESC LIMIT 1
+                          ) AS upgrade_rejection_reason,
                           p.id AS p_id, p.title, p.meta, p.capacity_kw,
                           p.completed_year, p.is_featured, p.photo_url, p.description
                    FROM vendors v
@@ -981,6 +1006,8 @@ async def get_my_vendor(account_id: str) -> dict | None:
                 'tags': list(v['tags'] or []),
                 'applicationStatus': v['application_status'],
                 'subscriptionStatus': v['subscription_status'],
+                'upgradeRequestStatus': v['upgrade_request_status'],
+                'upgradeRejectionReason': v['upgrade_rejection_reason'],
                 'approved': bool(v['approved']),
                 'logoUrl': v['logo_url'],
                 'portfolios': [
@@ -1779,6 +1806,136 @@ async def get_places_cache(key: str) -> list | dict | None:
             return json.loads(row['data'])
     except Exception:
         return None
+
+
+async def update_portfolio(
+    portfolio_id: str,
+    vendor_id: str,
+    title: str,
+    meta: str,
+    capacity_kw: float | None,
+    completed_year: int | None,
+    description: str | None,
+    photo_url: str | None,
+    update_photo: bool,
+) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if update_photo:
+                result = await conn.execute(
+                    '''UPDATE vendor_portfolios
+                       SET title=$3, meta=$4, capacity_kw=$5, completed_year=$6,
+                           description=$7, photo_url=$8
+                       WHERE id=$1::uuid AND vendor_id=$2''',
+                    portfolio_id, vendor_id, title, meta,
+                    capacity_kw, completed_year, description, photo_url,
+                )
+            else:
+                result = await conn.execute(
+                    '''UPDATE vendor_portfolios
+                       SET title=$3, meta=$4, capacity_kw=$5, completed_year=$6,
+                           description=$7
+                       WHERE id=$1::uuid AND vendor_id=$2''',
+                    portfolio_id, vendor_id, title, meta,
+                    capacity_kw, completed_year, description,
+                )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def create_upgrade_request(vendor_id: str) -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            '''INSERT INTO upgrade_requests (vendor_id)
+               VALUES ($1)
+               ON CONFLICT DO NOTHING
+               RETURNING id''',
+            vendor_id,
+        )
+        if row:
+            return str(row['id'])
+        existing = await conn.fetchrow(
+            "SELECT id FROM upgrade_requests WHERE vendor_id=$1 AND status='pending'",
+            vendor_id,
+        )
+        if existing is None:
+            raise RuntimeError('upgrade_request race condition: pending request disappeared')
+        return str(existing['id'])
+
+
+async def list_upgrade_requests(status: str | None = None) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        base_sql = '''SELECT ur.id, ur.vendor_id, ur.status, ur.created_at,
+                             ur.rejection_reason,
+                             v.name AS vendor_name, v.email AS vendor_email,
+                             v.counties AS vendor_counties,
+                             v.application_status AS vendor_application_status
+                      FROM upgrade_requests ur
+                      JOIN vendors v ON v.id = ur.vendor_id'''
+        if status:
+            rows = await conn.fetch(base_sql + ' WHERE ur.status = $1 ORDER BY ur.created_at DESC', status)
+        else:
+            rows = await conn.fetch(base_sql + ' ORDER BY ur.created_at DESC')
+        return [
+            {
+                'id': str(r['id']),
+                'vendorId': r['vendor_id'],
+                'vendorName': r['vendor_name'],
+                'vendorEmail': r['vendor_email'] or '',
+                'vendorCounties': list(r['vendor_counties'] or []),
+                'vendorApplicationStatus': r['vendor_application_status'],
+                'status': r['status'],
+                'rejectionReason': r['rejection_reason'],
+                'createdAt': r['created_at'].isoformat(),
+            }
+            for r in rows
+        ]
+
+
+async def approve_upgrade_request(request_id: str) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    '''SELECT ur.vendor_id FROM upgrade_requests ur
+                       JOIN vendors v ON v.id = ur.vendor_id
+                       WHERE ur.id=$1::uuid AND ur.status='pending'
+                       AND v.approved = TRUE AND v.application_status = 'approved' ''',
+                    request_id,
+                )
+                if not row:
+                    return False
+                result = await conn.execute(
+                    "UPDATE upgrade_requests SET status='approved' WHERE id=$1::uuid AND status='pending'",
+                    request_id,
+                )
+                if not result.endswith('1'):
+                    return False
+                await conn.execute(
+                    "UPDATE vendors SET subscription_status='advanced' WHERE id=$1",
+                    row['vendor_id'],
+                )
+                return True
+    except Exception:
+        return False
+
+
+async def reject_upgrade_request(request_id: str, reason: str | None = None) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE upgrade_requests SET status='rejected', rejection_reason=$2 WHERE id=$1::uuid AND status='pending'",
+                request_id, reason,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
 
 
 async def set_places_cache(key: str, data: list | dict) -> None:

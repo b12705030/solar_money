@@ -92,7 +92,9 @@ from .db import (add_portfolio, add_vendor_review, approve_vendor_application,
                  set_shadow_cache, shadow_cache_key, update_inquiry_status,
                  update_vendor_logo, update_vendor_profile,
                  add_user_inquiry_message, get_user_inquiry_messages, mark_user_inquiry_read,
-                 mark_vendor_inquiry_read)
+                 mark_vendor_inquiry_read,
+                 update_portfolio, create_upgrade_request, list_upgrade_requests,
+                 approve_upgrade_request, reject_upgrade_request)
 from .mada import topsis
 from .shadow import (compute_bbox_shadows, compute_optimal_tilt,
                      compute_shadows_from_features,
@@ -720,6 +722,39 @@ async def admin_reject_vendor(
     return {'ok': True, 'status': 'rejected'}
 
 
+# ─── Admin：升級申請 ─────────────────────────────────────────────────────────
+
+@app.get('/api/admin/upgrade-requests')
+async def admin_list_upgrade_requests(
+    _: None = Depends(require_admin),
+    status: Optional[str] = Query(None),
+):
+    return await list_upgrade_requests(status)
+
+
+@app.post('/api/admin/upgrade-requests/{request_id}/approve')
+async def admin_approve_upgrade(
+    request_id: str,
+    _: None = Depends(require_admin),
+):
+    ok = await approve_upgrade_request(request_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到待審核的升級申請')
+    return {'ok': True}
+
+
+@app.post('/api/admin/upgrade-requests/{request_id}/reject')
+async def admin_reject_upgrade(
+    request_id: str,
+    req: VendorRejectRequest,
+    _: None = Depends(require_admin),
+):
+    ok = await reject_upgrade_request(request_id, req.reason)
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到待審核的升級申請')
+    return {'ok': True}
+
+
 # ─── 帳號 & Auth ─────────────────────────────────────────────────────────────
 
 class AuthRequest(BaseModel):
@@ -865,6 +900,36 @@ class PortfolioCreateRequest(BaseModel):
         return v
 
 
+class PortfolioUpdateRequest(BaseModel):
+    title: str
+    meta: str
+    capacityKw: Optional[float] = None
+    completedYear: Optional[int] = None
+    description: Optional[str] = None
+    photoUrl: Optional[str] = None  # sentinel: include field to update photo
+
+    @field_validator('title', 'meta')
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('不可空白')
+        return v.strip()
+
+    @field_validator('capacityKw')
+    @classmethod
+    def capacity_non_negative(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
+            raise ValueError('容量不可為負數')
+        return v
+
+    @field_validator('completedYear')
+    @classmethod
+    def year_range(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and not (1990 <= v <= 2035):
+            raise ValueError('完工年份需在 1990–2035 之間')
+        return v
+
+
 class InquiryStatusRequest(BaseModel):
     status: str  # new | contacted | quoted | closed
 
@@ -939,6 +1004,44 @@ async def me_delete_portfolio(
         raise HTTPException(status_code=404, detail='找不到作品集項目')
 
 
+@app.patch('/api/me/vendor/portfolios/{portfolio_id}')
+async def me_update_portfolio(
+    portfolio_id: str,
+    req: PortfolioUpdateRequest,
+    account_id: str = Depends(current_user_id),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    update_photo = 'photoUrl' in req.model_fields_set
+    ok = await update_portfolio(
+        portfolio_id, vendor['id'],
+        req.title, req.meta, req.capacityKw, req.completedYear,
+        req.description, req.photoUrl, update_photo,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail='找不到作品集項目')
+    return {'ok': True}
+
+
+@app.post('/api/me/vendor/upgrade-request', status_code=201)
+async def me_upgrade_request(
+    account_id: str = Depends(current_user_id),
+):
+    vendor = await get_my_vendor(account_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail='尚未綁定廠商帳號')
+    if vendor.get('applicationStatus') != 'approved':
+        raise HTTPException(status_code=403, detail='廠商帳號尚未通過審核，無法申請升級')
+    if vendor.get('subscriptionStatus') == 'advanced':
+        raise HTTPException(status_code=409, detail='已是進階方案，無需重複申請')
+    try:
+        request_id = await create_upgrade_request(vendor['id'])
+    except RuntimeError:
+        raise HTTPException(status_code=409, detail='申請處理中，請稍後再試')
+    return {'id': request_id}
+
+
 @app.get('/api/me/vendor/inquiries')
 async def me_vendor_inquiries(
     account_id: str = Depends(current_user_id),
@@ -957,6 +1060,11 @@ async def vendor_inquire(
     if creds:
         try:
             account_id = decode_token(creds.credentials)
+            account = await get_account_by_id(account_id)
+            if account and account.get('role') == 'vendor':
+                raise HTTPException(status_code=403, detail='廠商帳號不可對其他廠商送出詢價')
+        except HTTPException:
+            raise
         except ValueError:
             pass
     vendor = await get_vendor_detail(vendor_id)
