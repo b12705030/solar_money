@@ -10,6 +10,21 @@ import type { NavItem } from '@/components/DashLayout';
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 const COUNTIES = Object.keys(SUBSIDIES);
 
+// FastAPI field_validator errors return detail as an array; HTTPException returns a string.
+// ctx.error can be {} (object) in Pydantic v2 — must check typeof before using.
+function parseDetail(detail: unknown, fallback: string): string {
+  if (Array.isArray(detail)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const first = detail[0] as any;
+    if (!first) return fallback;
+    if (typeof first?.ctx?.error === 'string') return first.ctx.error;
+    if (typeof first?.msg === 'string') return first.msg.replace(/^Value error,\s*/i, '');
+    return fallback;
+  }
+  if (typeof detail === 'string') return detail;
+  return fallback;
+}
+
 type Tab = 'profile' | 'portfolios' | 'inquiries' | 'leads';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -424,7 +439,7 @@ function ProfileEditForm({
           tags: tags.split(/[、,，\s]+/).map(t => t.trim()).filter(Boolean),
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '儲存失敗');
+      if (!res.ok) throw new Error(parseDetail((await res.json().catch(() => ({}))).detail, '儲存失敗'));
       onSaved();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '儲存失敗');
@@ -725,7 +740,7 @@ function EditPortfolioModal({
         headers: authHeaders,
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '儲存失敗');
+      if (!res.ok) throw new Error(parseDetail((await res.json().catch(() => ({}))).detail, '儲存失敗'));
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : '儲存失敗');
@@ -863,7 +878,7 @@ function AddPortfolioForm({
           description: desc.trim() || null,
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '新增失敗');
+      if (!res.ok) throw new Error(parseDetail((await res.json().catch(() => ({}))).detail, '新增失敗'));
       onAdded();
     } catch (e) {
       setErr(e instanceof Error ? e.message : '新增失敗');
