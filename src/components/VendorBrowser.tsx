@@ -343,7 +343,9 @@ export default function VendorBrowser() {
                 </div>
                 <div className="vendor-card-actions">
                   <button className="btn-ghost vendor-detail-btn" onClick={() => openDetail(v)}>查看詳情</button>
-                  <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 14px' }} onClick={() => openContact(v)}>聯絡</button>
+                  {user?.role !== 'vendor' && (
+                    <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 14px' }} onClick={() => openContact(v)}>聯絡</button>
+                  )}
                 </div>
               </div>
             </div>
@@ -412,7 +414,9 @@ export default function VendorBrowser() {
                 </div>
                 <div className="vendor-detail-footer">
                   <button className="btn btn-secondary" onClick={() => setDetailVendor(null)}>返回</button>
-                  <button className="btn btn-primary" onClick={() => { setDetailVendor(null); openContact(detailData); }}>聯絡廠商</button>
+                  {user?.role !== 'vendor' && (
+                    <button className="btn btn-primary" onClick={() => { setDetailVendor(null); openContact(detailData); }}>聯絡廠商</button>
+                  )}
                 </div>
               </div>
             )}
