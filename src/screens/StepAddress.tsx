@@ -31,12 +31,16 @@ async function reverseGeocode(lat: number, lng: number): Promise<string | null> 
 async function fetchTownshipCode(
   lat: number,
   lng: number,
-): Promise<{ townshipCode: string; townshipName: string } | null> {
+): Promise<{ townshipCode: string; townshipName: string; countyName: string } | null> {
   try {
     const res = await fetch(`${API_URL}/api/address-township?lat=${lat}&lng=${lng}`);
     if (!res.ok) return null;
     const data = await res.json();
-    return { townshipCode: data.townshipCode, townshipName: data.townshipName };
+    return {
+      townshipCode: data.townshipCode,
+      townshipName: data.townshipName,
+      countyName:   data.countyName ?? '',
+    };
   } catch {
     return null;
   }
@@ -57,8 +61,9 @@ async function fetchTaiwanSunTimes(): Promise<SunTimes | null> {
 
 function detectRegion(address: string): Region {
   if (/台中|臺中|彰化|南投|苗栗|雲林/.test(address)) return '中部';
-  if (/台南|臺南|高雄|屏東|嘉義|花蓮|台東|臺東|澎湖|金門/.test(address)) return '南部';
-  return '北部'; // 台北、新北、基隆、桃園、新竹、宜蘭、連江
+  if (/花蓮|台東|臺東/.test(address)) return '東部';  // 含蘭嶼鄉、綠島鄉（臺東縣）
+  if (/台南|臺南|高雄|屏東|嘉義|澎湖|金門/.test(address)) return '南部';
+  return '北部'; // 台北、新北、基隆、桃園、新竹、宜蘭、連江、馬祖
 }
 
 export default function StepAddress({
@@ -198,7 +203,7 @@ export default function StepAddress({
           : `${early.lat.toFixed(5)}, ${early.lng.toFixed(5)}（地圖點選）`);
         const synthetic: AddressOption = {
           label, meta: '', area: early.areaPing, type: '一般住宅', floors: 0,
-          region: detectRegion(township?.townshipName ?? label),
+          region: detectRegion((township?.countyName ?? '') + (township?.townshipName ?? '') || label),
           lat: early.lat, lng: early.lng,
         };
         setSelected(synthetic);

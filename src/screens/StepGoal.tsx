@@ -35,6 +35,7 @@ export default function StepGoal({
 
   const recommended = useMemo(() => {
     if (region === '北部') return 'summer';
+    if (region === '東部') return 'annual';
     if (region === '南部') return 'annual';
     return 'match';
   }, [region]);
