@@ -41,8 +41,8 @@ export default function StepGoal({
   }, [region]);
 
   useEffect(() => {
-    if (!state.goal) update({ goal: recommended });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    update({ goal: recommended });
+  }, [recommended]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goal = state.goal ?? recommended;
 

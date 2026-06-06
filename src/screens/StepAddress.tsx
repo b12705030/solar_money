@@ -234,7 +234,7 @@ export default function StepAddress({
         : `${info.lat.toFixed(5)}, ${info.lng.toFixed(5)}（地圖點選）`);
       const synthetic: AddressOption = {
         label, meta: '', area: info.areaPing, type: '一般住宅', floors: 0,
-        region: detectRegion(township?.townshipName ?? label), lat: info.lat, lng: info.lng,
+        region: detectRegion((township?.countyName ?? '') + (township?.townshipName ?? '') || label), lat: info.lat, lng: info.lng,
       };
       setSelected(synthetic);
       setQuery(label);
@@ -250,7 +250,7 @@ export default function StepAddress({
         : `${info.lat.toFixed(5)}, ${info.lng.toFixed(5)}（地圖點選）`);
       const synthetic: AddressOption = {
         label, meta: '', area: info.areaPing, type: '一般住宅', floors: 0,
-        region: detectRegion(township?.townshipName ?? label),
+        region: detectRegion((township?.countyName ?? '') + (township?.townshipName ?? '') || label),
         lat: info.lat, lng: info.lng,
       };
       setSelected(synthetic);
