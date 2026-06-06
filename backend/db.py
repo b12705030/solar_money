@@ -1897,32 +1897,25 @@ async def list_upgrade_requests(status: str | None = None) -> list[dict]:
 
 
 async def approve_upgrade_request(request_id: str) -> bool:
-    try:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                row = await conn.fetchrow(
-                    '''SELECT ur.vendor_id FROM upgrade_requests ur
-                       JOIN vendors v ON v.id = ur.vendor_id
-                       WHERE ur.id=$1::uuid AND ur.status='pending'
-                       AND v.approved = TRUE AND v.application_status = 'approved' ''',
-                    request_id,
-                )
-                if not row:
-                    return False
-                result = await conn.execute(
-                    "UPDATE upgrade_requests SET status='approved' WHERE id=$1::uuid AND status='pending'",
-                    request_id,
-                )
-                if not result.endswith('1'):
-                    return False
-                await conn.execute(
-                    "UPDATE vendors SET subscription_status='advanced' WHERE id=$1",
-                    row['vendor_id'],
-                )
-                return True
-    except Exception:
-        return False
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            '''WITH req AS (
+                   UPDATE upgrade_requests
+                   SET status = 'approved'
+                   WHERE id = $1::uuid AND status = 'pending'
+                   RETURNING vendor_id
+               ),
+               vnd AS (
+                   UPDATE vendors
+                   SET subscription_status = 'advanced'
+                   WHERE id = (SELECT vendor_id FROM req)
+                   RETURNING id
+               )
+               SELECT vendor_id FROM req''',
+            request_id,
+        )
+        return row is not None
 
 
 async def reject_upgrade_request(request_id: str, reason: str | None = None) -> bool:

@@ -737,7 +737,10 @@ async def admin_approve_upgrade(
     request_id: str,
     _: None = Depends(require_admin),
 ):
-    ok = await approve_upgrade_request(request_id)
+    try:
+        ok = await approve_upgrade_request(request_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'核准失敗：{e}')
     if not ok:
         raise HTTPException(status_code=404, detail='找不到待審核的升級申請')
     return {'ok': True}
