@@ -162,10 +162,13 @@ export default function StepAddress({
       };
       setSelected(addressOption);
 
-      // 查詢鄉鎮市代碼（非阻塞，失敗不影響主流程）
+      // 查詢鄉鎮市代碼，並用 countyName 修正 region（formattedAddress 可能為英文格式）
       const township = await fetchTownshipCode(details.lat, details.lon);
+      const region = township?.countyName
+        ? detectRegion(township.countyName + (township.townshipName ?? ''))
+        : addressOption.region;
       update({
-        address: addressOption,
+        address: { ...addressOption, region },
         addressQuery: prediction.description,
         roofArea: 50,
         roofAreaError: false,
