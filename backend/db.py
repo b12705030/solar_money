@@ -1749,9 +1749,12 @@ def get_gba_buildings_from_fallback(
     從本地 NDJSON.gz fallback 以 bbox 查詢 Polygon 建物。
     使用 numpy 向量化比較取代 Python for 迴圈，256 萬筆約 10 ms。
     回傳格式與 get_gba_buildings_from_db 相同。
+    若 fallback 仍在背景載入中，立即回傳空 list（不阻塞請求執行緒）。
     """
-    all_buildings = _load_polygon_fallback()
-    if not all_buildings or _fallback_bbox_arr is None:
+    if _fallback_buildings is None or _fallback_bbox_arr is None:
+        return []   # 背景執行緒仍在載入，不等待
+    all_buildings = _fallback_buildings
+    if not all_buildings:
         return []
 
     arr = _fallback_bbox_arr
