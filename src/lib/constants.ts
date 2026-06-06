@@ -118,3 +118,14 @@ export const DEFAULT_WIND: Record<Region, number[]> = {
   '南部': [3.2, 3.0, 2.8, 2.5, 2.2, 2.0, 2.5, 2.8, 2.5, 2.8, 3.2, 3.5],
   '東部': [4.0, 3.8, 3.5, 3.0, 2.8, 2.5, 3.2, 3.5, 3.0, 3.5, 4.0, 4.2],
 };
+
+// Calibrated against TPC 114-year full-FIT data (860万 kWp, 19 counties).
+// Corrects for real-world losses not captured in theoretical GHI:
+//   non-optimal tilt/orientation, soiling, partial shading, aging-fleet mix.
+// Derived empirically: actual county average / model prediction per region.
+export const REGION_CALIBRATION: Record<Region, number> = {
+  '北部': 1.00, // MAPE ~5%, within model noise — no correction applied
+  '中部': 0.93, // systematic +8% overestimate vs TPC data
+  '南部': 0.88, // systematic +13% overestimate vs TPC data (ERA5 GHI bias + warm climate)
+  '東部': 0.93, // systematic +7% overestimate vs TPC data
+};
