@@ -41,7 +41,9 @@ CockroachDB 相容 PostgreSQL wire protocol，但**不是 100% 的 PostgreSQL �
 | `inquiry_messages` | 永久 | 依使用者 | — |
 | `vendor_reviews` | 永久 | 依使用者 | — |
 | `places_cache` | 快取（90d TTL） | 依查詢量 | — |
-| `shadow_cache` | 快取 | 依查詢量 | — |
+| `shadow_cache` | 快取（月份粒度） | 依查詢量 | — |
+| `tilt_cache` | 快取（永久） | 依查詢量 | ~360 KiB 上限 |
+| `usable_fraction_cache` | 快取（180d TTL） | 依查詢量 | — |
 | `osm_cache` | 快取（7d TTL） | 依查詢量 | — |
 | `gba_cache` | 快取 | 0（已棄用） | — |
 | `dem_cache` | 快取 | 1 | ~29 MiB |
@@ -150,15 +152,47 @@ Overpass API 抓到的 OSM 建物原始資料（GeoJSON elements），TTL = 7 �
 ---
 
 ### `shadow_cache`
-每個 ~1km 格子的 6–19 時陰影預計算結果，以月份為粒度。
+每個 ~100m 格子的 6–19 時陰影預計算結果，以月份為粒度。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| `cache_key` | TEXT PK | `v3_{lat:.2f}_{lng:.2f}_{year}_{month:02d}` |
+| `cache_key` | TEXT PK | `v4_{lat:.3f}_{lng:.3f}_{year}_{month:02d}` |
 | `shadows` | JSONB | `{"6": FeatureCollection, "7": ..., "19": ...}` |
 | `computed_at` | TIMESTAMPTZ | 寫入時間 |
 
-**Cache key 版本**：目前 v3（含 DEM 地形高程修正）。v2 舊快取自動不被讀取。
+**Cache key 版本**：目前 v4（精度從 2 位升至 3 位，~100m 格子）。舊版 v1/v2/v3 key 不被讀取，可透過 `/api/admin/cache/cleanup` 清除。  
+**複用邏輯**：`/api/shadows/from-features` 優先查此表，命中時直接回傳對應小時資料，無需重新計算。
+
+---
+
+### `tilt_cache`
+pvlib 最佳安裝傾角計算結果，以地點 + 目標為 key，永久有效。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `cache_key` | TEXT PK | `v1_tilt_{lat:.3f}_{lng:.3f}_{goal}` |
+| `result` | JSONB | `{"best_angle": int, "goal_adj": [12 floats]}` |
+| `computed_at` | TIMESTAMPTZ | 寫入時間 |
+
+**為何不設 TTL**：結果只依賴地理位置（pvlib 天文計算）與 NASA POWER 長期平均氣候，兩者極少變動，永久有效。  
+**演算法改版**：bump key 前綴（`v1_` → `v2_`），舊快取自動失效，不需要手動清除。  
+**個人化請求**（帶 `monthly_use` 參數）不寫入此表，每次實時計算。  
+**容量估算**：368 鄉鎮 × 6 種 goal ≤ 2,208 筆 × ~200 bytes = ~430 KB。
+
+---
+
+### `usable_fraction_cache`
+可用屋頂比例計算結果（Shapely 多邊形運算），以目標建物 footprint hash 為 key，TTL = 180 天。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `cache_key` | TEXT PK | `v1_uf_{md5(footprint)[:12]}` |
+| `result` | JSONB | `{"usable_fraction": float, "setback_area_m2": float}` |
+| `computed_at` | TIMESTAMPTZ | 寫入時間 |
+
+**為何設 180 天 TTL**：結果依賴鄰近建物（周圍新建/拆除會使結果偏差），但台灣都市建物變動緩慢，180 天合理。  
+**Cache key 設計**：以 footprint JSON 字串的 MD5 前 12 碼為 key（衝突機率 1/2⁴⁸），不受 lat/lng 精度影響，同一棟建物永遠命中同一個 key。  
+**清除**：`/api/admin/cache/cleanup` 刪除超過 180 天的項目。
 
 ---
 
@@ -379,24 +413,17 @@ Email + 密碼 → 建立帳號 / 登入 → 回傳 JWT token。
 ## 連線設定
 
 ```
-<<<<<<< HEAD
 # backend/.env
-DATABASE_URL=postgresql://solar:<password>@solar-money-27240.j77.aws-ap-southeast-1.cockroachlabs.cloud:26257/defaultdb?sslmode=require
-GOOGLE_MAPS_API_KEY=AIzaSy...   # 後端專用，不暴露於瀏覽器
-```
-
-連線池：`min_size=1, max_size=5`。  
-時區：`server_settings={'timezone': 'Asia/Taipei'}`。
-=======
 DATABASE_URL=postgresql://<user>:<password>@<host>:26257/defaultdb?sslmode=require
+GOOGLE_MAPS_API_KEY=AIzaSy...   # 後端專用，不暴露於瀏覽器
 ```
 
 放在 `backend/.env`，由 `load_dotenv(Path(__file__).parent / '.env')` 在啟動時載入。
 
-連線池：`min_size=1, max_size=5`。
+連線池：`min_size=1, max_size=5`。  
+時區：`server_settings={'timezone': 'Asia/Taipei'}`。
 
-> **（舊 Neon 部署備註）Neon 免費方案 cold start**：Neon 在無流量時會自動暫停資料庫，第一次請求需要 1–2 秒喚醒。目前 runtime 為 CockroachDB，此行為不適用。後端已做 graceful fallback：DB 無法連線時會印出警告並繼續以無 DB 模式運行（陰影仍可計算，只是不快取）。
->>>>>>> 5d56f5fa2fa32f14afe79eca8d3707490078db10
+> **Graceful fallback**：DB 無法連線時會印出警告並繼續以無 DB 模式運行（陰影仍可計算，只是不快取）。
 
 ---
 
