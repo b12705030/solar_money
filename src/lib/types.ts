@@ -1,4 +1,4 @@
-export type Region = '北部' | '中部' | '南部';
+export type Region = '北部' | '中部' | '南部' | '東部';
 
 export interface AddressOption {
   label: string;

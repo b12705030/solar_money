@@ -1423,26 +1423,28 @@ async def recompute_topsis_api(weights: TopsisWeights):
 @app.get('/api/address-township')
 async def get_address_township(lat: float = Query(...), lng: float = Query(...)):
     """
-    根據座標查詢最近鄉鎮市代碼，供前端取得 townshipCode 後查詢地區潛力。
+    根據座標查詢鄉鎮市代碼，供前端取得 townshipCode 後查詢地區潛力。
+    優先使用 SHP point-in-polygon 精確判定，沿岸/離島 fallback 至 DB 近心距離。
     """
+    from .shadow import _get_township_info
     try:
+        info = await _get_township_info(lat, lng)
+        if not info:
+            raise HTTPException(status_code=404, detail='找不到對應鄉鎮市')
+        township_code, county_name = info
+
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                '''SELECT township_code, county_name, township_name,
-                          (centroid_lat - $1)^2 + (centroid_lon - $2)^2 AS dist2
-                   FROM climate_annual
-                   ORDER BY dist2 ASC
-                   LIMIT 1''',
-                lat, lng,
+                'SELECT township_name FROM climate_annual WHERE township_code = $1',
+                township_code,
             )
-            if not row:
-                raise HTTPException(status_code=404, detail='找不到對應鄉鎮市')
-            return {
-                'townshipCode': str(row['township_code']),
-                'countyName':   str(row['county_name']),
-                'townshipName': str(row['township_name']),
-            }
+        township_name = str(row['township_name']) if row else ''
+        return {
+            'townshipCode': township_code,
+            'countyName':   county_name,
+            'townshipName': township_name,
+        }
     except HTTPException:
         raise
     except Exception as exc:
