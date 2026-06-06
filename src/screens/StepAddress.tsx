@@ -174,6 +174,7 @@ export default function StepAddress({
         roofAreaError: false,
         townshipCode: township?.townshipCode,
         townshipName: township?.townshipName,
+        county: township?.countyName,
       });
     } catch (err) {
       console.error('Failed to get place details:', err);
@@ -211,7 +212,7 @@ export default function StepAddress({
         };
         setSelected(synthetic);
         setQuery(label);
-        update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
+        update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName, county: township?.countyName });
       });
     }
   };
@@ -238,7 +239,7 @@ export default function StepAddress({
       };
       setSelected(synthetic);
       setQuery(label);
-      update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
+      update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName, county: township?.countyName });
     } else {
       // 手打地址後點選地圖建物 → reverse geocode 更新地址標籤 + 行政區代碼
       const [township, geocoded] = await Promise.all([
