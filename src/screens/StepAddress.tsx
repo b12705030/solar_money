@@ -185,9 +185,9 @@ export default function StepAddress({
     setBuildingInfo(null);
     geocodingStartedRef.current = false;
 
-    if (early && (!selected || selected.meta === '')) {
+    if (early && !selected) {
       geocodingStartedRef.current = true;
-      // 地圖點選且無手打地址 → 立刻顯示佔位地址，並行跑 reverse geocoding
+      // 完全無地址時才顯示佔位符並行 geocoding；有搜尋地址（含 meta='' 的情況）由 handleBuildingFound else 分支處理
       const placeholder: AddressOption = {
         label: '取得地址中…', meta: '', area: early.areaPing,
         type: '一般住宅', floors: 0, region: '北部',
