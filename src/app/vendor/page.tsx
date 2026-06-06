@@ -119,7 +119,7 @@ export default function VendorPage() {
         <div className="vd-error">{error}</div>
       ) : !vendor ? null : (
         <>
-          {tab === 'profile'    && <ProfileTab    vendor={vendor} onSaved={fetchVendor} authHeaders={authHeaders()} />}
+          {tab === 'profile'    && <ProfileTab    vendor={vendor} onSaved={fetchVendor} authHeaders={authHeaders()} onGoToPortfolios={() => setTab('portfolios')} />}
           {tab === 'portfolios' && <PortfoliosTab vendor={vendor} onChanged={fetchVendor} authHeaders={authHeaders()} />}
           {tab === 'inquiries'  && (
             <InquiriesTab
@@ -142,7 +142,13 @@ export default function VendorPage() {
             />
           )}
           {tab === 'leads' && (
-            <LeadsTab leads={leads} subscriptionStatus={vendor.subscriptionStatus ?? 'free'} />
+            <LeadsTab
+              leads={leads}
+              subscriptionStatus={vendor.subscriptionStatus ?? 'free'}
+              upgradeRequestStatus={vendor.upgradeRequestStatus ?? null}
+              upgradeRejectionReason={vendor.upgradeRejectionReason ?? null}
+              authHeaders={authHeaders()}
+            />
           )}
         </>
       )}
@@ -151,19 +157,25 @@ export default function VendorPage() {
 }
 
 
+// ── Shared: empty-field display (module-level to keep component type stable) ─
+function EmptyField({ text = '尚未填寫' }: { text?: string }) {
+  return <span style={{ color: 'var(--ink-300)', fontStyle: 'italic', fontSize: 13 }}>{text}</span>;
+}
+
 // ── Profile Tab ──────────────────────────────────────────────────────────────
 
 function ProfileTab({
-  vendor, onSaved, authHeaders,
+  vendor, onSaved, authHeaders, onGoToPortfolios,
 }: {
   vendor: MyVendor;
   onSaved: () => void;
   authHeaders: Record<string, string>;
+  onGoToPortfolios: () => void;
 }) {
   const [editing, setEditing] = useState(false);
 
   if (!editing) {
-    return <ProfileView vendor={vendor} onEdit={() => setEditing(true)} />;
+    return <ProfileView vendor={vendor} onEdit={() => setEditing(true)} onGoToPortfolios={onGoToPortfolios} />;
   }
   return (
     <ProfileEditForm
@@ -176,12 +188,27 @@ function ProfileTab({
 }
 
 // ── Profile: read-only card ──
-function ProfileView({ vendor, onEdit }: { vendor: MyVendor; onEdit: () => void }) {
+function ProfileView({
+  vendor, onEdit, onGoToPortfolios,
+}: {
+  vendor: MyVendor;
+  onEdit: () => void;
+  onGoToPortfolios: () => void;
+}) {
   const statusColors: Record<string, string> = {
     pending:  'vd-status-badge--pending',
     approved: 'vd-status-badge--approved',
     rejected: 'vd-status-badge--rejected',
   };
+
+  // A1 — 計算未填欄位
+  const missingFields = [
+    !vendor.phone                  && '電話',
+    !vendor.email                  && 'Email',
+    vendor.counties.length === 0   && '服務縣市',
+    vendor.tags.length    === 0    && '服務標籤',
+    !vendor.logoUrl                && 'Logo',
+  ].filter(Boolean) as string[];
 
   return (
     <div>
@@ -189,6 +216,26 @@ function ProfileView({ vendor, onEdit }: { vendor: MyVendor; onEdit: () => void 
         <div className="dash-content-title">廠商資料</div>
         <div className="dash-content-sub">公開顯示於推薦列表的公司資訊</div>
       </div>
+
+      {/* A1 — 完整度橫幅 */}
+      {missingFields.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          background: 'var(--warning-bg, #fef9c3)',
+          border: '1px solid #fde68a',
+          borderRadius: 'var(--radius-sm)',
+          padding: '10px 16px',
+          marginBottom: 14,
+          fontSize: 13,
+        }}>
+          <span style={{ color: '#92400e' }}>
+            ⚠ 資料未完整：<strong>{missingFields.join('、')}</strong> 尚未填寫，完整資料可提升推薦列表曝光度
+          </span>
+          <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }} onClick={onEdit}>
+            立即補充
+          </button>
+        </div>
+      )}
 
       <div className="dash-profile-card">
         {/* Header */}
@@ -204,6 +251,17 @@ function ProfileView({ vendor, onEdit }: { vendor: MyVendor; onEdit: () => void 
               <span className={`vd-status-badge ${statusColors[vendor.applicationStatus] ?? ''}`}>
                 {STATUS_LABEL[vendor.applicationStatus] ?? vendor.applicationStatus}
               </span>
+              {vendor.subscriptionStatus === 'advanced' && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
+                  padding: '2px 8px', borderRadius: 99,
+                  background: 'var(--green-100)', color: 'var(--green-800)',
+                  border: '1px solid var(--green-300)',
+                }}>
+                  ★ 進階方案
+                </span>
+              )}
               {vendor.reviewCount > 0 && (
                 <span className="dash-profile-rating">
                   ★ {vendor.rating.toFixed(1)}
@@ -216,20 +274,57 @@ function ProfileView({ vendor, onEdit }: { vendor: MyVendor; onEdit: () => void 
 
         <div className="dash-profile-divider" />
 
+        {/* A2 — Stats 統計列 */}
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--ink-100)' }}>
+          <div style={{ flex: 1, textAlign: 'center', padding: '14px 8px' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1 }}>
+              {vendor.portfolios.length}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>件作品集</div>
+          </div>
+          <div style={{ width: 1, background: 'var(--ink-100)', margin: '10px 0' }} />
+          <div style={{ flex: 1, textAlign: 'center', padding: '14px 8px' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1 }}>
+              {vendor.reviewCount}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>則評價</div>
+          </div>
+          <div style={{ width: 1, background: 'var(--ink-100)', margin: '10px 0' }} />
+          <div style={{ flex: 1, textAlign: 'center', padding: '14px 8px' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: vendor.reviewCount > 0 ? 'var(--ink-900)' : 'var(--ink-300)', lineHeight: 1 }}>
+              {vendor.reviewCount > 0 ? vendor.rating.toFixed(1) : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>平均評分</div>
+          </div>
+        </div>
+
         {/* Info rows */}
         <div className="dash-profile-info-list">
           <div className="dash-profile-info-row">
             <span className="dash-profile-info-label">聯絡電話</span>
-            <span className="dash-profile-info-value">{vendor.phone || '—'}</span>
+            <span className="dash-profile-info-value">
+              {vendor.phone || <EmptyField />}
+            </span>
           </div>
           <div className="dash-profile-info-row">
             <span className="dash-profile-info-label">聯絡 Email</span>
-            <span className="dash-profile-info-value">{vendor.email || '—'}</span>
+            <span className="dash-profile-info-value">
+              {vendor.email || <EmptyField />}
+            </span>
           </div>
           <div className="dash-profile-info-row">
             <span className="dash-profile-info-label">服務縣市</span>
             <span className="dash-profile-info-value">
-              {vendor.counties.length === 0 ? '—' : (
+              {vendor.counties.length === 0 ? (
+                /* A3 — 縣市空時加橘色警示 */
+                <span style={{
+                  fontSize: 12, color: '#b45309',
+                  background: '#fef3c7', border: '1px solid #fde68a',
+                  borderRadius: 6, padding: '2px 8px',
+                }}>
+                  未設定 — 設定後才能出現在推薦列表
+                </span>
+              ) : (
                 <span className="dash-profile-counties">
                   {vendor.counties.map(c => (
                     <span key={c} className="dash-profile-county-chip">{c}</span>
@@ -238,22 +333,28 @@ function ProfileView({ vendor, onEdit }: { vendor: MyVendor; onEdit: () => void 
               )}
             </span>
           </div>
-          {vendor.tags.length > 0 && (
-            <div className="dash-profile-info-row">
-              <span className="dash-profile-info-label">服務標籤</span>
-              <span className="dash-profile-info-value">
+          <div className="dash-profile-info-row">
+            <span className="dash-profile-info-label">服務標籤</span>
+            <span className="dash-profile-info-value">
+              {vendor.tags.length === 0 ? <EmptyField /> : (
                 <span className="dash-profile-tag-list">
                   {vendor.tags.map(t => (
                     <span key={t} className="dash-profile-tag">{t}</span>
                   ))}
                 </span>
-              </span>
-            </div>
-          )}
+              )}
+            </span>
+          </div>
         </div>
 
         {/* Footer actions */}
         <div className="dash-profile-footer">
+          {/* A4 — 作品集為空時的快速入口 */}
+          {vendor.portfolios.length === 0 && (
+            <button className="btn btn-ghost btn-sm" onClick={onGoToPortfolios}>
+              ＋ 前往新增作品集
+            </button>
+          )}
           <button className="btn btn-secondary btn-sm" onClick={onEdit}>
             編輯資料
           </button>
@@ -517,6 +618,8 @@ function PortfolioCard({
   authHeaders: Record<string, string>;
   onChanged: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+
   const remove = async () => {
     try {
       await fetch(`${API}/api/me/vendor/portfolios/${portfolio.id}`, { method: 'DELETE', headers: authHeaders });
@@ -525,24 +628,174 @@ function PortfolioCard({
   };
 
   return (
-    <div className="dash-portfolio-card">
-      {portfolio.photoUrl ? (
-        <img src={portfolio.photoUrl} className="dash-portfolio-photo" alt={portfolio.title} />
-      ) : (
-        <div className="dash-portfolio-thumb" />
-      )}
-      <div className="dash-portfolio-body">
-        <div className="dash-portfolio-title">{portfolio.title}</div>
-        <div className="dash-portfolio-meta">{portfolio.meta}</div>
-        {portfolio.description && (
-          <div className="dash-portfolio-desc">{portfolio.description}</div>
+    <>
+      <div className="dash-portfolio-card">
+        {portfolio.photoUrl ? (
+          <img src={portfolio.photoUrl} className="dash-portfolio-photo" alt={portfolio.title} />
+        ) : (
+          <div className="dash-portfolio-thumb" />
         )}
-        <div className="dash-portfolio-footer">
-          <span className="dash-portfolio-kw">
-            {portfolio.capacityKw > 0 ? `${portfolio.capacityKw} kWp` : '—'}
-            {portfolio.completedYear ? ` · ${portfolio.completedYear}` : ''}
-          </span>
-          <button className="dash-portfolio-del" onClick={remove}>刪除</button>
+        <div className="dash-portfolio-body">
+          <div className="dash-portfolio-title">{portfolio.title}</div>
+          <div className="dash-portfolio-meta">{portfolio.meta}</div>
+          {portfolio.description && (
+            <div className="dash-portfolio-desc">{portfolio.description}</div>
+          )}
+          <div className="dash-portfolio-footer">
+            <span className="dash-portfolio-kw">
+              {portfolio.capacityKw > 0 ? `${portfolio.capacityKw} kWp` : '—'}
+              {portfolio.completedYear ? ` · ${portfolio.completedYear}` : ''}
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="dash-portfolio-del" onClick={() => setEditing(true)}>編輯</button>
+              <button className="dash-portfolio-del" onClick={remove}>刪除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {editing && (
+        <EditPortfolioModal
+          portfolio={portfolio}
+          authHeaders={authHeaders}
+          onSaved={() => { onChanged(); setEditing(false); }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function EditPortfolioModal({
+  portfolio, authHeaders, onSaved, onCancel,
+}: {
+  portfolio: VendorPortfolio;
+  authHeaders: Record<string, string>;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [title,   setTitle]   = useState(portfolio.title);
+  const [meta,    setMeta]    = useState(portfolio.meta);
+  const [capKw,   setCapKw]   = useState(portfolio.capacityKw > 0 ? String(portfolio.capacityKw) : '');
+  const [year,    setYear]    = useState(portfolio.completedYear ? String(portfolio.completedYear) : '');
+  const [desc,    setDesc]    = useState(portfolio.description ?? '');
+  const [photo,      setPhoto]      = useState<string | null>(portfolio.photoUrl);
+  const [photoFile,  setPhotoFile]  = useState<File | null>(null);
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const [saving,  setSaving]  = useState(false);
+  const [err,     setErr]     = useState('');
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { setErr('檔案超過 5 MB 上限'); e.target.value = ''; return; }
+    setErr('');
+    setPhotoFile(file);
+    setPhoto(URL.createObjectURL(file));
+    setRemovePhoto(false);
+  };
+
+  const save = async () => {
+    if (saving) return;
+    if (!title.trim() || !meta.trim()) { setErr('請填寫標題與說明'); return; }
+    setSaving(true); setErr('');
+    try {
+      let photoUrl: string | null | undefined = undefined;
+      if (photoFile) {
+        const form = new FormData();
+        form.append('file', photoFile);
+        const uploadRes = await fetch(`${API}/api/me/vendor/upload-image`, {
+          method: 'POST',
+          headers: { Authorization: authHeaders.Authorization },
+          body: form,
+        });
+        if (!uploadRes.ok) throw new Error('照片上傳失敗，請重試');
+        photoUrl = (await uploadRes.json()).url;
+      } else if (removePhoto) {
+        photoUrl = null;
+      }
+      const body: Record<string, unknown> = {
+        title: title.trim(), meta: meta.trim(),
+        capacityKw: capKw ? parseFloat(capKw) : null,
+        completedYear: year ? parseInt(year, 10) : null,
+        description: desc.trim() || null,
+      };
+      if (photoUrl !== undefined) body.photoUrl = photoUrl;
+      const res = await fetch(`${API}/api/me/vendor/portfolios/${portfolio.id}`, {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '儲存失敗');
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '儲存失敗');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" style={{ maxWidth: 720, width: '92vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">編輯作品</div>
+          <button className="modal-close" onClick={onCancel}>×</button>
+        </div>
+        <div className="dash-edit-form" style={{ padding: '0 24px 24px' }}>
+          <div className="form-field">
+            <label className="form-label">施工照片 <span className="form-label-opt">選填</span></label>
+            <div className="portfolio-photo-upload-row">
+              <label className="portfolio-photo-upload">
+                {photo ? (
+                  <img src={photo} className="portfolio-photo-preview" alt="施工照" />
+                ) : (
+                  <div className="vendor-apply-logo-placeholder">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                    <span>上傳施工照</span>
+                    <span className="vendor-apply-logo-hint">JPG / PNG</span>
+                  </div>
+                )}
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} style={{ display: 'none' }} />
+              </label>
+              {photo && (
+                <button type="button" className="btn-ghost" style={{ fontSize: 13 }} onClick={() => {
+                  if (photo.startsWith('blob:')) URL.revokeObjectURL(photo);
+                  setPhoto(null); setPhotoFile(null); setRemovePhoto(true);
+                }}>移除</button>
+              )}
+            </div>
+          </div>
+          <div className="form-field">
+            <label className="form-label">案場標題</label>
+            <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} />
+          </div>
+          <div className="form-field">
+            <label className="form-label">案場說明</label>
+            <input className="form-input" value={meta} onChange={e => setMeta(e.target.value)} />
+          </div>
+          <div className="form-field">
+            <label className="form-label">客戶描述 <span className="form-label-opt">選填</span></label>
+            <textarea className="form-input" rows={3} value={desc} onChange={e => setDesc(e.target.value)} />
+          </div>
+          <div className="dash-edit-form-row">
+            <div className="form-field">
+              <label className="form-label">裝置容量 (kWp) <span className="form-label-opt">選填</span></label>
+              <input className="form-input" type="number" min="0" step="0.1" value={capKw} onChange={e => setCapKw(e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label className="form-label">完工年份 <span className="form-label-opt">選填</span></label>
+              <input className="form-input" type="number" min="2000" max="2035" value={year} onChange={e => setYear(e.target.value)} />
+            </div>
+          </div>
+          {err && <div className="form-error">{err}</div>}
+          <div className="dash-edit-form-actions">
+            <button className="btn btn-secondary btn-sm" onClick={onCancel} disabled={saving}>取消</button>
+            <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>
+              {saving ? '儲存中⋯' : '儲存變更'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -580,6 +833,7 @@ function AddPortfolioForm({
   };
 
   const add = async () => {
+    if (adding) return;
     if (!title.trim() || !meta.trim()) { setErr('請填寫標題與說明'); return; }
     setAdding(true); setErr('');
     try {
@@ -673,7 +927,7 @@ function AddPortfolioForm({
             </div>
             <div className="form-field">
               <label className="form-label">完工年份<span className="form-label-opt">選填</span></label>
-              <input className="form-input" type="number" min="2000" max="2099" value={year} onChange={e => setYear(e.target.value)} />
+              <input className="form-input" type="number" min="2000" max="2035" value={year} onChange={e => setYear(e.target.value)} />
             </div>
           </div>
           {err && <div className="form-error">{err}</div>}
@@ -954,18 +1208,49 @@ function ChatWindow({
 // ── Leads Tab ────────────────────────────────────────────────────────────────
 
 function LeadsTab({
-  leads, subscriptionStatus,
+  leads, subscriptionStatus, upgradeRequestStatus, upgradeRejectionReason, authHeaders,
 }: {
   leads: PotentialLead[];
   subscriptionStatus: string;
+  upgradeRequestStatus: string | null;
+  upgradeRejectionReason: string | null;
+  authHeaders: Record<string, string>;
 }) {
   const isAdvanced = subscriptionStatus !== 'free' && subscriptionStatus !== 'mock' && !!subscriptionStatus;
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeSubmitting, setUpgradeSubmitting] = useState(false);
+  const [upgradeSubmitted, setUpgradeSubmitted] = useState(upgradeRequestStatus === 'pending');
+  const [upgradeError, setUpgradeError] = useState('');
+
+  const badgeStyle = (bg: string, color: string, border: string): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
+    padding: '2px 8px', borderRadius: 99,
+    background: bg, color, border: `1px solid ${border}`,
+  });
+
+  const PlanBadge = isAdvanced ? (
+    <span style={badgeStyle('var(--green-100)', 'var(--green-800)', 'var(--green-300)')}>★ 進階方案</span>
+  ) : (upgradeRequestStatus === 'pending' || upgradeSubmitted) ? (
+    <span style={badgeStyle('var(--warning-bg, #fef9c3)', '#92400e', '#fde68a')}>審核中</span>
+  ) : upgradeRequestStatus === 'rejected' ? (
+    <span style={badgeStyle('#fee2e2', '#991b1b', '#fecaca')}>已拒絕</span>
+  ) : null;
 
   return (
     <div>
       <div className="dash-content-header">
-        <div className="dash-content-title">潛在客戶名單</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="dash-content-title">潛在客戶名單</div>
+          {PlanBadge}
+        </div>
+        {upgradeRequestStatus === 'rejected' && !upgradeSubmitted && (
+          <div style={{ marginTop: 4, fontSize: 12, color: '#991b1b' }}>
+            {upgradeRejectionReason
+              ? `上次拒絕原因：${upgradeRejectionReason}`
+              : '上次升級申請已被拒絕，你可以重新提交申請'}
+          </div>
+        )}
         <div className="dash-content-sub">服務縣市內已完成評估、但尚未聯繫貴公司的用戶</div>
       </div>
 
@@ -973,9 +1258,15 @@ function LeadsTab({
         <div className="leads-plan-banner">
           <div>
             <div className="leads-plan-banner-title">進階方案功能</div>
-            <div className="leads-plan-banner-sub">升級可查看所有潛在客戶聯絡資訊，主動開發業務</div>
+            <div className="leads-plan-banner-sub">免費方案僅顯示 3 筆，升級可解鎖全部潛在客戶名單</div>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowUpgrade(true)}>升級進階方案</button>
+          {upgradeSubmitted ? (
+            <button className="btn btn-secondary btn-sm" disabled style={{ opacity: 0.65, cursor: 'default' }}>
+              已提交申請
+            </button>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={() => setShowUpgrade(true)}>升級進階方案</button>
+          )}
         </div>
       )}
 
@@ -1047,8 +1338,11 @@ function LeadsTab({
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 background: 'rgba(255,255,255,0.55)', gap: 6,
               }}>
-                <span style={{ fontSize: 22 }}>🔒</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>升級查看更多客戶</span>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--ink-500)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>升級查看全部名單</span>
               </div>
             </div>
           )}
@@ -1056,33 +1350,67 @@ function LeadsTab({
       )}
 
       {showUpgrade && (
-        <div className="modal-backdrop" onClick={() => setShowUpgrade(false)}>
+        <div className="modal-backdrop" onClick={() => { setShowUpgrade(false); setUpgradeError(''); }}>
           <div className="modal" style={{ maxWidth: 420, padding: 32 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header" style={{ marginBottom: 20 }}>
               <div className="modal-title">升級進階方案</div>
-              <button className="modal-close" onClick={() => setShowUpgrade(false)}>×</button>
+              <button className="modal-close" onClick={() => { setShowUpgrade(false); setUpgradeError(''); }}>×</button>
             </div>
-            <p style={{ fontSize: 14, color: 'var(--ink-600)', lineHeight: 1.7, marginBottom: 20 }}>
-              進階方案開通後可查看所有潛在客戶的完整聯絡資訊（Email、詳細地址），
-              主動開發服務縣市內有安裝意願的用戶。
-            </p>
-            <div style={{ background: 'var(--green-50)', borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 14 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>進階方案包含</div>
-              <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--ink-600)', lineHeight: 2 }}>
-                <li>無限筆潛在客戶聯絡資訊</li>
-                <li>完整地址與 Email</li>
-                <li>優先出現在廠商推薦列表</li>
-              </ul>
-            </div>
-            <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 20 }}>
-              如需升級，請聯繫我們：
-              <a href="mailto:tca940120@gmail.com" style={{ color: 'var(--green-700)', marginLeft: 4 }}>
-                tca940120@gmail.com
-              </a>
-            </p>
-            <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setShowUpgrade(false)}>
-              我知道了
-            </button>
+
+            {upgradeSubmitted ? (
+              <div style={{ textAlign: 'center', padding: '12px 0 8px' }}>
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+                  <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="9 12 11 14 15 10" />
+                  </svg>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>申請已送出！</div>
+                <p style={{ fontSize: 14, color: 'var(--ink-600)', lineHeight: 1.7, marginBottom: 24 }}>
+                  管理員將在 1–3 個工作天內與您確認，開通後即可查看所有潛在客戶資訊。
+                </p>
+                <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setShowUpgrade(false)}>
+                  關閉
+                </button>
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize: 14, color: 'var(--ink-600)', lineHeight: 1.7, marginBottom: 20 }}>
+                  免費方案每次最多顯示 3 筆潛在客戶，進階方案升級後可查看服務縣市內的完整名單（無筆數上限），主動開發更多業務機會。
+                </p>
+                <div style={{ background: 'var(--green-50)', borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 14 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>進階方案包含</div>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--ink-600)', lineHeight: 2 }}>
+                    <li>無筆數上限的潛在客戶名單</li>
+                    <li>優先出現在廠商推薦列表</li>
+                  </ul>
+                </div>
+                {upgradeError && (
+                  <div className="form-error" style={{ marginBottom: 12 }}>{upgradeError}</div>
+                )}
+                <button
+                  className="btn btn-primary"
+                  style={{ width: '100%' }}
+                  disabled={upgradeSubmitting}
+                  onClick={async () => {
+                    setUpgradeSubmitting(true); setUpgradeError('');
+                    try {
+                      const res = await fetch(`${API}/api/me/vendor/upgrade-request`, {
+                        method: 'POST', headers: authHeaders,
+                      });
+                      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '申請失敗，請稍後再試');
+                      setUpgradeSubmitted(true);
+                    } catch (e) {
+                      setUpgradeError(e instanceof Error ? e.message : '申請失敗，請稍後再試');
+                    } finally {
+                      setUpgradeSubmitting(false);
+                    }
+                  }}
+                >
+                  {upgradeSubmitting ? '送出中⋯' : '送出升級申請'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
