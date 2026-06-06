@@ -1900,7 +1900,6 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-sm);
   background: var(--white);
   overflow: hidden;
-  max-width: 680px;
 }
 .dash-profile-header {
   display: flex;
