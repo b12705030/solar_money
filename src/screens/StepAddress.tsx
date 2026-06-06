@@ -31,12 +31,16 @@ async function reverseGeocode(lat: number, lng: number): Promise<string | null> 
 async function fetchTownshipCode(
   lat: number,
   lng: number,
-): Promise<{ townshipCode: string; townshipName: string } | null> {
+): Promise<{ townshipCode: string; townshipName: string; countyName: string } | null> {
   try {
     const res = await fetch(`${API_URL}/api/address-township?lat=${lat}&lng=${lng}`);
     if (!res.ok) return null;
     const data = await res.json();
-    return { townshipCode: data.townshipCode, townshipName: data.townshipName };
+    return {
+      townshipCode: data.townshipCode,
+      townshipName: data.townshipName,
+      countyName:   data.countyName ?? '',
+    };
   } catch {
     return null;
   }
@@ -57,8 +61,9 @@ async function fetchTaiwanSunTimes(): Promise<SunTimes | null> {
 
 function detectRegion(address: string): Region {
   if (/台中|臺中|彰化|南投|苗栗|雲林/.test(address)) return '中部';
-  if (/台南|臺南|高雄|屏東|嘉義|花蓮|台東|臺東|澎湖|金門/.test(address)) return '南部';
-  return '北部'; // 台北、新北、基隆、桃園、新竹、宜蘭、連江
+  if (/花蓮|台東|臺東/.test(address)) return '東部';  // 含蘭嶼鄉、綠島鄉（臺東縣）
+  if (/台南|臺南|高雄|屏東|嘉義|澎湖|金門/.test(address)) return '南部';
+  return '北部'; // 台北、新北、基隆、桃園、新竹、宜蘭、連江、馬祖
 }
 
 export default function StepAddress({
@@ -157,15 +162,19 @@ export default function StepAddress({
       };
       setSelected(addressOption);
 
-      // 查詢鄉鎮市代碼（非阻塞，失敗不影響主流程）
+      // 查詢鄉鎮市代碼，並用 countyName 修正 region（formattedAddress 可能為英文格式）
       const township = await fetchTownshipCode(details.lat, details.lon);
+      const region = township?.countyName
+        ? detectRegion(township.countyName + (township.townshipName ?? ''))
+        : addressOption.region;
       update({
-        address: addressOption,
+        address: { ...addressOption, region },
         addressQuery: prediction.description,
         roofArea: 50,
         roofAreaError: false,
         townshipCode: township?.townshipCode,
         townshipName: township?.townshipName,
+        county: township?.countyName,
       });
     } catch (err) {
       console.error('Failed to get place details:', err);
@@ -177,9 +186,9 @@ export default function StepAddress({
     setBuildingInfo(null);
     geocodingStartedRef.current = false;
 
-    if (early && (!selected || selected.meta === '')) {
+    if (early && !selected) {
       geocodingStartedRef.current = true;
-      // 地圖點選且無手打地址 → 立刻顯示佔位地址，並行跑 reverse geocoding
+      // 完全無地址時才顯示佔位符並行 geocoding；有搜尋地址（含 meta='' 的情況）由 handleBuildingFound else 分支處理
       const placeholder: AddressOption = {
         label: '取得地址中…', meta: '', area: early.areaPing,
         type: '一般住宅', floors: 0, region: '北部',
@@ -198,12 +207,12 @@ export default function StepAddress({
           : `${early.lat.toFixed(5)}, ${early.lng.toFixed(5)}（地圖點選）`);
         const synthetic: AddressOption = {
           label, meta: '', area: early.areaPing, type: '一般住宅', floors: 0,
-          region: detectRegion(township?.townshipName ?? label),
+          region: detectRegion((township?.countyName ?? '') + (township?.townshipName ?? '') || label),
           lat: early.lat, lng: early.lng,
         };
         setSelected(synthetic);
         setQuery(label);
-        update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
+        update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName, county: township?.countyName });
       });
     }
   };
@@ -226,15 +235,32 @@ export default function StepAddress({
         : `${info.lat.toFixed(5)}, ${info.lng.toFixed(5)}（地圖點選）`);
       const synthetic: AddressOption = {
         label, meta: '', area: info.areaPing, type: '一般住宅', floors: 0,
-        region: detectRegion(township?.townshipName ?? label), lat: info.lat, lng: info.lng,
+        region: detectRegion((township?.countyName ?? '') + (township?.townshipName ?? '') || label), lat: info.lat, lng: info.lng,
       };
       setSelected(synthetic);
       setQuery(label);
-      update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName });
+      update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName, county: township?.countyName });
     } else {
-      // 手打地址 → 只更新行政區代碼，不動地址文字
-      const township = await fetchTownshipCode(info.lat, info.lng);
-      if (township) update({ townshipCode: township.townshipCode, townshipName: township.townshipName });
+      // 手打地址後點選地圖建物 → reverse geocode 更新地址標籤 + 行政區代碼
+      const [township, geocoded] = await Promise.all([
+        fetchTownshipCode(info.lat, info.lng),
+        reverseGeocode(info.lat, info.lng),
+      ]);
+      const label = geocoded ?? (township
+        ? `${township.townshipName}（地圖點選）`
+        : `${info.lat.toFixed(5)}, ${info.lng.toFixed(5)}（地圖點選）`);
+      const synthetic: AddressOption = {
+        label, meta: '', area: info.areaPing, type: '一般住宅', floors: 0,
+        region: detectRegion((township?.countyName ?? '') + (township?.townshipName ?? '') || label),
+        lat: info.lat, lng: info.lng,
+      };
+      setSelected(synthetic);
+      setQuery(label);
+      update({
+        address: synthetic,
+        addressQuery: label,
+        ...(township && { townshipCode: township.townshipCode, townshipName: township.townshipName }),
+      });
     }
     setBuildingLoading(false);
   };

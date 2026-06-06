@@ -35,13 +35,14 @@ export default function StepGoal({
 
   const recommended = useMemo(() => {
     if (region === '北部') return 'summer';
+    if (region === '東部') return 'annual';
     if (region === '南部') return 'annual';
     return 'match';
   }, [region]);
 
   useEffect(() => {
-    if (!state.goal) update({ goal: recommended });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    update({ goal: recommended });
+  }, [recommended]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goal = state.goal ?? recommended;
 

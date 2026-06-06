@@ -16,7 +16,7 @@ export default function StepParams({
   const grade = state.panelGrade ?? 'standard';
   const gradeInfo = PANEL_GRADES.find(g => g.id === grade) ?? PANEL_GRADES[1];
   const maxCapacity = parseFloat((area * 3.3 * gradeInfo.kWpPerM2).toFixed(1));
-  const county = guessCounty(state.address?.label);
+  const county = state.county ?? guessCounty(state.address?.label);
   const subsidy = SUBSIDIES[county] ?? SUBSIDIES['台北市'];
 
   const defaultBudget = Math.min(
