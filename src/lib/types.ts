@@ -123,6 +123,8 @@ export interface MyVendor {
   tags: string[];
   applicationStatus: string;
   subscriptionStatus: string;
+  upgradeRequestStatus: string | null;
+  upgradeRejectionReason: string | null;
   approved: boolean;
   logoUrl: string | null;
   portfolios: VendorPortfolio[];

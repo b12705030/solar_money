@@ -2,12 +2,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import DashLayout, { IconClipboard, IconUsers } from '@/components/DashLayout';
+import DashLayout, { IconClipboard, IconUsers, IconInbox } from '@/components/DashLayout';
 import type { NavItem } from '@/components/DashLayout';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-type Tab = 'vendors' | 'accounts';
+type Tab = 'vendors' | 'accounts' | 'upgrades';
 
 interface PendingVendor {
   id: string;
@@ -37,7 +37,8 @@ export default function AdminPage() {
   const router   = useRouter();
   const [mounted, setMounted] = useState(false);
   const [tab, setTab]         = useState<Tab>('vendors');
-  const [pendingCount, setPendingCount] = useState(0);
+  const [pendingCount, setPendingCount]   = useState(0);
+  const [upgradeCount, setUpgradeCount]   = useState(0);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -52,10 +53,22 @@ export default function AdminPage() {
     Authorization: `Bearer ${user?.token ?? ''}`,
   }), [user?.token]);
 
+  // 進入後台時預先取得 pending 升級申請數，讓 badge 不需等到點進 Tab 才顯示
+  useEffect(() => {
+    if (!mounted || !user || user.role !== 'admin') return;
+    fetch(`${API}/api/admin/upgrade-requests?status=pending`, {
+      headers: { Authorization: `Bearer ${user.token ?? ''}` },
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: unknown[]) => setUpgradeCount(data.length))
+      .catch(() => {});
+  }, [mounted, user]);
+
   if (!mounted || !user) return null;
 
   const navItems: NavItem[] = [
-    { key: 'vendors',  label: '廠商審核', icon: <IconClipboard />, badge: pendingCount || undefined },
+    { key: 'vendors',  label: '廠商審核', icon: <IconClipboard />, badge: pendingCount  || undefined },
+    { key: 'upgrades', label: '升級申請', icon: <IconInbox />,     badge: upgradeCount  || undefined },
     { key: 'accounts', label: '帳號管理', icon: <IconUsers /> },
   ];
 
@@ -69,6 +82,9 @@ export default function AdminPage() {
     >
       {tab === 'vendors'  && (
         <VendorsTab authHeaders={authHeaders()} onCountChange={setPendingCount} />
+      )}
+      {tab === 'upgrades' && (
+        <UpgradesTab authHeaders={authHeaders()} onCountChange={setUpgradeCount} />
       )}
       {tab === 'accounts' && (
         <AccountsTab authHeaders={authHeaders()} />
@@ -360,6 +376,198 @@ function AccountsTab({ authHeaders }: { authHeaders: Record<string, string> }) {
         <strong>提示：</strong>更新角色後，該帳號需要<strong>重新登入</strong>才能看到新角色對應的介面。
         廠商帳號需先在首頁提交入駐申請並由此頁核准，或直接在此將角色設為「廠商」進行測試。
       </div>
+    </div>
+  );
+}
+
+
+// ── Upgrades Tab ─────────────────────────────────────────────────────────────
+
+interface UpgradeRequest {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  vendorEmail: string;
+  vendorCounties: string[];
+  vendorApplicationStatus: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason: string | null;
+  createdAt: string;
+}
+
+function UpgradesTab({
+  authHeaders,
+  onCountChange,
+}: {
+  authHeaders: Record<string, string>;
+  onCountChange: (n: number) => void;
+}) {
+  const [requests, setRequests] = useState<UpgradeRequest[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API}/api/admin/upgrade-requests`, { headers: authHeaders });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '載入失敗');
+      const data: UpgradeRequest[] = await res.json();
+      setRequests(data);
+      onCountChange(data.filter(r => r.status === 'pending').length);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '載入失敗');
+    } finally {
+      setLoading(false);
+    }
+  }, [authHeaders, onCountChange]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div>
+      <div className="dash-content-header">
+        <div className="dash-content-title">升級申請</div>
+        <div className="dash-content-sub">廠商送出的進階方案升級申請，核准後廠商即可查看完整潛在客戶資訊</div>
+      </div>
+
+      {!loading && !error && (
+        <div className="dash-stats">
+          <div className="dash-stat">
+            <div className="dash-stat-value">{requests.filter(r => r.status === 'pending').length}</div>
+            <div className="dash-stat-label">待審核</div>
+          </div>
+          <div className="dash-stat">
+            <div className="dash-stat-value">{requests.filter(r => r.status === 'approved').length}</div>
+            <div className="dash-stat-label">已核准</div>
+          </div>
+        </div>
+      )}
+
+      {loading && <div className="dash-loading">載入中⋯</div>}
+      {error   && <div className="vd-error">{error}</div>}
+      {!loading && !error && requests.length === 0 && (
+        <div className="dash-empty">目前沒有升級申請</div>
+      )}
+      {!loading && !error && requests.map(r => (
+        <UpgradeRequestCard key={r.id} request={r} authHeaders={authHeaders} onDone={load} />
+      ))}
+    </div>
+  );
+}
+
+function UpgradeRequestCard({
+  request, authHeaders, onDone,
+}: {
+  request: UpgradeRequest;
+  authHeaders: Record<string, string>;
+  onDone: () => void;
+}) {
+  const [busy,       setBusy]       = useState(false);
+  const [msg,        setMsg]        = useState('');
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [reason,     setReason]     = useState('');
+
+  const approve = async () => {
+    if (busy) return;
+    setBusy(true); setMsg('');
+    try {
+      const res = await fetch(`${API}/api/admin/upgrade-requests/${request.id}/approve`, {
+        method: 'POST', headers: authHeaders,
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '操作失敗');
+      setMsg('✓ 已核准');
+      setTimeout(onDone, 1000);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '操作失敗');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reject = async (reason?: string) => {
+    if (busy) return;
+    setBusy(true); setMsg('');
+    try {
+      const res = await fetch(`${API}/api/admin/upgrade-requests/${request.id}/reject`, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ reason: reason?.trim() || null }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? '操作失敗');
+      setMsg('✕ 已拒絕');
+      setTimeout(onDone, 1000);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '操作失敗');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const statusLabel: Record<string, string> = { pending: '待審核', approved: '已核准', rejected: '已拒絕' };
+  const statusClass: Record<string, string> = { pending: 'pending', approved: 'approved', rejected: 'rejected' };
+  const appStatusLabelMap: Record<string, string> = { approved: '已核准', pending: '審核中', rejected: '未通過' };
+  const appStatusLabel = appStatusLabelMap[request.vendorApplicationStatus] ?? '未通過';
+
+  return (
+    <div className="dash-application-card">
+      <div className="dash-application-header">
+        <div className="dash-application-name">{request.vendorName}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className={`vd-status-badge vd-status-badge--${statusClass[request.status] ?? 'pending'}`}>
+            {statusLabel[request.status] ?? request.status}
+          </span>
+          <div className="dash-application-date">
+            {new Date(request.createdAt).toLocaleDateString('zh-TW')}
+          </div>
+        </div>
+      </div>
+
+      <div className="dash-application-row">
+        <span><strong>Email</strong> {request.vendorEmail}</span>
+        <span><strong>廠商審核</strong> {appStatusLabel}</span>
+      </div>
+
+      {request.vendorCounties.length > 0 && (
+        <div className="dash-application-counties">
+          {request.vendorCounties.map(c => (
+            <span key={c} className="admin-county-chip">{c}</span>
+          ))}
+        </div>
+      )}
+
+      {request.rejectionReason && request.status === 'rejected' && (
+        <div className="dash-application-note">拒絕原因：{request.rejectionReason}</div>
+      )}
+
+      {msg ? (
+        <div className={`dash-save-msg dash-save-msg--${msg.startsWith('✓') ? 'ok' : 'err'}`}
+          style={{ fontSize: 14, fontWeight: 600 }}>
+          {msg}
+        </div>
+      ) : request.status === 'pending' && (
+        <div className="dash-application-actions">
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={approve}>
+            核准升級
+          </button>
+          {rejectOpen ? (
+            <div className="dash-reject-inline">
+              <input
+                className="form-input"
+                placeholder="拒絕原因（選填）"
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+              />
+              <button className="btn admin-btn-reject-confirm btn-sm" disabled={busy} onClick={() => reject(reason)}>
+                確認拒絕
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setRejectOpen(false)}>取消</button>
+            </div>
+          ) : (
+            <button className="btn admin-btn-reject btn-sm" disabled={busy} onClick={() => setRejectOpen(true)}>
+              拒絕
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

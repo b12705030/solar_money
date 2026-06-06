@@ -18,6 +18,8 @@ CockroachDB 相容 PostgreSQL wire protocol，但**不是 100% 的 PostgreSQL �
 | 問題 | 說明 | 解法 |
 |------|------|------|
 | **多語句單次 `execute()` 較慢** | 一次傳入多個 `;` 分隔 SQL 的批次處理比 PostgreSQL 慢 | 拆分為個別 `execute()` 呼叫；功能相同，只稍增程式碼行數 |
+| **同一連線不能有多個 active portal**（asyncpg + CockroachDB） | 在同一個 `conn` 上依序執行多個 `fetchrow` / `execute` 會報錯：`unimplemented: multiple active portals`。在 transaction 內尤其明顯。[CockroachDB issue #40195](https://go.crdb.dev/issue-v/40195/v25.4) | **不要在同一個 `conn` 上串接多個查詢**；需要多步驟原子操作時，改用單一 CTE 語句（`WITH ... AS (...) UPDATE ... RETURNING ...`），把多個 UPDATE 合進一條 SQL |
+| **CTE 內 DML 語句必須有 `RETURNING`** | PostgreSQL 允許 CTE UPDATE 不加 `RETURNING`；CockroachDB 不允許，會報 `WITH clause "xxx" does not return any columns` | CTE 裡每一個 `UPDATE` / `INSERT` / `DELETE` 都要加 `RETURNING <欄位>`，即使外層不 SELECT 它 |
 
 > 目前 `init_db()` 仍使用單一多語句 `execute()`，在 CockroachDB 上**功能正常**，只是一次性啟動略慢。若啟動時間成為瓶頸，再考慮拆分。
 
