@@ -54,7 +54,7 @@ function MonthlyChart({ data, highlight }: { data: number[]; highlight?: string 
                   )}
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--ink-500)', fontFamily: 'var(--font-num)' }}>{MONTHS[i]}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', fontFamily: 'var(--font-num)' }}>{i + 1}<span className="monthly-month-suffix">月</span></div>
             </div>
           );
         })}
@@ -637,7 +637,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             ) : (
               <>
                 <div>
-                  <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
+                  <span className="num kpi-main-num" style={{ fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
                     {r.annualKwh.toLocaleString()}
                   </span>
                   <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>kWh</span>
@@ -659,7 +659,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             ) : (
               <>
                 <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '4px 8px' }}>
-                  <span className="num" style={{ fontSize: 48, fontWeight: 700, lineHeight: 1, color: r.selfSufficiency > 100 ? 'var(--green-500)' : 'var(--green-900)' }}>
+                  <span className="num kpi-main-num" style={{ fontWeight: 700, lineHeight: 1, color: r.selfSufficiency > 100 ? 'var(--green-500)' : 'var(--green-900)' }}>
                     {r.selfSufficiency}
                   </span>
                   <span style={{ fontSize: 16, color: 'var(--ink-500)' }}>%</span>
@@ -691,7 +691,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             ) : (
               <>
                 <div>
-                  <span className="num" style={{ fontSize: 48, fontWeight: 700, color: '#C8861E', lineHeight: 1 }}>{r.paybackYears}</span>
+                  <span className="num kpi-main-num" style={{ fontWeight: 700, color: '#C8861E', lineHeight: 1 }}>{r.paybackYears}</span>
                   <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>年</span>
                 </div>
                 <div className="body-sm" style={{ marginTop: 8 }}>保固 25 年 · 剩餘純收益 {(25 - r.paybackYears).toFixed(1)} 年</div>
