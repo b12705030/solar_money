@@ -958,7 +958,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               ) : (
                 <>
                   <div style={{ flex: '0 0 auto' }}>
-                    <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性<Info tip="依 Han et al. (2026) Fig.11 ±σ 門檻分類；年效率 = 年發電量(kWh) ÷ 裝置容量(kWp)：≥ 1418 kWh/kWp → 優良；≥ 1148 → 尚可；< 1148 → 偏低（台灣均值 1283 kWh/kWp）" /></div>
+                    <div className="caption" style={{ marginBottom: 4 }}>氣候適宜性<Info tip="依台電114年各縣市太陽光電容量因數實測校正；年效率 = 年發電量(kWh) ÷ 裝置容量(kWp)：≥ 1250 kWh/kWp → 優良；≥ 1050 → 尚可；< 1050 → 偏低（台灣實測均值 1158 kWh/kWp）" /></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{
                         padding: '3px 10px', borderRadius: 6, fontSize: 13, fontWeight: 700,
@@ -971,29 +971,29 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                   </div>
 
                   <div style={{ flex: '0 0 auto' }}>
-                    <div className="caption" style={{ marginBottom: 2 }}>年發電效率<Info tip="年發電量(kWh) ÷ 裝置容量(kWp)；數值越高表示當地氣候對發電越有利" /></div>
+                    <div className="caption" style={{ marginBottom: 2 }}>年發電效率<Info tip="年發電量(kWh) ÷ 裝置容量(kWp)；" /></div>
                     <div>
                       <span className="num" style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{r.pvYieldPerKwp}</span>
                       <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 4 }}>kWh/kWp</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                      台灣均值 {twAvg} · <span style={{ color: s.color }}>{yieldSign}{yieldDiff.toFixed(0)} kWh/kWp</span>
+                      <span style={{ color: s.color }}>數值越高表示當地氣候對發電越有利</span>
                     </div>
                   </div>
 
                   <div style={{ flex: '0 0 auto' }}>
                     <div className="caption" style={{ marginBottom: 2 }}>
-                      溫度效率修正<Info tip="月均動態 PR 與固定基準 PR=0.78 的百分差；高溫導致效率熱衰減（負值），低溫+強風可提升效率（正值）" />
+                      溫度效率修正<Info tip="月均動態 PR 與固定基準 PR=0.78 的百分差；" />
                     </div>
                     <div>
                       <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-700)' }}>{prSign}{prDeltaPct}%</span>
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>相對固定 PR=0.78 的月均修正</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)' }}><span style={{ color: s.color }}>相對固定 PR=0.78 的月均修正<br />高溫會熱衰減（負值），低溫+強風可提升效率（正值）</span></div>
                   </div>
 
                   <div style={{ flex: '1 1 200px', borderTop: 'none', alignSelf: 'center' }}>
                     <div style={{ fontSize: 11, color: 'var(--ink-400)', lineHeight: 1.5 }}>
-                      依 Han et al. (2026) Faiman T<sub>cell</sub> 模型計算，考量月均溫度與風速對電池片效率之影響
+                      依 <a href="https://www.sciencedirect.com/science/article/pii/S0960148125021767" target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>Han et al. (2026)</a> Faiman T<sub>cell</sub> 模型計算，考量月均溫度與風速對電池片效率之影響
                     </div>
                   </div>
                 </>
@@ -1130,7 +1130,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
             <div style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-400)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Info tip="PR = 0.78 × [1 + γ(T_cell − 25°C)]；T_cell = 氣溫 + 日射量 ÷ (25 + 6.84 × 風速)；γ = −0.0045/°C（c-Si，IEC 61215）" />
+                <Info tip="Faiman (2008) T_cell 模型，詳見下方「如何解讀這張表？」" />
                 動態 PR 公式
               </span>
               <span>
@@ -1169,8 +1169,14 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                 <li><strong>風速</strong>（藍色越深）→ 有助電板降溫，可彌補部分熱衰減損失</li>
                 <li><strong>動態 PR</strong> = 綜合上述因素的每月實際效率比，<strong>越高越好</strong>，基準為 0.78</li>
               </ul>
+              <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--ink-100)', borderRadius: 6, fontSize: 11, color: 'var(--ink-600)', lineHeight: 2, fontFamily: 'var(--font-num)' }}>
+                <div><strong style={{ color: 'var(--ink-800)' }}>動態 PR 公式</strong>（<a href="https://pvpmc.sandia.gov/modeling-guide/2-dc-module-iv/module-temperature/faiman-module-temperature-model/" target="_blank" rel="noreferrer" style={{ color: 'var(--green-700)' }}>Faiman 2008 T<sub>cell</sub> 模型</a>）</div>
+                <div>PR = 0.78 × [1 + γ × (T<sub>cell</sub> − 25°C)]</div>
+                <div>T<sub>cell</sub> = 氣溫 + 校正後日射量 ÷ (25 + 6.84 × 風速)；γ = −0.0045 /°C（此 γ 值依市面最常見的矽晶太陽能板材質——結晶矽 c-Si，依 IEC 61215 國際電工委員會太陽能模組設計認證標準量測）</div>
+                <div style={{ marginTop: 4, color: 'var(--ink-500)' }}>校正後日射量 = 上表 GHI × 區域校正係數（南部 0.89、東部 0.95、其餘 1.00，依台電114年各縣市太陽光電容量因數實測校正）</div>
+              </div>
               <div style={{ marginTop: 8, color: 'var(--ink-500)' }}>
-                以台北為例：夏季（6–9 月）日射量高但氣溫更高，動態 PR 通常<span style={{ color: '#B02424', fontWeight: 600 }}>低於 0.78（紅色）</span>，代表高溫熱衰減抵消了部分日照優勢。冬季氣溫低、風速強，動態 PR 反而<span style={{ color: 'var(--green-700)', fontWeight: 600 }}>高於 0.78（綠色）</span>，效率優於基準。
+                以台北為例：夏季日射量高但氣溫更高，動態 PR 通常<span style={{ color: '#B02424', fontWeight: 600 }}>低於 0.78（紅色）</span>；冬季氣溫低、風速強，PR 反而<span style={{ color: 'var(--green-700)', fontWeight: 600 }}>高於 0.78（綠色）</span>。
               </div>
               <div style={{ marginTop: 6, color: 'var(--ink-400)' }}>
                 上方的「氣候適宜性」與「年發電效率」正是將這 12 個月的動態 PR 加權平均後得出的綜合結論。

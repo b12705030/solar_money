@@ -1,0 +1,99 @@
+﻿發電站編號/Number of The Power Station,能源別/Type of Energy,發電站名稱/Name of The Power Station,場址編號/Number of the Site,場址說明/Description fo The Site,型號/Model,裝置容量(瓩)/Installed Capacity(kW),風機數量/Number of The Windturbine,地址/Address,申設狀態/Application Status,備註/Remarks
+1,陸域風力/Onshore Wind,石門風力發電站/Shimen Wind Power Station,1,石門(#1~#6),Vestas V47,2640,4,新北市石門區尖鹿里,取得執照,輪轂高度:45公尺
+2,陸域風力/Onshore Wind,林口風力發電站/Linkou Wind Power Station,2,林口(#4~#6),Vestas V80,6000,3,新北市林口區下福里139-1號,取得執照,輪轂高度:67公尺
+3,陸域風力/Onshore Wind,蘆竹風力發電站/Luzhu Wind Power Station,3,蘆竹(#1~#8),Enercon E44,7200,8,桃園市蘆竹區坑口里、濱海里,取得執照,輪轂高度:45公尺
+4,陸域風力/Onshore Wind,觀園風力發電站/Guanyuan Wind Power Station,4,觀園(#1~#20),GE 1.5se,30000,20,桃園市大園區北港里(#1~#5)、觀音區草漯里(#6~#11)、觀音區樹林里(#12~#20),取得執照,輪轂高度:64.7公尺
+5,陸域風力/Onshore Wind,大潭風力發電站/Datan Wind Power Station,5,大潭1(#1~#2),GE 1.5se,4500,2,桃園市觀音區大潭里、保生里,取得執照,輪轂高度:64.7公尺
+-,陸域風力/Onshore Wind,大潭風力發電站/Datan Wind Power Station,6,大潭2(#6、#7),Enercon E70,4600,2,桃園市觀音區大潭里、保生里,取得執照,輪轂高度:64公尺
+-,陸域風力/Onshore Wind,大潭風力發電站/Datan Wind Power Station,7,大潭3(#4、#5、#8),Vestas V80,6000,3,桃園市觀音區大潭里、保生里,取得執照,輪轂高度:78公尺
+6,陸域風力/Onshore Wind,新竹香山風力發電站/Hsinchu Xiangshan Wind Power Station,8,新竹香山(#1~#6),Gamesa G80,12000,6,新竹市香山區海山里(#1.#2)、南港里(#3~#6),取得執照,輪轂高度:67公尺
+7,陸域風力/Onshore Wind,台中港區風力發電站/Taichung Harbor Wind Power Station,9,台中港1(#5~#10、#12~#18),Zephyros Z72,26000,13,台中市清水區南高里,取得執照,輪轂高度:65公尺
+-,陸域風力/Onshore Wind,台中港區風力發電站/Taichung Harbor Wind Power Station,10,台中港2(#1~#3),Enercon E82E4,9000,3,台中市清水區南高里,取得執照,輪轂高度:78公尺
+8,陸域風力/Onshore Wind,台中電廠風力發電站/Taichung Power Plant Wind Power Station,11,台中電廠(#2~#4),Zephyros Z72,2000,1,台中市龍井區麗水里龍昌路1號,取得執照,輪轂高度:65公尺
+9,陸域風力/Onshore Wind,彰工風力發電站/Changgong Wind Power Station,12,彰工1(#1~#23),Vestas V80,46000,23,彰化縣伸港鄉(#1~#8)、線西鄉(#9~#15)、鹿港鎮(#16~#23),取得執照,輪轂高度:67公尺
+-,陸域風力/Onshore Wind,彰工風力發電站/Changgong Wind Power Station,13,彰工2(#24~#31),Vestas V80,16000,8,彰化縣伸港鄉(#24~#28)、線西鄉(#29~#31),取得執照,輪轂高度:67公尺
+-,陸域風力/Onshore Wind,彰工風力發電站/Changgong Wind Power Station,14,彰工3(#32~#35),Enercon E70,9200,4,彰化縣伸港鄉(#32)、線西鄉(#33~#35),取得執照,輪轂高度:76公尺
+-,陸域風力/Onshore Wind,彰工風力發電站/Changgong Wind Power Station,15,彰工4(#36~#40),Enercon E82E4,15000,5,彰化縣鹿港鎮(#36~#40),取得執照,輪轂高度:78公尺
+10,陸域風力/Onshore Wind,彰化王功風力發電站/Changhua Wanggong Wind Power Station,16,彰化王功(#1~#10),Enercon E70,23000,10,彰化縣芳苑鄉新寶村,取得執照,輪轂高度:76公尺
+11,陸域風力/Onshore Wind,彰化永興風力發電站/Changhua Yongxing Wind Power Station,17,彰化永興(#1~#4),Enercon E70,9200,4,彰化縣芳苑鄉芳苑村,取得執照,輪轂高度:76公尺
+12,陸域風力/Onshore Wind,雲林麥寮風力發電站/Yunlin Mailiao Wind Power Station,18,雲林麥寮1(#1~#15),Vestas V80,30000,15,雲林縣麥寮鄉新吉村(#1~#2)、三盛村(#3~#23),取得執照,輪轂高度:67公尺
+-,陸域風力/Onshore Wind,雲林麥寮風力發電站/Yunlin Mailiao Wind Power Station,19,雲林麥寮2(#16~#23),Vestas V80,16000,8,雲林縣麥寮鄉三盛村(#3~#23),取得執照,輪轂高度:67公尺
+13,陸域風力/Onshore Wind,雲林台西風力發電站/Yunlin Taixi Wind Power Station,20,雲林台西(#1~#4),Enercon E70E4,9200,4,雲林縣台西鄉台興段,試運轉,"輪轂高度:64公尺
+試運轉中(113.10.24併聯)"
+14,陸域風力/Onshore Wind,雲林四湖風力發電站/Yunlin Sihu Wind Power Station,21,雲林四湖(#1~#14),Vestas V80,28000,14,雲林縣四湖鄉林厝村(#1~#5)、崙北村(#6~#7)、崙南村(#8)、箔子村(#9~#14),取得執照,輪轂高度:67公尺
+15,陸域風力/Onshore Wind,恆春風力發電站/Hengchun Wind Power Station,22,恆春(#1~#3),GE 1.5se,4500,3,屏東縣恆春鎮南灣里,取得執照,輪轂高度:64.7公尺
+16,陸域風力/Onshore Wind,澎湖湖西風力發電站/Penghu Huxi Wind Power Station,23,澎湖湖西(#1~#6),Enercon E44,5400,6,澎湖縣湖西鄉菓葉村(#1)、南寮村(#2~#3)、北寮村(#4~#6),取得執照,輪轂高度:76公尺
+17,陸域風力/Onshore Wind,金沙風力發電站/Jinsha Wind Power Station,24,金沙(#1.#2),Vestas V80,4000,2,金門縣金沙鎮三山里,取得執照,輪轂高度:67公尺
+18,陸域風力/Onshore Wind,澎湖龍門風力發電站/Penghu Longmen Wind Power Station,25,澎湖龍門(#2.#5.#6),Enercon E82E4,9000,3,澎湖縣湖西鄉尖山村29-2號,取得執照,輪轂高度:78公尺
+1,離岸風力/Offshore Wind,離岸一期風力發電站/Offshore Phase1 Wind Power Station,1,離岸一期(#1~#21),Hitachi HTW5.2-127,109200,21,彰化縣芳苑鄉外海7.2-8.7公里處,取得執照,輪轂高度:95~99公尺
+1,太陽能/Solar,大潭電廠太陽光電發電站/Datang Power Plant Solar Power Station,1,大潭電廠#1.#2生水池,a2 Peak PEAK ON P230-60,651,,桃園市觀音區大潭里電廠路1號,取得執照,
+-,太陽能/Solar,大潭電廠太陽光電發電站/Datang Power Plant Solar Power Station,2,大潭電廠GIS廠房,D6M305H3A,710,,桃園市觀音區大潭里電廠路1號,取得執照,
+2,太陽能/Solar,北部儲運中心太陽光電發電站/Northern Storage and Transportation Center Solar Power Station,3,北部儲運中心,D6M305H3A,908,,桃園市觀音區快速路​九段2208號,取得執照,
+3,太陽能/Solar,龍潭E/S太陽光電發電站/Longtan E/S Solar Power Station,4,龍潭E/S,MM60 SRT 300,162,,新竹縣湖口鄉八德路三段135巷30號,取得執照,
+4,太陽能/Solar,竹工E/S太陽光電發電站/Zhugong E/S Solar Power Station,5,竹工E/S,MM60 SRT 300,228,,新竹縣關西鎮仁安里台電新村66之3號,取得執照,
+5,太陽能/Solar,台中電廠太陽光電發電站/Taichung Power Plant Solar Power Station,6,台中電廠D.E生水池,Kyocera KD210GH-2P,1509,,台中市龍井區麗水里龍昌路1號,取得執照,
+-,太陽能/Solar,台中電廠太陽光電發電站/Taichung Power Plant Solar Power Station,7,台中電廠B.C生水池,Delsolar D6p240B3A,614,,台中市龍井區麗水里龍昌路1號,取得執照,
+-,太陽能/Solar,台中電廠太陽光電發電站/Taichung Power Plant Solar Power Station,8,台中電廠建物,WINAICO WSP-310M6,1096,,台中市龍井區麗水里龍昌路1號,取得執照,
+-,太陽能/Solar,台中電廠太陽光電發電站/Taichung Power Plant Solar Power Station,9,台中電廠GIS廠房,WINAICO WSP-310M6,246,,台中市龍井區麗水里龍昌路1號,取得執照,
+6,太陽能/Solar,台中龍井太陽光電發電站/Taichung Longjing Solar Power Station,10,台中龍井(I)第一標,TOPPER SUN/TS-M240A3-6100,2002,,台中市龍井區麗水里,取得執照,
+-,太陽能/Solar,台中龍井太陽光電發電站/Taichung Longjing Solar Power Station,11,台中龍井(I)第二標,Delsolar D6p240B3A,1764,,台中市龍井區麗水里,取得執照,
+-,太陽能/Solar,台中龍井太陽光電發電站/Taichung Longjing Solar Power Station,12,台中龍井(II),GreenTriplex PM245P00,2720,,台中市龍井區麗水里,取得執照,
+7,太陽能/Solar,中科E/S太陽光電發電站/Zhongke E/S Solar Power Station,13,中科E/S,MM60 SRT 300,198,,台中市西屯區科園一路1號,取得執照,
+8,太陽能/Solar,彰化彰濱太陽光電發電站/Changhua Changbin Solar Power Station,14,彰化彰濱,D6L295K3A,99999,,彰化縣鹿港鎮山崙里21鄰崙工路53號,取得執照,
+9,太陽能/Solar,彰林E/S太陽光電發電站/Changlin E/S Solar Power Station,15,彰林E/S,MM60 SRT 300,258,,彰化縣埤頭鄉豐崙村沙崙路917號,取得執照,
+10,太陽能/Solar,南投大彎太陽光電發電站/Nantou Dawan Solar Power Station,16,南投大彎,URE D6M300H3A,1000,,南投縣水里鄉社子段0001-0002地號,取得執照,
+-,太陽能/Solar,南投大彎太陽光電發電站/Nantou Dawan Solar Power Station,17,南投大彎2期,GTEC-380G8S6H,585,,南投縣水里鄉社子段1-203、1-40地號,試運轉,試運轉中(114.8.19併聯)
+11,太陽能/Solar,台南鹽田太陽光電發電站/Tainan salt field Solar Power Station,18,台南鹽田,TS60-6M3-310H/,149999,,台南市將軍區鯤溟里、七股區頂山里,取得執照,
+-,太陽能/Solar,台南鹽田太陽光電發電站/Tainan salt field Solar Power Station,19,台南鹽田電氣室,GTEC-370G8S6A,98,,台南市將軍區鯤溟里鯤溟6-256號,取得設備登記,
+12,太陽能/Solar,台南七股太陽光電發電站/Tainan Qigu Solar Power Station,20,台南七股,D6M-305-E3A,1800,,台南市七股區義合里,取得執照,
+-,太陽能/Solar,台南七股太陽光電發電站/Tainan Qigu Solar Power Station,21,台南七股2期,AJP-SC72-395,3300,,台南市七股區義合里,取得執照,
+13,太陽能/Solar,興達電廠太陽光電發電站/Xingda Power Plant Solar Power Station,22,興達電廠#3~#6生水池,Kyocera KD210GH-2P,953,,高雄市永安區鹽田里興達路6號,取得執照,
+-,太陽能/Solar,興達電廠太陽光電發電站/Xingda Power Plant Solar Power Station,23,興達電廠#1.#2生水池,Delsolar D6p240B3A,614,,高雄市永安區鹽田里興達路6號,取得執照,
+-,太陽能/Solar,興達電廠太陽光電發電站/Xingda Power Plant Solar Power Station,24,興達SCR,AUO PM220P00,60,,高雄市永安區鹽田里興達路6號,取得執照,
+14,太陽能/Solar,永安鹽灘地太陽光電發電站/Yongan Salt Flats Solar Power Station,25,永安鹽灘地,SUNTECH STP280-24/vd,4637,,高雄市永安區鹽田里,取得執照,
+15,太陽能/Solar,高雄保寧太陽光電發電站/Kaohsiung Baoning Solar Power Station,26,高雄保寧,TS60-6M3-310H,709,,高雄市永安區保寧里,取得執照,
+16,太陽能/Solar,燕巢倉庫太陽光電發電站/Yanchao Warehouse Solar Power Station,27,燕巢倉庫,GTEC 295G6S6A,498,,高雄市燕巢區深水里臥牛巷5號,取得執照,
+17,太陽能/Solar,高雄E/S太陽光電發電站/Kaohsiung E/S Solar Power Station,28,高雄E/S,GTEC 295G6S6A,380,,高雄市三民區安邦里十全二路320號,取得執照,
+-,太陽能/Solar,高雄E/S太陽光電發電站/Kaohsiung E/S Solar Power Station,29,高雄E/S停車棚,WINAICO WSP-310M6,327,,高雄市三民區安邦里十全二路320號,取得執照,
+18,太陽能/Solar,鳳山水庫太陽光電發電站/Fengshan Reservoir Solar Power Station,30,鳳山水庫,URE D6L300L3A ,2000,,高雄市小港區坪頂里,取得執照,
+19,太陽能/Solar,核三廠太陽光電發電站/3rd Nuclear Power Plants Solar Power Station,31,核三廠生水池,SUNTECH STP280-24/vd,1210,,屏東縣恆春鎮南灣里南灣路387號,取得執照,
+-,太陽能/Solar,核三廠太陽光電發電站/3rd Nuclear Power Plants Solar Power Station,32,核三廠車棚區,SUNTECH STP280-24/vd,249,,屏東縣恆春鎮南灣里南灣路387號,取得執照,
+-,太陽能/Solar,核三廠太陽光電發電站/3rd Nuclear Power Plants Solar Power Station,33,核三廠南灣宿舍,DAK375H7A,569,,屏東縣恆春鎮南灣里南灣路387號,取得設備登記,
+-,太陽能/Solar,核三廠太陽光電發電站/3rd Nuclear Power Plants Solar Power Station,34,核三廠單身宿舍,DAK375H7A,1364,,屏東縣恆春鎮南灣里南灣路387號,取得設備登記,
+-,太陽能/Solar,核三廠太陽光電發電站/3rd Nuclear Power Plants Solar Power Station,35,核三廠地面型,DBK450H7A,21240,,屏東縣恆春鎮南灣里南灣路387號,部分併聯試運轉,
+20,太陽能/Solar,澎湖七美太陽光電發電站/Penghu Qimei Solar Power Station,36,澎湖七美1期,KENMEC TKSA-23001,155,,澎湖縣七美鄉中和村,取得執照,
+-,太陽能/Solar,澎湖七美太陽光電發電站/Penghu Qimei Solar Power Station,37,澎湖七美2期,GTEC295G6S6A,200,,澎湖縣七美鄉中和村,取得執照,
+21,太陽能/Solar,澎湖尖山太陽光電發電站/Penghu jianshan Solar Power Station,38,澎湖尖山,AUO PM220P00,71,,澎湖縣湖西鄉尖山村29號之2,取得設備登記,
+-,太陽能/Solar,澎湖尖山太陽光電發電站/Penghu jianshan Solar Power Station,39,澎湖尖山小再,URE D6L300L3A,745,,澎湖縣湖西鄉尖山村29號之2,取得執照,
+22,太陽能/Solar,金門金沙太陽光電發電站/Kinmen Jinsha Solar Power Station,40,金門金沙,Apollo KAP-200,528,,金門縣金沙鎮金門文化園區內,取得執照,
+23,太陽能/Solar,金門塔山太陽光電發電站/Kinmen Tashan Solar Power Station,41,金門塔山,D6L300L3A,216,,金門縣金城鎮西海路一段2號,取得執照,
+24,太陽能/Solar,金門鵲山太陽光電發電站/Kinmen Queshan Solar Power Station,42,金門鵲山,D6L300L3A/CIGS3500A1,48,,金門縣金湖鎮陽明16號,取得執照,
+25,太陽能/Solar,馬祖珠山太陽光電發電站/Mazu Zhushan Solar Power Station,43,馬祖珠山,D6L300L3A/CIGS3500A1,74,,連江縣南竿鄉清水村99-9號,取得執照,
+26,太陽能/Solar,"淡水3.5萬噸配水池太陽光電發電站/Danshui Distribution Reservoir(35,000 tons) Solar Power Station",44,淡水3.5萬噸配水池光電站,URE D7M320H7A ,307,,新北市淡水區淡金路一段497號,取得設備登記,
+27,太陽能/Solar,中大D/S太陽光電發電站/Zhongda D/S Solar Power Station,45,中大D/S,AUO PM220P00,40,,桃園市中壢區三民里中正路1312號,取得設備登記,
+28,太陽能/Solar,平鎮淨水場太陽光電發電站/Pingzhen Water Treatment Plant Solar Power Station,46,平鎮淨水場,URE D7M320H7A ,1167,,桃園市平鎮區南豐路267號,取得設備登記,
+29,太陽能/Solar,大湳淨水場太陽光電發電站/Danan Water Treatment Plant Solar Power Station,47,大湳淨水場,URE D7M320H7A ,860,,桃園市桃園區國際路1段485巷101號,取得設備登記,
+30,太陽能/Solar,龜山第三加壓站太陽光電發電站/Guishan No.3 Pumping Station Solar Power Station,48,龜山第三加壓站,URE D7M320H7A ,307,,桃園市龜山區忠義路2段366號,取得設備登記,
+31,太陽能/Solar,龍潭淨水場太陽光電發電站/Longtan Water Treatment Plant Solar Power Station,49,龍潭淨水場,URE D7M320H7A ,369,,桃園市龍潭區文化路209號,取得設備登記,
+32,太陽能/Solar,卓蘭會館太陽光電發電站/Zhuolan Hostel Solar Power Station,50,卓蘭會館,AUO PM220P00/SUNNER SOLAR SA-100,42,,苗栗縣卓蘭鎮新厝里1鄰新厝5-2號,取得設備登記,
+33,太陽能/Solar,東興淨水場太陽光電發電站/Dongxing Water Treatment Plant Solar Power Station,51,東興淨水場,URE D7M320H7A,737,,苗栗縣頭份市水源路417巷14號,取得設備登記,
+34,太陽能/Solar,后里E/S太陽光電發電站/Houli E/S Solar Power Station,52,后里E/S,ASEC-245G6M,91,,台中市后里區仁里里永興路17-50號,取得設備登記,
+35,太陽能/Solar,中部儲運中心太陽光電發電站/Central Storage and Transportation Center Solar Power Station,53,中部儲運中心,Apollo KAP-200-54,92,,台中市后里區后里里九甲七路8號,取得設備登記,
+36,太陽能/Solar,東勢新伯公太陽光電發電站/Dongshi Xinbogong Solar Power Station,54,東勢新伯公1,Sun Wall WD-A-CC-0872(薄膜)/Apollo KAP-200-54(多晶),116,,台中市東勢區新城街288巷10號,取得設備登記,
+-,太陽能/Solar,東勢新伯公太陽光電發電站/Dongshi Xinbogong Solar Power Station,55,東勢新伯公2,TS60-AMH-370 H1,463,,台中市東勢區新城街288巷11,取得設備登記,
+-,太陽能/Solar,東勢新伯公太陽光電發電站/Dongshi Xinbogong Solar Power Station,56,電力通信處倉庫,TS60-AMH-370 H1,175,,台中市東勢區上城街212巷50號,取得設備登記,
+37,太陽能/Solar,嘉義民雄太陽光電發電站/Chiayi Minxiong Solar Power Station,57,嘉義民雄,Sun Wall WD-A-CC-0872,60,,嘉義縣民雄鄉北斗村中華路88號,取得設備登記,
+38,太陽能/Solar,嘉義分所太陽光電發電站/Chiayi Agricultural Experiment Branch Solar Power Station,58,嘉義分所,GTEC-370G8S6A,258,,嘉義市東區東川段171、366地號,取得設備登記,
+39,太陽能/Solar,義竹工作站太陽光電發電站/Yizhu Workhouse Solar Power Station,59,義竹工作站,GTEC-370G8S6A,300,,嘉義縣義竹鄉中平村,取得設備登記,
+40,太陽能/Solar,路北E/S太陽光電發電站/Lubei E/S Solar Power Station,60,路北E/S,AUO PM220P00,60,,高雄市路竹區後鄉里10鄰路科九路13號,取得設備登記,
+41,太陽能/Solar,高訓中心太陽光電發電站/Kaohsiung Training Institute Solar Power Station,61,高訓實習大樓,TS60-AMH-370 H1,112,,高雄市大寮區華西路41號,取得設備登記,
+-,太陽能/Solar,高訓中心太陽光電發電站/Kaohsiung Training Institute Solar Power Station,62,高訓教學綜合大樓,TS60-AMH-370 H1,100,,高雄市大寮區華西路41號,取得設備登記,
+-,太陽能/Solar,高訓中心太陽光電發電站/Kaohsiung Training Institute Solar Power Station,63,高訓活動中心,TS60-AMH-370 H1,158,,高雄市大寮區華西路41號,取得設備登記,
+42,太陽能/Solar,金門酒廠太陽光電發電站/Kinmen Kaoliang Liquor Inc. Solar Power Station,64,金門酒廠,TS60-AMH-370 H1,911,,金門縣金寧鄉寧山段256-10地號,取得設備登記,
+43,太陽能/Solar,蘭嶼電廠太陽光電發電站/Lanyu Power Plant Solar Power Station,65,蘭嶼電廠,URE D6L300L3A,29,,台東縣蘭嶼鄉紅頭村漁人145號,取得設備登記,
+44,太陽能/Solar,蘭嶼貯存場太陽光電發電站/Lanyu Storage Unit Solar Power Station,66,蘭嶼貯存場,URE D6L300L3A,32,,台東縣蘭嶼鄉紅頭村1號,取得設備登記,
+1,地熱/Geothermal,仁澤地熱/Renze Geothermal,1,仁澤地熱,,840,,宜蘭縣大同鄉仁澤段53地號,取得執照,
+陸域風力小計,,18站,,25場址,,332940,174,含試運轉中機組,,
+離岸風力小計,,1站,,1場址,,109200,21,,,
+太陽光電小計,,44站,,66場址,,313479,,含試運轉中機組,,
+地熱小計,,1站,,1場址,,840,,,,
