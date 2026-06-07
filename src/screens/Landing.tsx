@@ -24,7 +24,7 @@ function MythCard({ item, idx }: { item: typeof MISCONCEPTIONS[number]; idx: num
         </span>
         <div>
           <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 500, marginBottom: 2 }}>你可能以為</div>
-          <div style={{ fontSize: 15, color: 'var(--ink-700)', fontWeight: 500, lineHeight: 1.45 }}>「{item.myth}」</div>
+          <div className="myth-card-myth-text" style={{ fontSize: 15, color: 'var(--ink-700)', fontWeight: 500, lineHeight: 1.45 }}>「{item.myth}」</div>
         </div>
       </div>
 
@@ -36,17 +36,17 @@ function MythCard({ item, idx }: { item: typeof MISCONCEPTIONS[number]; idx: num
         </span>
         <div>
           <div style={{ fontSize: 11, color: 'var(--green-700)', fontWeight: 600, marginBottom: 2 }}>其實</div>
-          <div style={{ fontSize: 14, color: 'var(--ink-900)', lineHeight: 1.55 }}>{item.truth}</div>
+          <div className="myth-card-truth-text" style={{ fontSize: 14, color: 'var(--ink-900)', lineHeight: 1.55 }}>{item.truth}</div>
         </div>
       </div>
 
-      <div style={{
+      <div className="myth-card-stat-box" style={{
         marginTop: 20, padding: '14px 16px',
         background: 'var(--green-50)', borderRadius: 'var(--radius-sm)',
         display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8,
       }}>
         <div>
-          <div className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)', lineHeight: 1 }}>{item.stat}</div>
+          <div className="num myth-card-stat-num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)', lineHeight: 1 }}>{item.stat}</div>
           <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>{item.statLabel}</div>
         </div>
         <div style={{ fontSize: 11, color: 'var(--ink-400)', textAlign: 'right' }}>{item.compare}</div>
@@ -76,9 +76,9 @@ export default function Landing({ onStart }: { onStart: () => void }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 80 }}>
+    <div className="landing-flow" style={{ display: 'flex', flexDirection: 'column' }}>
       {/* HERO */}
-      <section style={{ paddingTop: 40, position: 'relative' }}>
+      <section className="landing-hero-section" style={{ position: 'relative' }}>
         <div className="landing-hero-grid">
           <div>
             <div className="eyebrow" style={{ marginBottom: 24 }}>屋頂太陽能 · 自助可行性評估</div>
@@ -86,15 +86,15 @@ export default function Landing({ onStart }: { onStart: () => void }) {
               輸入你家地址，<br />
               <span style={{ color: 'var(--green-700)' }}>30 秒</span>知道屋頂潛力
             </h1>
-            <p className="body-lg" style={{ marginTop: 20, marginBottom: 36, maxWidth: 520 }}>
+            <p className="body-lg landing-hero-desc" style={{ marginTop: 20, maxWidth: 520 }}>
               不用等廠商來評估，自己先看清楚。整合中央氣象署日照資料、台電躉購費率與各縣市補助金額，一次算出你家適不適合裝。
             </p>
-            <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="landing-cta-row" style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
               <button className="btn btn-primary xl" onClick={onStart}>
                 開始評估
                 <ChevronIcon dir="right" size={14} />
               </button>
-              <span className="body-sm">免註冊 · 資料不留存 · 約需 30 秒</span>
+              <span className="body-sm landing-cta-hint">免註冊 · 資料不留存 · 約需 30 秒</span>
             </div>
 
             <div className="landing-stats">
@@ -121,16 +121,16 @@ export default function Landing({ onStart }: { onStart: () => void }) {
 
       {/* MISCONCEPTIONS */}
       <section>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
+        <div className="myth-section-header" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div className="eyebrow" style={{ marginBottom: 14 }}>很多人裝太陽能前都有這些誤解</div>
             <h2 className="h-title" style={{ margin: 0, maxWidth: 680 }}>你可能以為… 其實…</h2>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn-nav" onClick={() => scrollBy(-1)} aria-label="上一張" style={{ padding: 10 }}>
+          <div className="myth-nav-btns" style={{ display: 'flex', gap: 8 }}>
+            <button className="btn-nav myth-nav-btn" onClick={() => scrollBy(-1)} aria-label="上一張">
               <ChevronIcon dir="left" />
             </button>
-            <button className="btn-nav" onClick={() => scrollBy(1)} aria-label="下一張" style={{ padding: 10 }}>
+            <button className="btn-nav myth-nav-btn" onClick={() => scrollBy(1)} aria-label="下一張">
               <ChevronIcon dir="right" />
             </button>
           </div>
@@ -154,7 +154,7 @@ export default function Landing({ onStart }: { onStart: () => void }) {
           ))}
         </div>
 
-        <div style={{ marginTop: 48, display: 'flex', justifyContent: 'center' }}>
+        <div className="landing-myth-cta" style={{ marginTop: 48, display: 'flex', justifyContent: 'center' }}>
           <button className="btn btn-primary xl" onClick={onStart}>
             輸入我的地址，看看我家
             <ChevronIcon dir="right" size={14} />

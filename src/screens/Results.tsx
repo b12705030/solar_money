@@ -15,7 +15,12 @@ function getUserId(): string {
   const key = 'solar_user_id';
   let id = localStorage.getItem(key);
   if (!id) {
-    id = crypto.randomUUID();
+    id = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
     localStorage.setItem(key, id);
   }
   return id;
@@ -54,7 +59,7 @@ function MonthlyChart({ data, highlight }: { data: number[]; highlight?: string 
                   )}
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--ink-500)', fontFamily: 'var(--font-num)' }}>{MONTHS[i]}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', fontFamily: 'var(--font-num)' }}>{i + 1}<span className="monthly-month-suffix">月</span></div>
             </div>
           );
         })}
@@ -85,7 +90,7 @@ function RevenueChart({ annualRevenue, outOfPocket, paybackYears }: { annualReve
   const minNet = -outOfPocket;
   const range = maxNet - minNet;
 
-  const W = 600, H = 200, PAD = 20;
+  const W = 400, H = 200, PAD = 20;
   const px = (y: number) => PAD + (y / years) * (W - PAD * 2);
   const py = (net: number) => H - PAD - ((net - minNet) / range) * (H - PAD * 2);
   const zeroY = py(0);
@@ -94,7 +99,7 @@ function RevenueChart({ annualRevenue, outOfPocket, paybackYears }: { annualReve
   const areaD = `${pathD} L ${px(years)} ${zeroY} L ${px(0)} ${zeroY} Z`;
 
   return (
-    <div>
+    <div className="results-revenue-chart">
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 220 }}>
         <defs>
           <linearGradient id="revGrad" x1="0" x2="0" y1="0" y2="1">
@@ -570,7 +575,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       </div>
 
       {/* Summary header */}
-      <div style={{ marginBottom: 28 }}>
+      <div className="results-summary-header">
         <div className="eyebrow" style={{ marginBottom: 16, color: 'var(--amber)' }}>
           <span style={{ background: 'var(--amber)' }}></span>評估結果
         </div>
@@ -623,7 +628,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
       </div>
 
       {/* Headline numbers */}
-      <div className="card elevated results-kpi-card" style={{ marginBottom: 28, background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
+      <div className="card elevated results-kpi-card" style={{ background: 'linear-gradient(135deg, #FFFFFF 0%, #F0F9F2 100%)' }}>
         <div className="results-kpi-grid">
           <div>
             <div className="caption" style={{ marginBottom: 10 }}>
@@ -637,7 +642,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             ) : (
               <>
                 <div>
-                  <span className="num" style={{ fontSize: 48, fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
+                  <span className="num kpi-main-num" style={{ fontWeight: 700, color: 'var(--green-900)', lineHeight: 1 }}>
                     {r.annualKwh.toLocaleString()}
                   </span>
                   <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>kWh</span>
@@ -659,7 +664,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             ) : (
               <>
                 <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '4px 8px' }}>
-                  <span className="num" style={{ fontSize: 48, fontWeight: 700, lineHeight: 1, color: r.selfSufficiency > 100 ? 'var(--green-500)' : 'var(--green-900)' }}>
+                  <span className="num kpi-main-num" style={{ fontWeight: 700, lineHeight: 1, color: r.selfSufficiency > 100 ? 'var(--green-500)' : 'var(--green-900)' }}>
                     {r.selfSufficiency}
                   </span>
                   <span style={{ fontSize: 16, color: 'var(--ink-500)' }}>%</span>
@@ -691,7 +696,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             ) : (
               <>
                 <div>
-                  <span className="num" style={{ fontSize: 48, fontWeight: 700, color: '#C8861E', lineHeight: 1 }}>{r.paybackYears}</span>
+                  <span className="num kpi-main-num" style={{ fontWeight: 700, color: '#C8861E', lineHeight: 1 }}>{r.paybackYears}</span>
                   <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>年</span>
                 </div>
                 <div className="body-sm" style={{ marginTop: 8 }}>保固 25 年 · 剩餘純收益 {(25 - r.paybackYears).toFixed(1)} 年</div>
@@ -741,9 +746,8 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
       {/* Generation panel — always in DOM; hidden via CSS when inactive tab */}
       <div className={tab !== 'generation' ? 'tab-panel tab-panel--hidden' : 'tab-panel'}>
-        <div className="tab-section-title">發電潛力</div>
         <div className="results-gen-grid">
-          <div className="card" style={{ padding: 28 }}>
+          <div className="card results-gen-chart-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 24 }}>
               <h3 className="h-section" style={{ margin: 0 }}>月發電量<Info tip="裝置容量(kW) × 月日射量(kWh/m²/d) × 月天數 × Faiman 動態PR × 目標月份調整係數" /></h3>
               <span className="body-sm">單位：kWh</span>
@@ -764,7 +768,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Best angle */}
-            <div className="card" style={{ padding: 24 }}>
+            <div className="card results-gen-side-card">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <span className="caption">最佳安裝角度<Info tip="依所選目標預設：夏季→10°、冬季→45°、全年/ROI→22°、峰值→18°、匹配→20°；有 pvlib 時依當地緯度精算" /></span>
                 {apiBestAngle != null && (
@@ -891,7 +895,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </div>
 
             {/* Comparison */}
-            <div className="card" style={{ padding: 24 }}>
+            <div className="card results-gen-side-card">
               <div className="caption" style={{ marginBottom: 12 }}>與台灣平均比較</div>
               {tiltLoading ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0', color: 'var(--ink-400)', fontSize: 13 }}>
@@ -1046,30 +1050,30 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
         ];
 
         return (
-          <div className="card" style={{ padding: 24, marginTop: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div>
+          <div className="card results-climate-card">
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 className="h-section" style={{ margin: 0 }}>氣候輸入參數<Info tip="NASA POWER 月均資料（GHI、氣溫、風速、濕度），用於 Faiman T_cell 模型計算各月動態PR" /></h3>
-                {(regionInfo || state.townshipName) && (
-                  <div style={{ fontSize: 12, color: 'var(--green-700)', fontWeight: 500, marginTop: 2 }}>
-                    {regionInfo ? `${regionInfo.countyname}${regionInfo.townname}` : state.townshipName}
-                  </div>
-                )}
-                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3, lineHeight: 1.7 }}>
-                  這張表顯示影響你屋頂發電效率的四大氣候因子，以及系統據此計算出的每月動態 PR（實際效率比）
-                  <br />
-                  {fromApi
-                    ? '資料來源：NASA POWER API MERRA-2 · 2013–2025 年均值 · T2M = 月均氣溫（非日最高溫）· WS10M = 月均風速'
-                    : '資料來源：CWA 長期月均值（fallback）'}
-                </div>
+                <span style={{
+                  padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, flexShrink: 0, marginLeft: 8,
+                  background: fromApi ? 'var(--green-100)' : 'var(--ink-100)',
+                  color: fromApi ? 'var(--green-800)' : 'var(--ink-500)',
+                }}>
+                  {fromApi ? 'NASA POWER' : '台灣氣候均值（fallback）'}
+                </span>
               </div>
-              <span style={{
-                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                background: fromApi ? 'var(--green-100)' : 'var(--ink-100)',
-                color: fromApi ? 'var(--green-800)' : 'var(--ink-500)',
-              }}>
-                {fromApi ? 'NASA POWER' : '台灣氣候均值（fallback）'}
-              </span>
+              {(regionInfo || state.townshipName) && (
+                <div style={{ fontSize: 12, color: 'var(--green-700)', fontWeight: 500, marginTop: 2 }}>
+                  {regionInfo ? `${regionInfo.countyname}${regionInfo.townname}` : state.townshipName}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3, lineHeight: 1.7 }}>
+                這張表顯示影響你屋頂發電效率的四大氣候因子，以及系統據此計算出的每月動態 PR（實際效率比）
+                <br />
+                {fromApi
+                  ? '資料來源：NASA POWER API MERRA-2 · 2013–2025 年均值 · T2M = 月均氣溫（非日最高溫）· WS10M = 月均風速'
+                  : '資料來源：CWA 長期月均值（fallback）'}
+              </div>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -1128,7 +1132,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               </table>
             </div>
 
-            <div style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-400)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <div className="climate-legend" style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-400)', display: 'flex', flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <Info tip="Faiman (2008) T_cell 模型，詳見下方「如何解讀這張表？」" />
                 動態 PR 公式
@@ -1152,7 +1156,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </div>
 
             {/* 教育說明 callout */}
-            <div style={{
+            <div className="results-climate-callout" style={{
               marginTop: 16,
               padding: '14px 16px',
               background: 'var(--ink-50)',
@@ -1189,10 +1193,9 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
       {/* Investment panel — always in DOM; hidden via CSS when inactive tab */}
       <div className={tab !== 'investment' ? 'tab-panel tab-panel--hidden' : 'tab-panel'}>
-        <div className="tab-section-title">投資試算</div>
         <div className="results-inv-grid">
           {/* Cost breakdown */}
-          <div className="card" style={{ padding: 28 }}>
+          <div className="card results-inv-card">
             <h3 className="h-section" style={{ margin: '0 0 22px' }}>成本拆解</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <BreakdownRow label="安裝費用" value={state.totalCost ?? 0} color="var(--ink-700)" max={state.totalCost ?? 1} />
@@ -1264,7 +1267,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           </div>
 
           {/* Revenue curve */}
-          <div className="card" style={{ padding: 28 }}>
+          <div className="card results-inv-card">
             <div style={{ marginBottom: 12 }}>
               <h3 className="h-section" style={{ margin: '0 0 4px' }}>20 年累計淨收益<Info tip="年度收益逐年以 0.5% 衰退並加總（20 年），再減去初始自付金額" /></h3>
               <div className="caption" style={{ color: 'var(--ink-400)' }}>
@@ -1332,7 +1335,7 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
             </button>
           )}
           <button
-            className="btn btn-secondary"
+            className="btn btn-secondary results-share-btn"
             onClick={handleShare}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
           >
