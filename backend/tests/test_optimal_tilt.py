@@ -163,3 +163,30 @@ def test_deterministic_results():
     r2 = compute_optimal_tilt(LAT_TAIPEI, LON_TAIPEI, TAIPEI_GHI, 'summer')
     assert r1['best_angle'] == r2['best_angle']
     assert r1['goal_adj'] == r2['goal_adj']
+
+
+# ─── peak 目標與 annual 目標的季節差異 ──────────────────────────────────────
+
+def test_peak_goal_summer_adj_higher_than_annual():
+    """peak 目標（最大化正午功率）夏月 goal_adj 均值應高於 annual 目標。"""
+    r_peak   = compute_optimal_tilt(LAT_TAIPEI, LON_TAIPEI, TAIPEI_GHI, 'peak')
+    r_annual = compute_optimal_tilt(LAT_TAIPEI, LON_TAIPEI, TAIPEI_GHI, 'annual')
+    # 夏月：6–9月（index 5–8）
+    peak_summer   = sum(r_peak['goal_adj'][5:9])   / 4
+    annual_summer = sum(r_annual['goal_adj'][5:9]) / 4
+    assert peak_summer >= annual_summer, (
+        f"peak 夏月均值 {peak_summer:.4f} 應 ≥ annual 夏月均值 {annual_summer:.4f}"
+    )
+
+
+def test_all_goals_goal_adj_length_12():
+    """所有合法目標回傳的 goal_adj 都恰好有 12 個元素。"""
+    for goal in ('annual', 'summer', 'winter', 'peak', 'match', 'roi'):
+        result = compute_optimal_tilt(LAT_TAIPEI, LON_TAIPEI, TAIPEI_GHI, goal)
+        assert len(result['goal_adj']) == 12, f"goal={goal} 的 goal_adj 長度不為 12"
+
+
+def test_roi_goal_adj_all_positive():
+    """roi 目標的 goal_adj 12 個月均應為正值（物理上功率不可為負）。"""
+    result = compute_optimal_tilt(LAT_TAIPEI, LON_TAIPEI, TAIPEI_GHI, 'roi')
+    assert all(v > 0 for v in result['goal_adj']), "roi goal_adj 含非正值"

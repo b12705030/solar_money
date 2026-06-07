@@ -202,3 +202,45 @@ def test_southern_taiwan_coordinates(taipei_footprint):
         target_footprint=taipei_footprint, buildings=[], lat=22.6, lng=120.3
     )
     assert 0.1 <= result['usable_fraction'] <= 0.95
+
+
+def test_hualien_coordinates(taipei_footprint):
+    """花蓮座標（23.9°N，121.6°E，東部）孤立建物應正常運行。"""
+    result = compute_usable_roof_fraction(
+        target_footprint=taipei_footprint, buildings=[], lat=23.9, lng=121.6
+    )
+    assert 0.1 <= result['usable_fraction'] <= 0.95
+
+
+def test_penghu_coordinates(taipei_footprint):
+    """澎湖座標（23.5°N，119.6°E，西部離島）孤立建物應正常運行。"""
+    result = compute_usable_roof_fraction(
+        target_footprint=taipei_footprint, buildings=[], lat=23.5, lng=119.6
+    )
+    assert 0.1 <= result['usable_fraction'] <= 0.95
+
+
+def test_central_taiwan_coordinates(taipei_footprint):
+    """台中座標（24.1°N，120.7°E，中部）孤立建物應正常運行。"""
+    result = compute_usable_roof_fraction(
+        target_footprint=taipei_footprint, buildings=[], lat=24.1, lng=120.7
+    )
+    assert 0.1 <= result['usable_fraction'] <= 0.95
+
+
+def test_all_taiwan_regions_return_valid_fraction(taipei_footprint):
+    """全台南北東西離島共 5 個代表座標，pairwise 結果都在 [0.1, 0.95] 範圍內。"""
+    coords = [
+        (25.0,  121.5, '台北'),
+        (24.1,  120.7, '台中'),
+        (22.6,  120.3, '高雄'),
+        (23.9,  121.6, '花蓮'),
+        (23.5,  119.6, '澎湖'),
+    ]
+    for lat, lng, name in coords:
+        result = compute_usable_roof_fraction(
+            target_footprint=taipei_footprint, buildings=[], lat=lat, lng=lng
+        )
+        assert 0.1 <= result['usable_fraction'] <= 0.95, (
+            f"{name} ({lat}°N, {lng}°E) usable_fraction={result['usable_fraction']} 超出範圍"
+        )
