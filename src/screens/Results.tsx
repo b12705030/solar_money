@@ -81,6 +81,19 @@ function MonthlyChart({ data, highlight }: { data: number[]; highlight?: string 
 }
 
 function RevenueChart({ annualRevenue, outOfPocket, paybackYears }: { annualRevenue: number; outOfPocket: number; paybackYears: number }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [W, setW] = useState(400);
+
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const measure = () => { const w = el.clientWidth; if (w > 0) setW(w); };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const years = 20;
   const points = Array.from({ length: years + 1 }, (_, y) => {
     const revenue = Array.from({ length: y }, (_, i) => annualRevenue * Math.pow(1 - DEFAULT_DEGRADATION_RATE, i)).reduce((a, b) => a + b, 0);
@@ -90,7 +103,7 @@ function RevenueChart({ annualRevenue, outOfPocket, paybackYears }: { annualReve
   const minNet = -outOfPocket;
   const range = maxNet - minNet;
 
-  const W = 400, H = 200, PAD = 20;
+  const H = 200, PAD = 24;
   const px = (y: number) => PAD + (y / years) * (W - PAD * 2);
   const py = (net: number) => H - PAD - ((net - minNet) / range) * (H - PAD * 2);
   const zeroY = py(0);
@@ -100,7 +113,7 @@ function RevenueChart({ annualRevenue, outOfPocket, paybackYears }: { annualReve
 
   return (
     <div className="results-revenue-chart">
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 220 }}>
+      <svg ref={svgRef} width="100%" height={H} style={{ display: 'block', overflow: 'visible' }}>
         <defs>
           <linearGradient id="revGrad" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#40916C" stopOpacity="0.25" />
@@ -647,7 +660,11 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                   </span>
                   <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>kWh</span>
                 </div>
-                <div className="body-sm" style={{ marginTop: 8 }}>相當於 {(r.annualKwh / (state.monthlyKwh || 350)).toFixed(1)} 個月用電量</div>
+                <div className="body-sm" style={{ marginTop: 8 }}>
+                  {(state.unitCount ?? 1) > 1
+                    ? `相當於社區 ${(state.unitCount ?? 1)} 戶共 ${((r.annualKwh / (state.monthlyKwh || 350)) / (state.unitCount ?? 1)).toFixed(1)} 個月用電量`
+                    : `相當於 ${(r.annualKwh / (state.monthlyKwh || 350)).toFixed(1)} 個月用電量`}
+                </div>
               </>
             )}
           </div>
@@ -1202,9 +1219,20 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               <BreakdownRow label={`${state.county ?? '台北市'} 補助`} value={-(state.subsidyAmount ?? 0)} color="var(--green-700)" max={state.totalCost ?? 1} />
               <div style={{ borderTop: '1px dashed var(--ink-200)', paddingTop: 14, marginTop: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: 15, fontWeight: 600 }}>實際自付</span>
-                  <span className="num" style={{ fontSize: 28, fontWeight: 700, color: 'var(--green-900)' }}>NT$ {state.outOfPocket?.toLocaleString()}</span>
+                  <span style={{ fontSize: 15, fontWeight: 600 }}>
+                    {(state.unitCount ?? 1) > 1 ? '每戶自付' : '實際自付'}
+                  </span>
+                  <span className="num" style={{ fontSize: 28, fontWeight: 700, color: 'var(--green-900)' }}>
+                    NT$ {(state.unitCount ?? 1) > 1
+                      ? Math.round((state.outOfPocket ?? 0) / (state.unitCount ?? 1)).toLocaleString()
+                      : state.outOfPocket?.toLocaleString()}
+                  </span>
                 </div>
+                {(state.unitCount ?? 1) > 1 && (
+                  <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
+                    全棟 NT$ {state.outOfPocket?.toLocaleString()}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1212,26 +1240,42 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
               <div className="caption" style={{ marginBottom: 6 }}>年度收益來源</div>
               <div style={{ display: 'flex', gap: 16 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>自用省電費<Info tip="月電費(原用電量) − 月電費(原用電量 − 自用量)；依台電六段累進費率，夏月(6–9月)費率較高" /></div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>
+                    {(state.unitCount ?? 1) > 1 ? '每戶省電費' : '自用省電費'}
+                    <Info tip="月電費(原用電量) − 月電費(原用電量 − 自用量)；依台電六段累進費率，夏月(6–9月)費率較高" />
+                  </div>
                   <div className="num" style={{ fontSize: 18, fontWeight: 700, color: 'var(--green-900)' }}>
                     {tiltLoading ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--ink-400)', fontSize: 13, fontWeight: 400 }}>
                         <div style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
                         計算中…
                       </span>
-                    ) : `NT$ ${r.selfUseRevenue.toLocaleString()}`}
+                    ) : `NT$ ${Math.round(r.selfUseRevenue / (state.unitCount ?? 1)).toLocaleString()}`}
                   </div>
+                  {(state.unitCount ?? 1) > 1 && !tiltLoading && (
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>
+                      全棟 NT$ {r.selfUseRevenue.toLocaleString()}
+                    </div>
+                  )}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>台電躉購<Info tip="餘電(kWh) × FIT費率；115年度屋頂型：≤10kW→5.63元/度，容量越大費率階梯遞減" /></div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>
+                    {(state.unitCount ?? 1) > 1 ? '每戶躉購收入' : '台電躉購'}
+                    <Info tip="餘電(kWh) × FIT費率；115年度屋頂型：≤10kW→5.63元/度，容量越大費率階梯遞減" />
+                  </div>
                   <div className="num" style={{ fontSize: 18, fontWeight: 700, color: 'var(--green-900)' }}>
                     {tiltLoading ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--ink-400)', fontSize: 13, fontWeight: 400 }}>
                         <div style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, border: '1.5px solid var(--ink-200)', borderTopColor: 'var(--green-600)', animation: 'spin 0.6s linear infinite' }} />
                         計算中…
                       </span>
-                    ) : `NT$ ${(r.annualRevenue - r.selfUseRevenue).toLocaleString()}`}
+                    ) : `NT$ ${Math.round((r.annualRevenue - r.selfUseRevenue) / (state.unitCount ?? 1)).toLocaleString()}`}
                   </div>
+                  {(state.unitCount ?? 1) > 1 && !tiltLoading && (
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>
+                      全棟 NT$ {(r.annualRevenue - r.selfUseRevenue).toLocaleString()}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="caption" style={{ marginTop: 8, color: 'var(--ink-400)' }}>
@@ -1267,21 +1311,23 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
           </div>
 
           {/* Revenue curve */}
-          <div className="card results-inv-card">
+          <div className="card results-inv-card" style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ marginBottom: 12 }}>
               <h3 className="h-section" style={{ margin: '0 0 4px' }}>20 年累計淨收益<Info tip="年度收益逐年以 0.5% 衰退並加總（20 年），再減去初始自付金額" /></h3>
               <div className="caption" style={{ color: 'var(--ink-400)' }}>
                 依面板年衰退率 {(DEFAULT_DEGRADATION_RATE * 100).toFixed(1)}% 估算（矽晶太陽能板業界標準，每年輸出功率微幅下降）
               </div>
             </div>
-            {tiltLoading ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, height: 220, color: 'var(--ink-400)', fontSize: 14 }}>
-                <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-700)', animation: 'spin 0.6s linear infinite' }} />
-                依日照資料計算年度收益…
-              </div>
-            ) : (
-              <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} />
-            )}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: 0 }}>
+              {tiltLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: 180, color: 'var(--ink-400)', fontSize: 14 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, border: '2px solid var(--ink-200)', borderTopColor: 'var(--green-700)', animation: 'spin 0.6s linear infinite' }} />
+                  依日照資料計算年度收益…
+                </div>
+              ) : (
+                <RevenueChart annualRevenue={r.annualRevenue} outOfPocket={state.outOfPocket ?? 400000} paybackYears={r.paybackYears} />
+              )}
+            </div>
 
             <div className="results-inv-summary">
               <div>
@@ -1306,8 +1352,40 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                 <div className="num" style={{ fontSize: 16, fontWeight: 600, color: 'var(--green-900)', marginTop: 4 }}>約 10.5%</div>
               </div>
             </div>
+            {(state.unitCount ?? 1) > 1 && (
+              <div style={{
+                marginTop: 16, padding: '14px 16px',
+                background: 'var(--green-50)', border: '1px solid var(--green-200)',
+                borderRadius: 'var(--radius-md)',
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--green-700)', marginBottom: 10 }}>
+                  每戶分攤（社區 {state.unitCount} 戶）
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>每戶自付金額</div>
+                    <div className="num" style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-800)', marginTop: 3 }}>
+                      NT$ {Math.round((state.outOfPocket ?? 0) / (state.unitCount ?? 1)).toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>每戶年均收益</div>
+                    <div className="num" style={{ fontSize: 15, fontWeight: 700, color: 'var(--green-900)', marginTop: 3 }}>
+                      {tiltLoading ? '計算中…' : `NT$ ${Math.round(r.annualRevenue / (state.unitCount ?? 1)).toLocaleString()}`}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>回本年限</div>
+                    <div className="num" style={{ fontSize: 15, fontWeight: 700, color: 'var(--green-900)', marginTop: 3 }}>
+                      {tiltLoading ? '計算中…' : `${r.paybackYears} 年`}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
       </div>
 
       {/* CTA */}
