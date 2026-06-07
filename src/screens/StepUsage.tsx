@@ -9,8 +9,8 @@ const MONTH_LABELS = ['1月','2月','3月','4月','5月','6月','7月','8月','9
 
 const HABITS = [
   { id: 'home'   as const, label: '白天在家',  desc: 'WFH・退休・長時在宅' },
-  { id: 'normal' as const, label: '一般作息',  desc: '早出晚歸・預設值'     },
-  { id: 'away'   as const, label: '白天外出',  desc: '夜間用電為主'         },
+  { id: 'normal' as const, label: '一般作息',  desc: '上班族・假日白天在家'   },
+  { id: 'away'   as const, label: '白天外出',  desc: '長時外出・幾乎不在家'   },
 ];
 
 const BUILDING_TYPES = [
@@ -66,21 +66,17 @@ export default function StepUsage({
   );
 
   // Local raw string states so the user can clear/type without being snapped to min
-  const [billRaw,   setBillRaw]   = useState(String(Math.round(billAmount)));
+  const [billRaw,   setBillRaw]   = useState(state.billAmount != null ? String(Math.round(state.billAmount)) : '');
   const [kwhRaw,    setKwhRaw]    = useState(String(kwh));
   const [billError, setBillError] = useState(false);
   const [kwhError,  setKwhError]  = useState(false);
 
-  // Keep raw values in sync when external changes happen (season toggle, slider, etc.)
-  useEffect(() => { setBillRaw(String(Math.round(billAmount))); setBillError(false); }, [billAmount]);
-  useEffect(() => { setKwhRaw(String(kwh)); setKwhError(false); }, [kwh]);
-
-  // Seed billAmount on first mount so season-change always has a value to invert
+  // Keep raw values in sync when external changes happen (season toggle, etc.)
+  // Only sync if the user has already entered a bill (don't overwrite empty state)
   useEffect(() => {
-    if (inputMethod === 'bill' && state.billAmount == null) {
-      update({ billAmount: computeMonthlyBill(state.monthlyKwh ?? 350, isSummer) * 2 });
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (state.billAmount != null) { setBillRaw(String(Math.round(state.billAmount))); setBillError(false); }
+  }, [state.billAmount]);
+  useEffect(() => { setKwhRaw(String(kwh)); setKwhError(false); }, [kwh]);
 
   // Annual cost with correct season split: 4 summer + 8 non-summer months
   const annualElectricityCost =
@@ -131,9 +127,9 @@ export default function StepUsage({
   }
 
   function onSeasonChange(season: 'summer' | 'nonSummer') {
-    const currentBill = state.billAmount ?? defaultBill;
-    const derived     = convertBillToMonthlyKwh(currentBill, season === 'summer');
-    update({ billSeason: season, billAmount: currentBill, monthlyKwh: derived });
+    if (state.billAmount == null) { update({ billSeason: season }); return; }
+    const derived = convertBillToMonthlyKwh(state.billAmount, season === 'summer');
+    update({ billSeason: season, monthlyKwh: derived });
   }
 
   function onMethodChange(method: 'bill' | 'kwh') {
@@ -218,7 +214,7 @@ export default function StepUsage({
         <p className="body step-usage-desc" style={{ color: 'var(--ink-500)' }}>
           {isApartment
             ? `輸入單戶每月用電量，系統會乘以 ${unitCount} 戶計算社區總用電。`
-            : '直接輸入台電帳單金額即可，系統會自動換算月均度數；或切換至度數模式手動輸入。'}
+            : '請輸入最近一張台電帳單金額，系統自動換算月均用電度數。不知道金額？可切換至度數模式。'}
         </p>
       </div>
 
@@ -274,9 +270,9 @@ export default function StepUsage({
 
               {/* Bill amount input */}
               <div style={{ marginBottom: 16 }}>
-                <div className="body-sm" style={{ marginBottom: 8 }}>雙月帳單金額</div>
+                <div className="body-sm" style={{ marginBottom: 8, color: 'var(--amber-700, #b45309)', fontWeight: 600 }}>請輸入最近一張台電帳單金額</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <span style={{ fontSize: 24, color: 'var(--ink-500)', fontWeight: 500 }}>NT$</span>
+                  <span style={{ fontSize: 24, color: 'var(--amber-600, #d97706)', fontWeight: 500 }}>NT$</span>
                   <input
                     type="number" min="50" max="50000"
                     value={billRaw}
@@ -285,9 +281,10 @@ export default function StepUsage({
                     className="num usage-bill-input"
                     style={{
                       fontWeight: 700,
-                      color: billError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
-                      border: 'none', outline: 'none', background: 'transparent',
-                      width: 210, padding: 0,
+                      color: billError ? 'var(--red-600, #dc2626)' : 'var(--amber-700, #b45309)',
+                      border: 'none', borderBottom: `2px solid ${billError ? 'var(--red-400, #f87171)' : 'var(--amber-400, #fbbf24)'}`,
+                      outline: 'none', background: 'transparent',
+                      width: 210, padding: '0 0 2px',
                     }}
                   />
                 </div>
@@ -297,7 +294,7 @@ export default function StepUsage({
                   </div>
                 )}
                 {!billError && (
-                  <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: 'var(--amber-600, #d97706)', marginTop: 4 }}>
                     每兩個月一張（台電雙月計費）
                   </div>
                 )}
@@ -372,7 +369,7 @@ export default function StepUsage({
                           <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                             {/* Bill number label */}
                             <div className="caption" style={{ color: 'var(--ink-400)', textAlign: 'center' }}>
-                              帳單 {k + 1}
+                              {(['1-2月','3-4月','5-6月','7-8月','9-10月','11-12月'])[k]}
                             </div>
                             {/* Season toggle */}
                             <div style={{ display: 'flex', gap: 3 }}>

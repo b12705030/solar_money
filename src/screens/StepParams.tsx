@@ -128,9 +128,8 @@ export default function StepParams({
           const isFull = gCap >= gMaxCap - 0.05;
           const { annualKwh: gAnnualKwh } = computeResults({ ...state, capacity: gCap, panelGrade: g.id });
           const gAnnualSavings = Math.round(gAnnualKwh * getFitRateForCapacity(gCap));
-          const totalPanels = Math.round(gMaxCap / 0.45);
-          const budgetPanels = Math.round(gCap / 0.45);
-          const DOTS = 10;
+          const gPing = parseFloat((gCap / gMaxCap * area).toFixed(1));
+          const DOTS = 20;
           const filledDots = isFull ? DOTS : Math.max(1, Math.round(gCap / gMaxCap * DOTS));
           return (
             <button
@@ -154,17 +153,22 @@ export default function StepParams({
                 <div className="grade-cap-label">轉換效率</div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 3, margin: '6px 0 2px' }}>
-                {Array.from({ length: DOTS }, (_, i) => (
-                  <span key={i} style={{
-                    display: 'inline-block', width: 9, height: 9, borderRadius: 2, flexShrink: 0,
-                    background: i < filledDots
-                      ? (active ? 'rgba(255,255,255,0.9)' : 'var(--green-700)')
-                      : (active ? 'rgba(255,255,255,0.2)' : 'var(--ink-150,#e5e7eb)'),
-                  }} />
-                ))}
-                <span style={{ fontSize: 10, marginLeft: 4, color: active ? 'rgba(255,255,255,0.7)' : 'var(--ink-400)', whiteSpace: 'nowrap' }}>
-                  {budgetPanels} / {totalPanels} 片
+              <div style={{ margin: '6px 0 2px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 12px)', gap: 2, marginBottom: 3 }}>
+                  {Array.from({ length: DOTS }, (_, i) => (
+                    <span key={i} style={{
+                      display: 'inline-block', width: 9, height: 9, borderRadius: 2,
+                      background: i < filledDots
+                        ? (active ? 'rgba(255,255,255,0.9)' : 'var(--green-700)')
+                        : (active ? 'rgba(255,255,255,0.2)' : 'var(--ink-150,#e5e7eb)'),
+                    }} />
+                  ))}
+                </div>
+                <span style={{ fontSize: 12, color: active ? 'rgba(255,255,255,0.85)' : 'var(--ink-600)' }}>
+                  {gPing} 坪 / {area} 坪
+                  <span style={{ fontSize: 10, color: active ? 'rgba(255,255,255,0.6)' : 'var(--ink-400)', marginLeft: 3 }}>
+                    （預算能裝 / 可安裝）
+                  </span>
                 </span>
               </div>
 
