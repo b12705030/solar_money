@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Star } from 'lucide-react';
+import { Star, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import type { UserInquiry, InquiryMessage } from '@/lib/types';
 
@@ -59,7 +59,6 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
         setInquiries(data);
         setSelected(prev => {
           const next = prev ? (data.find(i => i.id === prev.id) ?? null) : null;
-          // 自動選到的對話若有未讀，馬上 mark read
           if (next && !prev) {
             const lastVendorMsg = [...(next.messages ?? [])].reverse().find(m => m.sender === 'vendor');
             if (lastVendorMsg && (!next.userLastReadAt || new Date(lastVendorMsg.createdAt) > new Date(next.userLastReadAt))) {
@@ -159,15 +158,33 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
     return new Date(lastVendorMsg.createdAt) > new Date(inq.userLastReadAt);
   };
 
+  const handleSelectInquiry = (inq: UserInquiry) => {
+    setSelected(inq);
+    setReviewOpen(false);
+    setReviewRating(0);
+    setReviewComment('');
+    setReviewError('');
+    setSendError('');
+    if (unread(inq)) markRead(inq);
+  };
+
+  const handleBack = () => {
+    setSelected(null);
+    setReviewOpen(false);
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal"
+        className={`modal inbox-modal${selected ? ' inbox-chat-active' : ''}`}
         style={{ width: '90vw', maxWidth: 860, height: '82vh', padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 12 }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--ink-100)', flexShrink: 0 }}>
+        <div className="modal-header inbox-modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--ink-100)', flexShrink: 0 }}>
+          <button className="inbox-back-btn" onClick={handleBack} aria-label="返回">
+            <ArrowLeft size={18} />
+          </button>
           <div className="modal-title">詢價收件箱</div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
@@ -177,24 +194,16 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
         ) : inquiries.length === 0 ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-400)', fontSize: 14 }}>尚無詢價紀錄</div>
         ) : (
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          <div className={`inbox-panels${selected ? ' inbox-chat-active' : ''}`}>
             {/* Left: vendor list */}
-            <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid var(--ink-100)', overflowY: 'auto' }}>
+            <div className="inbox-list-panel">
               {inquiries.map(inq => {
                 const active = selected?.id === inq.id;
                 const hasUnread = unread(inq);
                 return (
                   <div
                     key={inq.id}
-                    onClick={() => {
-                      setSelected(inq);
-                      setReviewOpen(false);
-                      setReviewRating(0);
-                      setReviewComment('');
-                      setReviewError('');
-                      setSendError('');
-                      if (unread(inq)) markRead(inq);
-                    }}
+                    onClick={() => handleSelectInquiry(inq)}
                     style={{
                       padding: '12px 16px', cursor: 'pointer', display: 'flex', gap: 10, alignItems: 'center',
                       background: active ? 'var(--green-50)' : 'transparent',
@@ -228,7 +237,7 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
 
             {/* Right: chat */}
             {selected ? (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div className="inbox-chat-panel">
                 {/* Chat header */}
                 <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--ink-100)', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -350,7 +359,7 @@ export default function UserInbox({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             ) : (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-400)', fontSize: 14 }}>
+              <div className="inbox-chat-panel inbox-empty">
                 從左側選擇一段對話吧！
               </div>
             )}

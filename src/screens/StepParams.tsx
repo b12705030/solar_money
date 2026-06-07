@@ -51,7 +51,7 @@ export default function StepParams({
 
   return (
     <div>
-      <div style={{ maxWidth: 720, marginBottom: 36 }}>
+      <div className="params-header" style={{ maxWidth: 720 }}>
         <div className="eyebrow" style={{ marginBottom: 16 }}>Step 4 · 基本參數</div>
         <h2 className="h-title" style={{ margin: '0 0 14px' }}>設定預算與面板等級</h2>
         <p className="body" style={{ color: 'var(--ink-500)' }}>
@@ -138,7 +138,7 @@ export default function StepParams({
               <div className="grade-card-title">{g.label}</div>
 
               <div>
-                <div className="num" style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{gCap}</div>
+                <div className="num grade-kwp">{gCap}</div>
                 <div className="grade-cap-label">kWp 可裝容量</div>
               </div>
 
@@ -154,7 +154,7 @@ export default function StepParams({
       {/* ── 規格 + 費用摘要 ── */}
       <div className="param-summary-grid">
         {/* 裝機規格 */}
-        <div className="card" style={{ padding: 24 }}>
+        <div className="card param-summary-card">
           <div className="card-section-heading">裝機規格</div>
           {[
             { label: '裝機容量', value: `${capacity} kWp` },
@@ -170,7 +170,7 @@ export default function StepParams({
         </div>
 
         {/* 費用試算 */}
-        <div className="card" style={{ padding: 24 }}>
+        <div className="card param-summary-card">
           <div className="card-section-heading">費用試算</div>
           {isApartment && (
             <div style={{

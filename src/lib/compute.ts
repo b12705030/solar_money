@@ -1,5 +1,5 @@
 import type { SolarState, ComputedResults, Region } from './types';
-import { TW_IRRADIANCE, DEFAULT_TEMP, DEFAULT_WIND, PANEL_GRADES } from './constants';
+import { TW_IRRADIANCE, DEFAULT_TEMP, DEFAULT_WIND, PANEL_GRADES, REGION_CALIBRATION } from './constants';
 
 // ─── Faiman (2008) T_cell model, as cited by Han et al. (2026) Eq.(13) ────────
 // T_cell = T_a + I_total / (U0 + U1·WS)
@@ -13,10 +13,12 @@ const FAIMAN = {
   base_PR: 0.78, // —    — baseline system performance ratio (inverter + wiring + soiling)
 };
 
-// Han et al. (2026) Fig.11 suitability thresholds (Z-score ±σ).
-// Paper reports values in kWh per 325W Panasonic HIT panel; divide by 0.325 kWp to get kWh/kWp.
-const PV_YIELD_GOOD = Math.round(461 / 0.325);  // 1418 kWh/kWp/yr  (+1σ)
-const PV_YIELD_POOR = Math.round(373 / 0.325);  // 1148 kWh/kWp/yr  (−1σ)
+// Suitability thresholds recalibrated from TPC 114-year county data (19 counties, 860万 kWp).
+// Method: empirical ±1σ of actual county yields (mean≈1158, σ≈90 kWh/kWp/yr).
+// Paper (Han et al. 2026) thresholds (1418/1148) assumed Panasonic HIT + optimal tilt —
+// they overestimate real-world Taiwan installations by ~13% in south, ~8% in central.
+const PV_YIELD_GOOD = 1250; // kWh/kWp/yr — top quartile Taiwan counties (彰化/台南 level)
+const PV_YIELD_POOR = 1050; // kWh/kWp/yr — below-average northern counties (基隆/台北 level)
 
 function calcMonthlyPR(ghiArr: number[], tempArr: number[], windArr: number[], basePR = FAIMAN.base_PR): number[] {
   return ghiArr.map((ghi, i) => {
@@ -152,7 +154,11 @@ export function computeResults(
   degradationRateOverride?: number,
 ): ComputedResults {
   const region = (state.address?.region ?? '北部') as Region;
-  const irr  = (monthlyGhi  && monthlyGhi.length  === 12) ? monthlyGhi  : TW_IRRADIANCE[region];
+  // REGION_CALIBRATION corrects ERA5/NASA POWER systematic GHI overestimation (South +11.9%,
+  // East +5.4%) and real-world losses (non-optimal tilt, soiling, shading). Applied to all paths.
+  const cal    = REGION_CALIBRATION[region];
+  const rawIrr = (monthlyGhi && monthlyGhi.length === 12) ? monthlyGhi : TW_IRRADIANCE[region];
+  const irr  = rawIrr.map(v => v * cal);
   const temp = (monthlyTemp && monthlyTemp.length  === 12) ? monthlyTemp : DEFAULT_TEMP[region];
   const wind = (monthlyWind && monthlyWind.length  === 12) ? monthlyWind : DEFAULT_WIND[region];
   const capacity = state.capacity ?? 7.7;

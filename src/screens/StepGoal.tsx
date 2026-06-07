@@ -48,7 +48,7 @@ export default function StepGoal({
 
   return (
     <div>
-      <div style={{ maxWidth: 720, marginBottom: 36 }}>
+      <div className="goal-header" style={{ maxWidth: 720 }}>
         <div className="eyebrow" style={{ marginBottom: 16 }}>Step 3 · 優化目標</div>
         <h2 className="h-title" style={{ margin: '0 0 14px' }}>你最想達成什麼目標？</h2>
         <p className="body" style={{ color: 'var(--ink-500)' }}>
@@ -66,18 +66,12 @@ export default function StepGoal({
               onClick={() => update({ goal: g.id })}
               onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor = 'var(--green-500)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}}
               onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor = 'var(--ink-200)'; e.currentTarget.style.transform = 'translateY(0)'; }}}
+              className="goal-card"
               style={{
-                position: 'relative', textAlign: 'left',
-                padding: 22,
                 background: active ? 'var(--green-700)' : 'var(--white)',
                 color: active ? 'var(--white)' : 'var(--ink-900)',
                 border: `1.5px solid ${active ? 'var(--green-700)' : 'var(--ink-200)'}`,
-                borderRadius: 'var(--radius-lg)',
-                transition: 'all 0.25s var(--ease-out)',
                 boxShadow: active ? 'var(--shadow-md)' : 'var(--shadow-sm)',
-                cursor: 'pointer',
-                display: 'flex', flexDirection: 'column', gap: 12,
-                minHeight: 160,
               }}
             >
               {isRec && (
@@ -99,7 +93,7 @@ export default function StepGoal({
                 <GoalIcon kind={g.icon} color={active ? 'var(--white)' : 'var(--green-700)'} />
               </div>
               <div>
-                <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>{g.title}</div>
+                <div className="goal-card-title" style={{ fontWeight: 600, marginBottom: 4 }}>{g.title}</div>
                 <div style={{ fontSize: 13, color: active ? 'rgba(255,255,255,0.8)' : 'var(--ink-500)', lineHeight: 1.45 }}>{g.desc}</div>
               </div>
               {active && (
