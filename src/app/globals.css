@@ -707,6 +707,9 @@ input[type="range"]::-moz-range-thumb {
 .login-banner-sub  { font-size: 12px; color: var(--ink-500); margin-top: 2px; }
 
 /* ========== StepParams: Budget Slider Card ========== */
+.params-header     { margin-bottom: 36px; }
+.grade-kwp         { font-size: 28px; font-weight: 700; line-height: 1; }
+.param-summary-card { padding: 24px; }
 .budget-card { padding: 26px; margin-bottom: 20px; }
 .budget-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
 .budget-amount { font-size: 28px; font-weight: 700; color: var(--green-700); }
@@ -3150,15 +3153,25 @@ input[type="range"]::-moz-range-thumb {
   .goal-card       { padding: 14px 16px; gap: 8px; min-height: 0; }
   .goal-card-title { font-size: 15px; }
 
-  /* StepParams: grade cards single column */
-  .grade-grid         { grid-template-columns: 1fr; }
-  .grade-card-title   { padding-right: 80px; }   /* make room for badge */
+  /* StepParams: grade cards three columns on mobile */
+  .info               { margin-left: 2px; }
+  .params-header      { margin-bottom: 20px; }
+  .grade-grid         { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .grade-card         { padding: 11px; gap: 6px; }
+  .grade-card-title   { padding-right: 0; font-size: 13px; }
+  .grade-kwp          { font-size: 18px; }
+  .grade-desc         { font-size: 10px; }
+  .grade-badges       { position: static; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; order: 10; }
 
   /* StepParams: summary cards single column */
-  .param-summary-grid { grid-template-columns: 1fr; }
+  .param-summary-grid  { grid-template-columns: 1fr; gap: 12px; }
+  .param-summary-card  { padding: 16px; }
+  .cost-highlight-amount { font-size: 24px; }
 
   /* StepParams: budget amount wraps cleanly */
-  .budget-row   { flex-wrap: wrap; gap: 6px; }
+  .budget-card   { padding: 16px; margin-bottom: 12px; }
+  .slider-labels { margin-top: 3px; }
+  .budget-row   { flex-wrap: wrap; gap: 6px; margin-bottom: 2px; }
   .budget-amount { font-size: 24px; }
 
   /* Results KPI card: reduce padding on mobile */
