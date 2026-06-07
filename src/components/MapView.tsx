@@ -235,7 +235,7 @@ function applyTerrain(map: mapboxgl.Map, enabled: boolean): void {
 }
 
 function clearHighlight(map: mapboxgl.Map) {
-  ['highlight-base', 'highlight-fill'].forEach(id => {
+  ['highlight-fill', 'highlight-outline'].forEach(id => {
     if (map.getLayer(id)) map.removeLayer(id);
   });
   if (map.getSource('highlighted-building')) map.removeSource('highlighted-building');
@@ -257,13 +257,20 @@ function showHighlight(map: mapboxgl.Map, features: GeoJSON.Feature[]) {
       }),
     } as GeoJSON.FeatureCollection,
   });
+  // slot:'middle' 與一般灰色建物相同，讓 slot:'top' 的陰影以 2D 疊合方式覆蓋，陰影清晰可見
   (map as any).addLayer({
-    id: 'highlight-base', type: 'fill-extrusion', slot: 'top', source: 'highlighted-building',
-    paint: { 'fill-extrusion-color': '#E8A53C', 'fill-extrusion-height': 1, 'fill-extrusion-base': 0, 'fill-extrusion-opacity': 1, 'fill-extrusion-emissive-strength': 1 },
+    id: 'highlight-fill', type: 'fill-extrusion', slot: 'middle', source: 'highlighted-building',
+    paint: {
+      'fill-extrusion-color': '#d4d0c8',
+      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-base': 0,
+      'fill-extrusion-opacity': 0.85,
+    },
   });
+  // 綠色外框線標示選中狀態（slot:'top' 2D 線，渲染在所有 3D 建物之上）
   (map as any).addLayer({
-    id: 'highlight-fill', type: 'fill-extrusion', slot: 'top', source: 'highlighted-building',
-    paint: { 'fill-extrusion-color': '#E8A53C', 'fill-extrusion-height': ['get', 'height'], 'fill-extrusion-base': 0, 'fill-extrusion-opacity': 1, 'fill-extrusion-emissive-strength': 1 },
+    id: 'highlight-outline', type: 'line', slot: 'top', source: 'highlighted-building',
+    paint: { 'line-color': '#F97316', 'line-width': 5, 'line-opacity': 1 },
   });
 }
 
@@ -300,6 +307,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
   const [shadowLoading, setShadowLoading] = useState(false);
   const [tooManyBuildings, setTooManyBuildings] = useState(false);
   const [terrainEnabled, setTerrainEnabled] = useState(true);
+  const [hasSelectedBuilding, setHasSelectedBuilding] = useState(false);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const onBuildingFoundRef = useRef(onBuildingFound);
   const onBuildingNotFoundRef = useRef(onBuildingNotFound);
@@ -385,8 +393,8 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
         paint: {
           'fill-extrusion-color': '#000000',
           'fill-extrusion-emissive-strength': 1,
-          'fill-extrusion-opacity': 0.25,
-          'fill-extrusion-height': ['get', 'height'],
+          'fill-extrusion-opacity': 0.30,
+          'fill-extrusion-height': ['+', ['get', 'height'], 1.2],
           'fill-extrusion-base': 0,
         },
       });
@@ -452,7 +460,10 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
         const areaPing = Math.max(1, Math.round(polygonAreaM2(primary.footprint) * PING_PER_M2));
         buildingCacheRef.current = { features: [primaryFeat], footprint: primary.footprint, height: primary.height, lat: clickLat, lng: clickLng };
         onDetectionStartRef.current?.({ lat: clickLat, lng: clickLng, height: primary.height, areaPing });
+        if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
+        markerRef.current = new mapboxgl.Marker({ color: '#F97316' }).setLngLat([clickLng, clickLat]).addTo(map);
         showHighlight(map, [primaryFeat]);
+        setHasSelectedBuilding(true);
 
         const usableFraction = await fetchUsableFractionForBuilding(
           primary.footprint, clickLat, clickLng, buildingsRef,
@@ -540,6 +551,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
       if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
       clearHighlight(mapInstance);
       buildingCacheRef.current = null;
+      setHasSelectedBuilding(false);
       return;
     }
 
@@ -555,14 +567,16 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
       Math.abs(cached.lng - lngLat[0]) < 1e-6
     ) {
       showHighlight(mapInstance, cached.features);
+      setHasSelectedBuilding(true);
       return;
     }
 
     onDetectionStartRef.current?.();
     if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
+    setHasSelectedBuilding(false);
     clearHighlight(mapInstance);
     buildingCacheRef.current = null;
-    markerRef.current = new mapboxgl.Marker({ color: '#2D6A4F' }).setLngLat(lngLat).addTo(mapInstance);
+    markerRef.current = new mapboxgl.Marker({ color: '#F97316' }).setLngLat(lngLat).addTo(mapInstance);
     mapInstance.flyTo({ center: lngLat, zoom: 17, pitch: 45, duration: 1500 });
 
     const abortCtrl = new AbortController();
@@ -571,8 +585,8 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
       if (abortCtrl.signal.aborted) return;
       buildingCacheRef.current = { features, footprint, height, lat: lngLat[1], lng: lngLat[0] };
       showHighlight(mapInstance!, features);
+      setHasSelectedBuilding(true);
       onBuildingFoundRef.current?.({ height, areaPing, usableFraction, lat: lngLat[1], lng: lngLat[0] });
-      if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
     };
 
     const detectBuilding = async () => {
@@ -644,6 +658,25 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
           {buildingDataLoading ? '正在載入建物資料…' : '計算陰影中…'}
         </div>
       ) : null}
+      {hasSelectedBuilding && (
+        <div style={{
+          position: 'absolute', bottom: 70, left: 10, zIndex: 10,
+          background: 'rgba(255,255,255,0.92)', borderRadius: 8,
+          padding: '8px 12px', fontSize: 12, color: '#444',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.15)', pointerEvents: 'none',
+          display: 'flex', flexDirection: 'column', gap: 5,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 14, height: 14, border: '2.5px solid #F97316', borderRadius: 2, flexShrink: 0 }} />
+            <span>選中建物</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 14, height: 14, background: 'rgba(0,0,0,0.50)', borderRadius: 3, flexShrink: 0 }} />
+            <span>陰影遮蔽</span>
+          </div>
+          <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>依時間滑桿更新</div>
+        </div>
+      )}
       {mapLoaded && (
         <button
           onClick={() => setTerrainEnabled(v => !v)}
