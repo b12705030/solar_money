@@ -100,7 +100,7 @@ export default function StepParams({
                   <span key={i} style={{
                     display: 'inline-block', width: 9, height: 9, borderRadius: 2, flexShrink: 0,
                     background: i < filledDots
-                      ? (active ? 'rgba(255,255,255,0.9)' : 'var(--green-600)')
+                      ? (active ? 'rgba(255,255,255,0.9)' : 'var(--green-700)')
                       : (active ? 'rgba(255,255,255,0.2)' : 'var(--ink-150,#e5e7eb)'),
                   }} />
                 ))}
