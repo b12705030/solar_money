@@ -3301,7 +3301,7 @@ input[type="range"]::-moz-range-thumb {
   .h-section { font-size: 18px; }
 
   /* StepAddress: building info 三欄縮小，預估可用面積欄加寬 */
-  .building-info-grid                    { grid-template-columns: 1fr 1fr 1.6fr; }
+  .building-info-grid                    { grid-template-columns: 1fr 1.2fr 1.5fr; }
   .building-info-grid > .card            { padding: 10px; }
   .building-info-num                     { font-size: 16px; }
 }
