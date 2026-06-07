@@ -3021,6 +3021,18 @@ input[type="range"]::-moz-range-thumb {
 .step-usage-grid {
   display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px;
 }
+.step-usage-desc     { margin-bottom: 40px; }
+.usage-input-card    { padding: 36px; }
+.usage-bill-input    { font-size: 60px; }
+.usage-kwh-input     { font-size: 72px; }
+.usage-context-card  { padding: 28px; }
+.usage-habit-section { margin-top: 36px; }
+.usage-method-toggle { margin-bottom: 28px; }
+.usage-habit-eyebrow  { margin-bottom: 6px; }
+.usage-habit-btn      { padding: 14px 16px; }
+.usage-stats-list     { display: flex; gap: 20px; }
+.usage-context-footer { margin-top: 20px; }
+.usage-context-note   { font-size: 13px; }
 
 /* ── StepGoal: three-column goal cards ── */
 .step-goal-grid {
@@ -3101,6 +3113,20 @@ input[type="range"]::-moz-range-thumb {
 
   /* StepAddress: description text bottom margin */
   .step-address-desc         { margin-bottom: 14px; }
+
+  /* StepUsage */
+  .step-usage-desc     { margin-bottom: 16px; }
+  .usage-method-toggle { margin-bottom: 16px; }
+  .usage-habit-eyebrow { margin-bottom: 2px; }
+  .usage-habit-btn      { padding: 10px 12px; display: flex; flex-direction: column; align-items: flex-start; }
+  .usage-stats-list     { gap: 15px; }
+  .usage-context-footer { margin-top: 12px; }
+  .usage-context-note   { font-size: 11px; }
+  .usage-input-card    { padding: 20px; }
+  .usage-bill-input    { font-size: 38px; }
+  .usage-kwh-input     { font-size: 44px; }
+  .usage-context-card  { padding: 16px; }
+  .usage-habit-section { margin-top: 20px; }
   .roof-area-input           { font-size: 20px; }
   .address-confirmed-section { margin-top: 14px; }
   .slider-card               { padding: 14px 16px; }
