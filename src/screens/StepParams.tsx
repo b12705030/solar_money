@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { Info } from '@/components/ui';
 import { Slider } from '@/components/Slider';
 import { SUBSIDIES, PANEL_GRADES } from '@/lib/constants';
-import { guessCounty } from '@/lib/compute';
+import { guessCounty, computeResults, getFitRateForCapacity } from '@/lib/compute';
 import type { SolarState } from '@/lib/types';
 
 export default function StepParams({
@@ -42,11 +42,56 @@ export default function StepParams({
     <div>
       <div style={{ maxWidth: 720, marginBottom: 36 }}>
         <div className="eyebrow" style={{ marginBottom: 16 }}>Step 4 · 基本參數</div>
-        <h2 className="h-title" style={{ margin: '0 0 14px' }}>設定預算與面板等級</h2>
+        <h2 className="h-title" style={{ margin: '0 0 14px' }}>設定面板等級與預算</h2>
         <p className="body" style={{ color: 'var(--ink-500)' }}>
           設定你能接受的最高自付金額，再選擇面板等級，系統自動計算可裝容量。
           已帶入 <b style={{ color: 'var(--green-700)' }}>{county}</b> 的政府補助。
         </p>
+        <p className="body-sm" style={{ color: 'var(--ink-400)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+          不同等級的面板太陽能轉換效率不同，效率越高的面板單位價格也越高。
+          <Info tip="轉換效率：面板將太陽光轉為電能的比例。效率越高，同樣屋頂面積能產生更多電力。" />
+        </p>
+      </div>
+
+      {/* ── 面板等級卡片 ── */}
+      <div className="grade-grid">
+        {PANEL_GRADES.map(g => {
+          const active = grade === g.id;
+          const gNet = g.costPerKw - subsidy.amount;
+          const gMaxCap = parseFloat((area * 3.3 * (state.usableFraction ?? 0.6) * g.kWpPerM2).toFixed(1));
+          const gCap = parseFloat(Math.min(gMaxCap, gNet > 0 ? Math.floor((budgetCeiling / gNet) * 10) / 10 : gMaxCap).toFixed(1));
+          const isFull = gCap >= gMaxCap - 0.05;
+          const { annualKwh: gAnnualKwh } = computeResults({ ...state, capacity: gCap, panelGrade: g.id });
+          const gAnnualSavings = Math.round(gAnnualKwh * getFitRateForCapacity(gCap));
+          return (
+            <button
+              key={g.id}
+              className={`grade-card${active ? ' grade-card--active' : ''}`}
+              onClick={() => update({ panelGrade: g.id })}
+            >
+              <div className="grade-badges">
+                {'recommended' in g && g.recommended && (
+                  <span className="grade-badge grade-badge--rec">★ 推薦</span>
+                )}
+                {isFull && (
+                  <span className="grade-badge grade-badge--full">屋頂全裝</span>
+                )}
+              </div>
+
+              <div className="grade-card-title">{g.label}</div>
+
+              <div>
+                <div className="num" style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }}>{g.efficiency}</div>
+                <div className="grade-cap-label">轉換效率</div>
+              </div>
+
+              <div className="grade-desc">
+                可裝 {gCap} kWp・預估年售電 NT$ {gAnnualSavings.toLocaleString()}<br />
+                NT$ {g.costPerKw.toLocaleString()} / kW
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── 預算滑桿 ── */}
@@ -67,45 +112,6 @@ export default function StepParams({
           <span className="caption">5 萬</span>
           <span className="caption">80 萬</span>
         </div>
-      </div>
-
-      {/* ── 面板等級卡片 ── */}
-      <div className="grade-grid">
-        {PANEL_GRADES.map(g => {
-          const active = grade === g.id;
-          const gNet = g.costPerKw - subsidy.amount;
-          const gMaxCap = parseFloat((area * 3.3 * (state.usableFraction ?? 0.6) * g.kWpPerM2).toFixed(1));
-          const gCap = parseFloat(Math.min(gMaxCap, gNet > 0 ? Math.floor((budgetCeiling / gNet) * 10) / 10 : gMaxCap).toFixed(1));
-          const isFull = gCap >= gMaxCap - 0.05;
-          return (
-            <button
-              key={g.id}
-              className={`grade-card${active ? ' grade-card--active' : ''}`}
-              onClick={() => update({ panelGrade: g.id })}
-            >
-              <div className="grade-badges">
-                {'recommended' in g && g.recommended && (
-                  <span className="grade-badge grade-badge--rec">★ 推薦</span>
-                )}
-                {isFull && (
-                  <span className="grade-badge grade-badge--full">屋頂全裝</span>
-                )}
-              </div>
-
-              <div className="grade-card-title">{g.label}</div>
-
-              <div>
-                <div className="num" style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{gCap}</div>
-                <div className="grade-cap-label">kWp 可裝容量</div>
-              </div>
-
-              <div className="grade-desc">
-                {g.efficiency} 轉換效率<br />
-                NT$ {g.costPerKw.toLocaleString()} / kW
-              </div>
-            </button>
-          );
-        })}
       </div>
 
       {/* ── 規格 + 費用摘要 ── */}
