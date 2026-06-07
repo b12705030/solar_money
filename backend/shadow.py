@@ -852,9 +852,10 @@ def compute_usable_roof_fraction(
             continue
 
     print(f'[TIMER] usable_fraction/build_neighbours: {(time.perf_counter()-_t0)*1000:.0f}ms ({len(neighbour_polys)} 棟)')
-    # ── Sample hours ──────────────────────────────────────────────────────────
+    # ── Sample hours (irradiance-weighted: weight = sin(solar_altitude)) ─────
     fractions: list[float] = []
-    for hour in [8, 10, 12, 14, 16]:
+    weights: list[float] = []
+    for hour in [7, 9, 11, 13, 15, 17]:
         _th = time.perf_counter()
         az, alt = compute_solar_position(lat, lng, _make_timestamp(hour))
         if alt <= 2:
@@ -877,9 +878,11 @@ def compute_usable_roof_fraction(
             except Exception:
                 continue
 
+        w = float(np.sin(np.radians(alt)))
         if not shadow_polys:
             fractions.append(1.0)
-            print(f'[TIMER] usable_fraction/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms (no shadows)')
+            weights.append(w)
+            print(f'[TIMER] usable_fraction/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms (no shadows) weight={w:.3f}')
             continue
 
         all_shadows = unary_union(shadow_polys)
@@ -890,13 +893,15 @@ def compute_usable_roof_fraction(
 
         frac = max(0.0, (usable_area - shaded_area) / usable_area) if usable_area > 0 else 0.0
         fractions.append(frac)
-        print(f'[TIMER] usable_fraction/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms frac={frac:.2f}')
+        weights.append(w)
+        print(f'[TIMER] usable_fraction/hour_{hour}: {(time.perf_counter()-_th)*1000:.0f}ms frac={frac:.2f} weight={w:.3f}')
 
     print(f'[TIMER] usable_fraction/total: {(time.perf_counter()-_t0)*1000:.0f}ms')
     if not fractions:
         return {'usable_fraction': 0.6, 'setback_area_m2': round(usable_area, 1)}
 
-    avg = sum(fractions) / len(fractions)
+    total_w = sum(weights)
+    avg = sum(f * w for f, w in zip(fractions, weights)) / total_w
     avg = max(0.1, min(0.95, round(avg, 3)))
     return {'usable_fraction': avg, 'setback_area_m2': round(usable_area, 1)}
 

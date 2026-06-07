@@ -28,7 +28,7 @@ export function Info({ tip }: { tip: string }) {
           background: 'var(--ink-900)', color: 'var(--white)',
           fontSize: 12, fontWeight: 400, lineHeight: 1.55,
           padding: '8px 12px', borderRadius: 8,
-          whiteSpace: 'normal', wordBreak: 'break-word',
+          whiteSpace: 'pre-line', wordBreak: 'break-word',
           width: 'max-content', maxWidth: 320,
           zIndex: 9999, boxShadow: 'var(--shadow-md)',
           pointerEvents: 'none',

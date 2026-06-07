@@ -3007,7 +3007,7 @@ input[type="range"]::-moz-range-thumb {
   border: 1px solid var(--ink-100);
 }
 .building-info-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 10px;
 }
 .building-info-grid > .card { padding: 14px 18px; min-width: 0; }
 .building-info-num           { font-size: 22px; }
@@ -3302,7 +3302,7 @@ input[type="range"]::-moz-range-thumb {
   .h-section { font-size: 18px; }
 
   /* StepAddress: building info 三欄縮小，預估可用面積欄加寬 */
-  .building-info-grid                    { grid-template-columns: 0.85fr 1fr 1.15fr; }
+  .building-info-grid                    { grid-template-columns: 1fr 1.2fr 1.5fr; }
   .building-info-grid > .card            { padding: 10px; }
   .building-info-num                     { font-size: 16px; }
 }

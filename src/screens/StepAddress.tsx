@@ -84,12 +84,16 @@ export default function StepAddress({
   const [loadingElapsed, setLoadingElapsed] = useState(0);
   const loadingStartRef = useRef<number>(0);
   const geocodingStartedRef = useRef(false);
+  const mapClickDetectionRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [sunHour, setSunHour] = useState<number>(() => {
     const h = new Date().getHours(); // local hour
     return h >= 6 && h <= 18 ? h : 8;
   });
   const [sunTimes, setSunTimes] = useState<SunTimes | null>(null);
+  const [buildingNotFoundError, setBuildingNotFoundError] = useState(false);
+  const [addressPickError, setAddressPickError] = useState<string | null>(null);
+  const [addressResolving, setAddressResolving] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
 
@@ -112,6 +116,9 @@ export default function StepAddress({
       setBuildingInfo(null);
       setBuildingLoading(false);
       setLoadingStage('idle');
+      setBuildingNotFoundError(false);
+      setAddressPickError(null);
+      setAddressResolving(false);
     }
   }, [state.address, state.addressQuery]);
 
@@ -180,6 +187,9 @@ export default function StepAddress({
     setShowSuggestions(false);
     setSuggestions([]);
     setBuildingInfo(null);
+    setBuildingNotFoundError(false);
+    setAddressPickError(null);
+    setAddressResolving(true);
     try {
       const details = await getPlaceDetails(prediction.placeId);
       const addressOption: AddressOption = {
@@ -194,24 +204,33 @@ export default function StepAddress({
       };
       setSelected(addressOption);
 
-      // 查詢鄉鎮市代碼，並用 countyName 修正 region（formattedAddress 可能為英文格式）
-      const township = await fetchTownshipCode(details.lat, details.lon);
-      const region = township?.countyName
-        ? detectRegion(township.countyName + (township.townshipName ?? ''))
-        : addressOption.region;
+      // 立刻觸發地圖偵測，不等 township API
       update({
-        address: { ...addressOption, region },
+        address: addressOption,
         addressQuery: prediction.description,
         roofArea: 50,
         roofAreaError: false,
-        townshipCode: township?.townshipCode,
-        townshipName: township?.townshipName,
-        county: township?.countyName,
       });
+      setAddressResolving(false);
+
+      // Township 在背景執行，只影響費率計算欄位
+      fetchTownshipCode(details.lat, details.lon).then(township => {
+        if (!township) return;
+        const region = detectRegion(township.countyName + (township.townshipName ?? ''));
+        update({
+          address: { ...addressOption, region },
+          townshipCode: township.townshipCode,
+          townshipName: township.townshipName,
+          county: township.countyName,
+        });
+      }).catch(() => {});
+
       // 預熱後端最佳傾角快取，讓 Results 頁面載入更快
       fetch(`${API_URL}/api/township?lat=${details.lat}&lng=${details.lon}&goal=annual`).catch(() => {});
     } catch (err) {
       console.error('Failed to get place details:', err);
+      setAddressResolving(false);
+      setAddressPickError('地址查詢失敗，請重試');
     }
   };
 
@@ -219,7 +238,9 @@ export default function StepAddress({
     setBuildingLoading(true);
     setLoadingStage('buildings');
     setBuildingInfo(null);
+    setBuildingNotFoundError(false);
     geocodingStartedRef.current = false;
+    mapClickDetectionRef.current = !!early;
 
     if (early && !selected) {
       geocodingStartedRef.current = true;
@@ -252,6 +273,12 @@ export default function StepAddress({
     }
   };
 
+  const handleBuildingNotFound = () => {
+    setBuildingLoading(false);
+    setLoadingStage('done');
+    setBuildingNotFoundError(true);
+  };
+
   const handleBuildingFound = async (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => {
     setLoadingStage('shadows');
     setBuildingInfo({ height: info.height, areaPing: info.areaPing, usableFraction: info.usableFraction });
@@ -276,8 +303,8 @@ export default function StepAddress({
       setSelected(synthetic);
       setQuery(label);
       update({ address: synthetic, addressQuery: label, townshipCode: township?.townshipCode, townshipName: township?.townshipName, county: township?.countyName });
-    } else {
-      // 手打地址後點選地圖建物 → reverse geocode 更新地址標籤 + 行政區代碼
+    } else if (mapClickDetectionRef.current) {
+      // 使用者在地圖上點選建物（已有自動完成地址）→ 更新為點選位置的地址
       const [township, geocoded] = await Promise.all([
         fetchTownshipCode(info.lat, info.lng),
         reverseGeocode(info.lat, info.lng),
@@ -295,8 +322,19 @@ export default function StepAddress({
       update({
         address: synthetic,
         addressQuery: label,
-        ...(township && { townshipCode: township.townshipCode, townshipName: township.townshipName }),
+        ...(township && { townshipCode: township.townshipCode, townshipName: township.townshipName, county: township.countyName }),
       });
+    } else {
+      // 自動完成選擇後的自動偵測 — 保留原始地址文字不變，
+      // 只更新費率計算所需的行政區代碼
+      const township = await fetchTownshipCode(info.lat, info.lng);
+      if (township) {
+        update({
+          townshipCode: township.townshipCode,
+          townshipName: township.townshipName,
+          county: township.countyName,
+        });
+      }
     }
     setBuildingLoading(false);
     setLoadingStage('done');
@@ -336,7 +374,7 @@ export default function StepAddress({
                 inputMode="search"
                 autoComplete="street-address"
                 value={query}
-                onChange={e => { setQuery(e.target.value); setSelected(null); }}
+                onChange={e => { setQuery(e.target.value); setSelected(null); setAddressPickError(null); }}
                 onCompositionStart={() => { isComposingRef.current = true; }}
                 onCompositionEnd={() => { isComposingRef.current = false; }}
                 onFocus={() => {
@@ -345,7 +383,7 @@ export default function StepAddress({
                     inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                   }, 300);
                 }}
-                placeholder="輸入地址或地點名稱"
+                placeholder="例：台北市信義區信義路五段7號"
                 style={{
                   flex: 1, border: 'none', outline: 'none', background: 'transparent',
                   fontSize: 15, color: 'var(--ink-900)',
@@ -391,7 +429,22 @@ export default function StepAddress({
             )}
           </div>
 
-          {!selected && (
+          {/* 解析地址中 */}
+          {addressResolving && (
+            <p style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-400)' }}>正在解析地址…</p>
+          )}
+
+          {/* 地址查詢錯誤 / 無結果提示 */}
+          {!addressResolving && (addressPickError || (query.length > 3 && !showSuggestions && suggestions.length === 0 && !buildingLoading && !selected)) && (
+            <div style={{ marginTop: 6, fontSize: 12 }}>
+              {addressPickError
+                ? <span style={{ color: 'var(--red-600, #dc2626)' }}>{addressPickError}</span>
+                : <span style={{ color: 'var(--ink-500)' }}>找不到符合地址，請輸入更完整的地址，例如：<strong>台北市信義區信義路五段7號</strong></span>
+              }
+            </div>
+          )}
+
+          {!selected && !addressPickError && !addressResolving && (
             <p style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-400)' }}>
               或直接在地圖上點選建物
             </p>
@@ -444,92 +497,119 @@ export default function StepAddress({
                 </>
               ) : (
                 <>
-                  {buildingInfo && (
-                    <div className="building-info-grid">
-                      <div className="card">
-                        <div className="caption" style={{ marginBottom: 4 }}>建物高度</div>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                          <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.height.toFixed(1)}</span>
-                          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>m</span>
-                        </div>
-                        {estFloors !== null && (
-                          <span style={{ fontSize: 12, color: 'var(--ink-400)', display: 'block', marginTop: 1 }}>≈ {estFloors} 樓</span>
-                        )}
-                      </div>
-                      <div className="card">
-                        <div className="caption" style={{ marginBottom: 4 }}>建物基地面積</div>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                          <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.areaPing}</span>
-                          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
-                        </div>
-                      </div>
-                      <div className="card">
-                        <div className="caption" style={{ marginBottom: 4 }}>
-                          預估可用面積
-                          <Info tip={`依陰影遮蔽模擬與邊緣退縮估算，約為基地面積的 ${Math.round((state.usableFraction ?? 0.6) * 100)}%`} />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                          <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{usableArea}</span>
-                          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
-                        </div>
-                      </div>
+                  {/* 問題一：查無建物資料錯誤提示 */}
+                  {buildingNotFoundError && (
+                    <div className="card" style={{ color: 'var(--red-600, #dc2626)', fontSize: 13, lineHeight: 1.5 }}>
+                      查無此地址的建物資料。請嘗試在地圖上直接點選建物，或輸入更精確的地址（例如加上縣市、區域）。
                     </div>
                   )}
 
-                  {/* Roof area slider */}
-                  <div className="card slider-card">
-                    <div className="slider-card-header" style={{ display: 'flex', alignItems: 'baseline' }}>
-                      <div className="caption">
-                        可用屋頂面積<Info tip="上限為系統依陰影模擬估算的可鋪設面積。若屋頂尚有水塔或其他設施，請向下調整坪數" />
-                      </div>
-                      <div style={{ flex: 1, textAlign: 'right', paddingRight: 8, minWidth: 0 }}>
-                        {areaError && (
-                          <span style={{ fontSize: 12, color: 'var(--red-600, #dc2626)', whiteSpace: 'nowrap' }}>
-                            {Number(areaRaw) > (state.roofAreaMax ?? 500)
-                              ? `不可超過可用面積 ${state.roofAreaMax} 坪`
-                              : '請輸入有效坪數'}
-                          </span>
+                  {!buildingNotFoundError && (
+                    <>
+                      {buildingInfo && (
+                        <>
+                          <div className="building-info-grid">
+                            <div className="card">
+                              <div className="caption" style={{ marginBottom: 4 }}>建物高度</div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                                <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.height.toFixed(1)}</span>
+                                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>m</span>
+                              </div>
+                              {estFloors !== null && (
+                                <span style={{ fontSize: 12, color: 'var(--ink-400)', display: 'block', marginTop: 1 }}>≈ {estFloors} 樓</span>
+                              )}
+                            </div>
+                            <div className="card">
+                              <div className="caption" style={{ marginBottom: 4 }}>建物基地面積</div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                                <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.areaPing}</span>
+                                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
+                              </div>
+                            </div>
+                            <div className="card">
+                              <div className="caption" style={{ marginBottom: 4 }}>
+                                可受光屋頂面積
+                                <Info tip={`取樣 07/09/11/13/15/17 時的周邊建物陰影遮蔽比例，以各時段太陽輻射強度（sin 仰角）加權平均。正午權重最高（約 25%），清晨／傍晚權重最低（約 7%），更貼近實際發電損失。\n加上屋頂邊緣退縮 1m（欄杆安全距離），結果限縮於 10%–95%。鄰棟有效高度含 DEM 地形修正（考量地面高低差）。`} />
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                                <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{usableArea}</span>
+                                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
+                              </div>
+                              <span style={{ fontSize: 11, color: 'var(--ink-400)', display: 'block', marginTop: 2 }}>
+                                {buildingInfo.areaPing} 坪 × {Math.round((state.usableFraction ?? 0.6) * 100)}%（陰影遮蔽＋邊緣退縮）
+                              </span>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {/* 問題四：面積拉霸 */}
+                      <div className="card slider-card">
+                        <div className="slider-card-header" style={{ display: 'flex', alignItems: 'baseline' }}>
+                          <div className="caption">
+                            {/* 問題四：改為更直觀的標題 */}
+                            可安裝面積（扣除屋頂設施後）<Info tip="上限為系統依陰影模擬估算的可鋪設面積。向左拖曳可扣除水塔、機房等屋頂設施佔用的面積。" />
+                          </div>
+                          <div style={{ flex: 1, textAlign: 'right', paddingRight: 8, minWidth: 0 }}>
+                            {areaError && (
+                              <span style={{ fontSize: 12, color: 'var(--red-600, #dc2626)', whiteSpace: 'nowrap' }}>
+                                {Number(areaRaw) > (state.roofAreaMax ?? 500)
+                                  ? `不可超過可用面積 ${state.roofAreaMax} 坪`
+                                  : '請輸入有效坪數'}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+                            <input
+                              type="number" min="1" max="500"
+                              value={areaRaw}
+                              onChange={e => { setAreaRaw(e.target.value); setAreaError(false); }}
+                              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                              onBlur={e => {
+                                const v = Math.round(+e.target.value);
+                                const max = state.roofAreaMax ?? 500;
+                                if (!v || v < 1 || v > max) { setAreaError(true); update({ roofAreaError: true }); return; }
+                                setAreaError(false);
+                                update({ roofArea: v, roofAreaError: false });
+                              }}
+                              className="num roof-area-input"
+                              style={{
+                                fontWeight: 700, width: `${Math.max(2, areaRaw.length) + 1}ch`,
+                                color: areaError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
+                                border: 'none', outline: 'none', background: 'transparent', padding: 0,
+                                textAlign: 'right',
+                              }}
+                            />
+                            <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>坪</span>
+                          </div>
+                        </div>
+                        {/* 問題四：公式列 */}
+                        {usableArea && (
+                          <div style={{ fontSize: 12, color: 'var(--ink-500)', margin: '6px 0 4px', display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                            <span>預估可用 <strong>{usableArea}</strong> 坪</span>
+                            <span style={{ color: 'var(--ink-300)' }}>−</span>
+                            <span>屋頂設施 <strong>{usableArea - roofArea}</strong> 坪</span>
+                            <span style={{ color: 'var(--ink-300)' }}>=</span>
+                            <span style={{ color: 'var(--green-700)', fontWeight: 700 }}>{roofArea} 坪</span>
+                          </div>
+                        )}
+                        <Slider
+                          min={1} max={usableArea ?? 200}
+                          value={roofArea}
+                          onChange={v => { update({ roofArea: v, roofAreaError: false }); setAreaError(false); }}
+                        />
+                        <div className="slider-card-labels" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span className="caption">1 坪</span>
+                          <span className="caption">{usableArea ?? 200} 坪（系統估算上限）</span>
+                        </div>
+                        {usableArea && (
+                          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-400)' }}>
+                            向左拖曳以扣除水塔、機房等屋頂設施的佔用面積
+                          </div>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-                        <input
-                          type="number" min="1" max="500"
-                          value={areaRaw}
-                          onChange={e => { setAreaRaw(e.target.value); setAreaError(false); }}
-                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                          onBlur={e => {
-                            const v = Math.round(+e.target.value);
-                            const max = state.roofAreaMax ?? 500;
-                            if (!v || v < 1 || v > max) { setAreaError(true); update({ roofAreaError: true }); return; }
-                            setAreaError(false);
-                            update({ roofArea: v, roofAreaError: false });
-                          }}
-                          className="num roof-area-input"
-                          style={{
-                            fontWeight: 700, width: `${Math.max(2, areaRaw.length) + 1}ch`,
-                            color: areaError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
-                            border: 'none', outline: 'none', background: 'transparent', padding: 0,
-                            textAlign: 'right',
-                          }}
-                        />
-                        <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>坪</span>
-                      </div>
-                    </div>
-                    <Slider
-                      min={1} max={usableArea ?? 200}
-                      value={roofArea}
-                      onChange={v => { update({ roofArea: v, roofAreaError: false }); setAreaError(false); }}
-                    />
-                    <div className="slider-card-labels" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span className="caption">1 坪</span>
-                      <span className="caption">{usableArea ?? 200} 坪（系統估算上限）</span>
-                    </div>
-                    {usableArea && (
-                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-400)' }}>
-                        若屋頂有水塔或其他設施，請向下調整坪數
-                      </div>
-                    )}
-                  </div>
+                    </>
+                  )}
                 </>
               )}
 
@@ -543,6 +623,7 @@ export default function StepAddress({
             <MapView
               selectedAddress={a}
               onBuildingFound={handleBuildingFound}
+              onBuildingNotFound={handleBuildingNotFound}
               onDetectionStart={handleDetectionStart}
               sunHour={sunHour}
             />
@@ -552,7 +633,7 @@ export default function StepAddress({
           <div className="card slider-card">
             <div className="slider-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <div className="caption">
-                陰影預覽<Info tip="依太陽位置即時計算建物陰影" />
+                陰影預覽<Info tip="拖曳時間軸可預覽不同時段的陰影遮蔽範圍。深色區域表示屋頂被周邊建物遮蔽、發電效率較低；淺色（無陰影）區域為有效發電面積。可受光屋頂面積以 07/09/11/13/15/17 時的輻射強度加權平均計算，反映全日實際發電損失。" />
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                 <span className="num" style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-700)' }}>
