@@ -15,8 +15,8 @@ export default function StepParams({
   const area = state.roofArea ?? 78;
   const grade = state.panelGrade ?? 'standard';
   const gradeInfo = PANEL_GRADES.find(g => g.id === grade) ?? PANEL_GRADES[1];
-  const maxCapacity = parseFloat((area * 3.3 * (state.usableFraction ?? 0.6) * gradeInfo.kWpPerM2).toFixed(1));
-  const county = guessCounty(state.address?.label);
+  const maxCapacity = parseFloat((area * 3.3 * gradeInfo.kWpPerM2).toFixed(1));
+  const county = state.county ?? guessCounty(state.address?.label);
   const subsidy = SUBSIDIES[county] ?? SUBSIDIES['台北市'];
 
   const defaultBudget = Math.min(
@@ -26,6 +26,7 @@ export default function StepParams({
   const budgetCeiling = state.budgetCeiling ?? defaultBudget;
   const [budgetRaw, setBudgetRaw] = useState(String(budgetCeiling));
   const [budgetError, setBudgetError] = useState(false);
+  useEffect(() => { setBudgetRaw(String(budgetCeiling)); setBudgetError(false); }, [budgetCeiling]);
 
   const costPerKw = gradeInfo.costPerKw;
   const netCostPerKw = costPerKw - subsidy.amount;
@@ -158,8 +159,8 @@ export default function StepParams({
         <div className="card" style={{ padding: 24 }}>
           <div className="card-section-heading">費用試算</div>
           {[
-            { label: '總安裝費用',         value: `NT$ ${totalCost.toLocaleString()}`,                      green: false },
-            { label: `${county} 政府補助`, value: `− NT$ ${Math.round(subsidyAmount).toLocaleString()}`,    green: true  },
+            { label: '總安裝費用',         value: `NT$ ${totalCost.toLocaleString()}`,                   green: false },
+            { label: `${county} 政府補助`, value: `− NT$ ${Math.round(subsidyAmount).toLocaleString()}`, green: true  },
           ].map(r => (
             <div key={r.label} className="summary-row">
               <span className="summary-row__label">{r.label}</span>
