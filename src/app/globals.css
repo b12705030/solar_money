@@ -2997,6 +2997,25 @@ input[type="range"]::-moz-range-thumb {
 .step-address-map-col {
   position: sticky; top: 100px; display: flex; flex-direction: column; gap: 12px;
 }
+.step-address-map-view {
+  height: 400px;
+  border-radius: var(--radius-lg); overflow: hidden;
+  border: 1px solid var(--ink-100);
+}
+.building-info-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+.building-info-grid > .card { padding: 14px 18px; min-width: 0; }
+.building-info-num           { font-size: 22px; }
+.step-address-desc           { margin-bottom: 28px; }
+.roof-area-input             { font-size: 28px; }
+.address-confirmed-section   { margin-top: 28px; }
+.slider-card                 { padding: 20px; }
+.slider-card-header          { margin-bottom: 12px; }
+.slider-card-labels          { margin-top: 6px; }
+
+/* ── Wizard step container padding ── */
+.wizard-step-content { padding: 30px 0 40px; }
 
 /* ── StepUsage: two-column grid ── */
 .step-usage-grid {
@@ -3036,6 +3055,11 @@ input[type="range"]::-moz-range-thumb {
   .topbar-desktop-actions { display: none; }
   .topbar-mobile-right { display: flex; align-items: center; gap: 8px; }
 
+  /* Slider: smaller track + thumb */
+  input[type="range"] { height: 6px; }
+  input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; }
+  input[type="range"]::-moz-range-thumb    { width: 18px; height: 18px; }
+
   /* Progress bar */
   .progress { padding: 16px 16px 6px; }
   .progress-step span { display: none; }   /* hide text labels, keep step numbers */
@@ -3044,6 +3068,7 @@ input[type="range"]::-moz-range-thumb {
   .wizard-footer { padding: 12px 16px 20px; gap: 10px; }
   .wizard-back-label { display: none; }
   .wizard-back-btn   { padding: 12px 14px; }
+  .wizard-footer .btn-primary { padding: 11px 18px; font-size: 14px; }
 
   /* Landing hero: single column */
   .landing-hero-grid { grid-template-columns: 1fr; gap: 32px; }
@@ -3068,9 +3093,24 @@ input[type="range"]::-moz-range-thumb {
   .myth-card-stat-box   { margin-top: 12px !important; padding: 10px 12px !important; }
   .myth-card-stat-num   { font-size: 18px !important; }
 
-  /* StepAddress: single column, map static */
-  .step-address-grid    { grid-template-columns: 1fr; }
+  /* Wizard step container: tighter top/bottom padding */
+  .wizard-step-content { padding: 16px 0 24px; }
+
+  /* Step description text */
+  .body { font-size: 14px; }
+
+  /* StepAddress: description text bottom margin */
+  .step-address-desc         { margin-bottom: 14px; }
+  .roof-area-input           { font-size: 20px; }
+  .address-confirmed-section { margin-top: 14px; }
+  .slider-card               { padding: 14px 16px; }
+  .slider-card-header        { margin-bottom: 0px; }
+  .slider-card-labels        { margin-top: 4px; }
+
+  /* StepAddress: single column, map static, shorter map, tighter gap */
+  .step-address-grid    { grid-template-columns: 1fr; gap: 8px; }
   .step-address-map-col { position: static; }
+  .step-address-map-view { height: 260px; }
 
   /* StepUsage: single column */
   .step-usage-grid { grid-template-columns: 1fr; gap: 20px; }
@@ -3182,4 +3222,8 @@ input[type="range"]::-moz-range-thumb {
   .h-title   { font-size: 26px; }
   .h-section { font-size: 18px; }
 
+  /* StepAddress: building info 三欄縮小，預估可用面積欄加寬 */
+  .building-info-grid                    { grid-template-columns: 0.85fr 1fr 1.15fr; }
+  .building-info-grid > .card            { padding: 10px; }
+  .building-info-num                     { font-size: 16px; }
 }
