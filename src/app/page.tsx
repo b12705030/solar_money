@@ -99,7 +99,10 @@ export default function App() {
 
   const canAdvance = () => {
     if (step === 0) return !!state.address && !state.roofAreaError && (!state.roofAreaMax || (state.roofArea ?? 0) <= state.roofAreaMax);
-    if (step === 1) return state.monthlyKwh > 0;
+    if (step === 1) {
+      if ((state.inputMethod ?? 'bill') === 'kwh') return state.monthlyKwh > 0;
+      return state.billAmount != null && state.billAmount >= 50;
+    }
     if (step === 2) return !!state.goal;
     return true;
   };
