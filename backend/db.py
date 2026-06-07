@@ -734,6 +734,8 @@ async def get_user_assessments(user_id: str, limit: int = 10) -> list[dict]:
 # ─── 廠商推薦 ────────────────────────────────────────────────────────────────
 
 async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 0) -> list[dict]:
+    if county:
+        county = county.replace('臺', '台')  # 政府資料用臺，廠商申請表用台，統一比對
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
