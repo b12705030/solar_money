@@ -93,6 +93,7 @@ export default function StepAddress({
   const [sunTimes, setSunTimes] = useState<SunTimes | null>(null);
   const [buildingNotFoundError, setBuildingNotFoundError] = useState(false);
   const [addressPickError, setAddressPickError] = useState<string | null>(null);
+  const [addressResolving, setAddressResolving] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
 
@@ -117,6 +118,7 @@ export default function StepAddress({
       setLoadingStage('idle');
       setBuildingNotFoundError(false);
       setAddressPickError(null);
+      setAddressResolving(false);
     }
   }, [state.address, state.addressQuery]);
 
@@ -187,6 +189,7 @@ export default function StepAddress({
     setBuildingInfo(null);
     setBuildingNotFoundError(false);
     setAddressPickError(null);
+    setAddressResolving(true);
     try {
       const details = await getPlaceDetails(prediction.placeId);
       const addressOption: AddressOption = {
@@ -201,24 +204,32 @@ export default function StepAddress({
       };
       setSelected(addressOption);
 
-      // 查詢鄉鎮市代碼，並用 countyName 修正 region（formattedAddress 可能為英文格式）
-      const township = await fetchTownshipCode(details.lat, details.lon);
-      const region = township?.countyName
-        ? detectRegion(township.countyName + (township.townshipName ?? ''))
-        : addressOption.region;
+      // 立刻觸發地圖偵測，不等 township API
       update({
-        address: { ...addressOption, region },
+        address: addressOption,
         addressQuery: prediction.description,
         roofArea: 50,
         roofAreaError: false,
-        townshipCode: township?.townshipCode,
-        townshipName: township?.townshipName,
-        county: township?.countyName,
       });
+      setAddressResolving(false);
+
+      // Township 在背景執行，只影響費率計算欄位
+      fetchTownshipCode(details.lat, details.lon).then(township => {
+        if (!township) return;
+        const region = detectRegion(township.countyName + (township.townshipName ?? ''));
+        update({
+          address: { ...addressOption, region },
+          townshipCode: township.townshipCode,
+          townshipName: township.townshipName,
+          county: township.countyName,
+        });
+      }).catch(() => {});
+
       // 預熱後端最佳傾角快取，讓 Results 頁面載入更快
       fetch(`${API_URL}/api/township?lat=${details.lat}&lng=${details.lon}&goal=annual`).catch(() => {});
     } catch (err) {
       console.error('Failed to get place details:', err);
+      setAddressResolving(false);
       setAddressPickError('地址查詢失敗，請重試');
     }
   };
@@ -418,8 +429,13 @@ export default function StepAddress({
             )}
           </div>
 
+          {/* 解析地址中 */}
+          {addressResolving && (
+            <p style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-400)' }}>正在解析地址…</p>
+          )}
+
           {/* 地址查詢錯誤 / 無結果提示 */}
-          {(addressPickError || (query.length > 3 && !showSuggestions && suggestions.length === 0 && !buildingLoading && !selected)) && (
+          {!addressResolving && (addressPickError || (query.length > 3 && !showSuggestions && suggestions.length === 0 && !buildingLoading && !selected)) && (
             <div style={{ marginTop: 6, fontSize: 12 }}>
               {addressPickError
                 ? <span style={{ color: 'var(--red-600, #dc2626)' }}>{addressPickError}</span>
@@ -428,7 +444,7 @@ export default function StepAddress({
             </div>
           )}
 
-          {!selected && !addressPickError && (
+          {!selected && !addressPickError && !addressResolving && (
             <p style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-400)' }}>
               或直接在地圖上點選建物
             </p>
@@ -512,19 +528,17 @@ export default function StepAddress({
                             </div>
                             <div className="card">
                               <div className="caption" style={{ marginBottom: 4 }}>
-                                預估可用面積
-                                {/* 問題三：tooltip 顯示含數值的公式 */}
-                                <Info tip={`基地面積 ${buildingInfo.areaPing} 坪 × ${Math.round((state.usableFraction ?? 0.6) * 100)}%（陰影遮蔽模擬＋邊緣退縮）≈ ${usableArea} 坪`} />
+                                可受光屋頂面積
+                                <Info tip={`取樣 08/10/12/14/16 時的周邊建物陰影遮蔽比例平均，加上屋頂邊緣退縮 1m（欄杆安全距離），結果限縮於 10%–95%。\n鄰棟有效高度含 DEM 地形修正（考量地面高低差）。`} />
                               </div>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                                 <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{usableArea}</span>
                                 <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
                               </div>
+                              <span style={{ fontSize: 11, color: 'var(--ink-400)', display: 'block', marginTop: 2 }}>
+                                {buildingInfo.areaPing} 坪 × {Math.round((state.usableFraction ?? 0.6) * 100)}%（陰影遮蔽＋邊緣退縮）
+                              </span>
                             </div>
-                          </div>
-                          {/* 問題三：面積計算公式列 */}
-                          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4, textAlign: 'center' }}>
-                            基地 {buildingInfo.areaPing} 坪 × {Math.round((state.usableFraction ?? 0.6) * 100)}%（陰影＋邊緣退縮）≈ <strong>{usableArea} 坪</strong>（預估可用）
                           </div>
                         </>
                       )}
@@ -619,7 +633,7 @@ export default function StepAddress({
           <div className="card slider-card">
             <div className="slider-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <div className="caption">
-                陰影預覽<Info tip="拖曳時間軸可預覽不同時段的陰影遮蔽範圍。深色區域表示屋頂被周邊建物遮蔽、發電效率較低；淺色（無陰影）區域為有效發電面積。預估可用面積已將全日平均遮蔽比例納入計算。" />
+                陰影預覽<Info tip="拖曳時間軸可預覽不同時段的陰影遮蔽範圍。深色區域表示屋頂被周邊建物遮蔽、發電效率較低；淺色（無陰影）區域為有效發電面積。可受光屋頂面積已將全日平均遮蔽比例納入計算。" />
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                 <span className="num" style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-700)' }}>
