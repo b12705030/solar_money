@@ -709,6 +709,7 @@ input[type="range"]::-moz-range-thumb {
 /* ========== StepParams: Budget Slider Card ========== */
 .params-header     { margin-bottom: 36px; }
 .grade-kwp         { font-size: 28px; font-weight: 700; line-height: 1; }
+.grade-efficiency-num { font-size: 36px; }
 .param-summary-card { padding: 24px; }
 .budget-card { padding: 26px; margin-bottom: 20px; }
 .budget-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
@@ -3159,15 +3160,17 @@ input[type="range"]::-moz-range-thumb {
   .goal-card       { padding: 14px 16px; gap: 8px; min-height: 0; }
   .goal-card-title { font-size: 15px; }
 
-  /* StepParams: grade cards three columns on mobile */
+  /* StepParams: grade cards single column on mobile */
   .info               { margin-left: 2px; }
   .params-header      { margin-bottom: 20px; }
-  .grade-grid         { grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .grade-card         { padding: 11px; gap: 6px; }
-  .grade-card-title   { padding-right: 0; font-size: 13px; }
+  .grade-grid         { grid-template-columns: 1fr; gap: 10px; }
+  .grade-card         { padding: 16px; gap: 8px; flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .grade-card-title   { padding-right: 0; font-size: 13px; flex: 0 0 100%; }
+  .grade-efficiency-num  { font-size: 28px; }
+  .grade-efficiency-desc { font-size: 12px; }
   .grade-kwp          { font-size: 18px; }
-  .grade-desc         { font-size: 10px; }
-  .grade-badges       { position: static; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; order: 10; }
+  .grade-desc         { font-size: 10px; flex: 0 0 100%; }
+  .grade-badges       { position: absolute; top: 10px; right: 10px; flex-direction: column; align-items: flex-end; }
 
   /* StepParams: summary cards single column */
   .param-summary-grid  { grid-template-columns: 1fr; gap: 12px; }

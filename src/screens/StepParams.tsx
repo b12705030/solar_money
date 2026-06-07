@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Info } from '@/components/ui';
 import { Slider } from '@/components/Slider';
 import { SUBSIDIES, PANEL_GRADES } from '@/lib/constants';
-import { guessCounty } from '@/lib/compute';
+import { guessCounty, computeResults, getFitRateForCapacity } from '@/lib/compute';
 import type { SolarState } from '@/lib/types';
 
 export default function StepParams({
@@ -22,11 +22,13 @@ export default function StepParams({
   const isApartment = (state.buildingType ?? 'single') === 'apartment';
   const budgetMin = isApartment ? 5000 : 50000;
 
+  const premiumGrade = PANEL_GRADES[PANEL_GRADES.length - 1];
+  const maxBudget = Math.max(50000, Math.round(area * 3.3 * premiumGrade.kWpPerM2 * (premiumGrade.costPerKw - subsidy.amount) / 10000) * 10000);
+
   const netCostPerKwForDefault = PANEL_GRADES[1].costPerKw - subsidy.amount;
   const totalBudgetForMax = Math.round(maxCapacity * netCostPerKwForDefault / 10000) * 10000;
-  // Default budget is per-unit: divide total roof cost by unitCount
   const defaultBudget = Math.min(
-    800000,
+    maxBudget,
     isApartment ? Math.ceil(totalBudgetForMax / unitCount / 10000) * 10000 : totalBudgetForMax,
   );
   const budgetCeiling = state.budgetCeiling ?? defaultBudget;
@@ -53,7 +55,7 @@ export default function StepParams({
     <div>
       <div className="params-header" style={{ maxWidth: 720 }}>
         <div className="eyebrow" style={{ marginBottom: 16 }}>Step 4 · 基本參數</div>
-        <h2 className="h-title" style={{ margin: '0 0 14px' }}>設定預算與面板等級</h2>
+        <h2 className="h-title" style={{ margin: '0 0 14px' }}>設定面板等級與預算</h2>
         <p className="body" style={{ color: 'var(--ink-500)' }}>
           設定{isApartment ? '每戶' : ''}能接受的最高自付金額，再選擇面板等級，系統自動計算可裝容量。
           已帶入 <b style={{ color: 'var(--green-700)' }}>{county}</b> 的政府補助。
@@ -82,7 +84,7 @@ export default function StepParams({
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
             <span className="num" style={{ fontSize: 15, color: 'var(--ink-500)' }}>NT$</span>
             <input
-              type="number" min={budgetMin} max="800000"
+              type="number" min={budgetMin} max={maxBudget}
               value={budgetRaw}
               onChange={e => { setBudgetRaw(e.target.value); setBudgetError(false); }}
               onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -90,7 +92,7 @@ export default function StepParams({
                 const v = +e.target.value;
                 if (!v || v < budgetMin) { setBudgetError(true); return; }
                 setBudgetError(false);
-                update({ budgetCeiling: Math.min(800000, Math.round(v)) });
+                update({ budgetCeiling: Math.min(maxBudget, Math.round(v)) });
               }}
               className="num budget-amount"
               style={{
@@ -102,17 +104,21 @@ export default function StepParams({
           </div>
         </div>
         <Slider
-          min={budgetMin} max={800000} step={isApartment ? 1000 : 10000}
+          min={budgetMin} max={maxBudget} step={isApartment ? 1000 : 10000}
           value={budgetCeiling}
           onChange={v => update({ budgetCeiling: v })}
         />
         <div className="slider-labels">
           <span className="caption">{isApartment ? '5 千' : '5 萬'}</span>
-          <span className="caption">80 萬</span>
+          <span className="caption">{Math.round(maxBudget / 10000)} 萬（全裝高效款）</span>
         </div>
       </div>
 
       {/* ── 面板等級卡片 ── */}
+      <p className="body-sm grade-efficiency-desc" style={{ color: 'var(--ink-400)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+        不同等級的面板太陽能轉換效率不同，效率越高的面板單位價格也越高。
+        <Info tip="轉換效率：面板將太陽光轉為電能的比例。效率越高，同樣屋頂面積能產生更多電力。" />
+      </p>
       <div className="grade-grid">
         {PANEL_GRADES.map(g => {
           const active = grade === g.id;
@@ -120,6 +126,12 @@ export default function StepParams({
           const gMaxCap = parseFloat((area * 3.3 * g.kWpPerM2).toFixed(1));
           const gCap = parseFloat(Math.min(gMaxCap, gNet > 0 ? Math.floor((budgetCeiling * unitCount / gNet) * 10) / 10 : gMaxCap).toFixed(1));
           const isFull = gCap >= gMaxCap - 0.05;
+          const { annualKwh: gAnnualKwh } = computeResults({ ...state, capacity: gCap, panelGrade: g.id });
+          const gAnnualSavings = Math.round(gAnnualKwh * getFitRateForCapacity(gCap));
+          const totalPanels = Math.round(gMaxCap / 0.45);
+          const budgetPanels = Math.round(gCap / 0.45);
+          const DOTS = 10;
+          const filledDots = isFull ? DOTS : Math.max(1, Math.round(gCap / gMaxCap * DOTS));
           return (
             <button
               key={g.id}
@@ -138,12 +150,26 @@ export default function StepParams({
               <div className="grade-card-title">{g.label}</div>
 
               <div>
-                <div className="num grade-kwp">{gCap}</div>
-                <div className="grade-cap-label">kWp 可裝容量</div>
+                <div className="num grade-efficiency-num" style={{ fontWeight: 700, lineHeight: 1 }}>{g.efficiency}</div>
+                <div className="grade-cap-label">轉換效率</div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, margin: '6px 0 2px' }}>
+                {Array.from({ length: DOTS }, (_, i) => (
+                  <span key={i} style={{
+                    display: 'inline-block', width: 9, height: 9, borderRadius: 2, flexShrink: 0,
+                    background: i < filledDots
+                      ? (active ? 'rgba(255,255,255,0.9)' : 'var(--green-700)')
+                      : (active ? 'rgba(255,255,255,0.2)' : 'var(--ink-150,#e5e7eb)'),
+                  }} />
+                ))}
+                <span style={{ fontSize: 10, marginLeft: 4, color: active ? 'rgba(255,255,255,0.7)' : 'var(--ink-400)', whiteSpace: 'nowrap' }}>
+                  {budgetPanels} / {totalPanels} 片
+                </span>
               </div>
 
               <div className="grade-desc">
-                {g.efficiency} 轉換效率<br />
+                可裝 {gCap} kWp・預估年售電 NT$ {gAnnualSavings.toLocaleString()}<br />
                 NT$ {g.costPerKw.toLocaleString()} / kW
               </div>
             </button>
@@ -185,8 +211,8 @@ export default function StepParams({
             </div>
           )}
           {[
-            { label: '總安裝費用',         value: `NT$ ${totalCost.toLocaleString()}`,                      green: false },
-            { label: `${county} 政府補助`, value: `− NT$ ${Math.round(subsidyAmount).toLocaleString()}`,    green: true  },
+            { label: '總安裝費用',         value: `NT$ ${totalCost.toLocaleString()}`,                   green: false },
+            { label: `${county} 政府補助`, value: `− NT$ ${Math.round(subsidyAmount).toLocaleString()}`, green: true  },
           ].map(r => (
             <div key={r.label} className="summary-row">
               <span className="summary-row__label">{r.label}</span>
