@@ -1,6 +1,6 @@
 # Solar Money — 功能路線圖
 
-> 更新：2026-05-31  
+> 更新：2026-06-08  
 > 新 branch 一律從 `main` 建立：`git checkout main && git pull && git checkout -b feature/X`
 
 ---
@@ -46,6 +46,16 @@
 | P8 | Polygon 離線 fallback（2.56M 棟，167 MB） | `master` | ✅ 已完成 |
 | P8 | DEM tile server（3D 地形圖層 + 山體陰影） | `master` | ✅ 已完成 |
 | P8 | 每棟建物地形高程修正（shadow cache v3） | `master` | ✅ 已完成 |
+| P8+ | PV 模型校準 × TPC 114年實測（MAPE 6.6%→3.9%） | `feat/model-calibration-validation` | ✅ 已完成 |
+| P9 | DB 快取（傾角/陰影/可用比例），效能 7–20× | `feat/performance-optimization` | ✅ 已完成 |
+| P9 | 手機版全步驟 layout 修復 | `fix/mobile-layout` | ✅ 已完成 |
+| P9 | 社區大樓建築類型 + 戶數選擇 | `feat/building-type-unit-count` | ✅ 已完成 |
+| P9 | Step 1 地址/陰影/坪數 UX 改善 + 靜默 fallback 移除 | `fix/step1-address-shadow-slider-ux` | ✅ 已完成 |
+| P9 | Step 2 帳單輸入引導（橘色 + 月份標籤 + 習慣說明） | `dev` | ✅ 已完成 |
+| P9 | Step 4 預算上限動態化 + 面板數量點陣視覺化 | `dev` | ✅ 已完成 |
+| P9 | Step 4 面板效率 % 主指標 + shared tooltip | `fix/issue-17` | ✅ 已完成 |
+| P9 | 前端 84 tests + 後端 33 tests 覆蓋率補強 | `dev` | ✅ 已完成 |
+| P9 | 廠商升級申請流程（free → advanced，管理員核准） | `dev` | ✅ 已完成 |
 
 ---
 
@@ -189,13 +199,15 @@
 
 ---
 
-## P6 · feature/admin　⬜ 部分完成
+## P6 · feature/admin　🔧 部分完成
 
 **目標：** 前面功能穩定後才有管理需求
 
 - [x] Admin JWT middleware（角色驗證；亦保留 `X-Admin-Secret` 供開發測試）
 - [x] 後端：廠商核准/拒絕 API（`POST /api/admin/vendors/{id}/approve`、`/reject`）
-- [ ] 前台廠商審核 UI（pending 列表、核准/拒絕按鈕、填寫拒絕原因）
+- [x] 後端 + 前台：廠商升級申請審核（upgrade requests：列表、核准/拒絕 + 原因）
+- [x] 後端 + 前台：帳號角色管理（`GET /api/admin/accounts/search`、`POST /api/admin/accounts/{id}/role`）
+- [ ] 前台廠商審核 UI（pending 列表、核准/拒絕按鈕，目前靠 API 手動操作）
 - [ ] 補助資料管理（各縣市金額從 DB 讀取，可線上編輯，取代 hardcode）
 - [ ] 數據儀表板：日/週/月評估次數、縣市分布、廠商詢價轉換率、MRR
 - [ ] 後端：`GET /api/admin/stats`、`GET/PUT /api/admin/subsidies`
@@ -266,6 +278,51 @@
 
 ---
 
+---
+
+## P9 · UX 迭代、效能與測試　✅ 已完成（2026-06）
+
+**背景：** 使用者回饋收集後，對核心流程進行系統性改善。
+
+### 效能優化（PR #14）
+- [x] DB 快取：tilt（17–20s→300ms）、usable-fraction（3–14s→200ms）、shadow（4–7s→600ms）
+- [x] GBA bbox process-level cache（30s TTL），重複點擊同區域無額外 DB 查詢
+- [x] pyproj CRS 預熱（500ms→12ms），後端啟動時完成
+- [x] 手機版 loading state：4 秒後顯示計時器；兩段偵測進度提示（1/3, 2/3）
+
+### 手機版 Layout（PR #20）
+- [x] Step 1–4 + Results 全步驟手機版 layout 修復（獨立 mobile breakpoint）
+- [x] 鍵盤彈出時自動捲動輸入框進畫面（viewport resize listener）
+
+### Step 1 UX（PR #24）
+- [x] 可受光屋頂面積公式顯示：底面積 × 陰影遮蔽比 ≈ 可受光面積
+- [x] 移除靜默 fallback（地址無資料時顯示明確錯誤 + 建議格式，不再自動帶入鄰棟）
+- [x] 地址輸入後保留使用者原始輸入，不被反向地理編碼覆寫
+- [x] 建物選取視覺改為橘色底部輪廓線 + pin，陰影疊加更清晰
+
+### Step 2 UX
+- [x] 帳單金額輸入預設空白（不預填，需使用者主動輸入）
+- [x] 橘色引導色（標籤、NT$ 符號、輸入框、提示文字）
+- [x] 6 個帳單欄位加月份標籤（1-2月, 3-4月…11-12月）
+- [x] 習慣描述更具體（一般作息：「上班族・假日白天在家」）
+
+### Step 4 UX + 社區大樓（PR #23, PR #25）
+- [x] 建築類型選擇（獨立建物 / 社區大樓）+ 戶數輸入，累進費率分戶計算
+- [x] 預算上限動態計算：Step 1 面積 × 最高效率面板單價（不再固定 80 萬）
+- [x] 面板等級卡片以效率 % 為主指標（18-19%, 20-21%, 22-23%）
+- [x] shared tooltip 說明效率與可裝容量關係，面板數量以點陣圖示顯示
+
+### 模型校準（PR #15）
+- [x] 以台電 114 年 19 縣市 860 萬 kWp 實測資料校準 REGION_CALIBRATION
+- [x] 全台 MAPE：4 區常數 6.6%→3.9%，NASA POWER 8.7%→5.6%
+- [x] 適宜性門檻更新：1418/1148→1250/1050 kWh/kWp/yr（基於實測均值 1158）
+
+### 測試覆蓋率（5e201c2）
+- [x] 前端 Vitest：84 tests（+64）— TPC 計費、FIT 費率、預算容量、帳單換算、公寓模式、邊界案例
+- [x] 後端 pytest：33 tests — 最佳傾角（31 tests）+ 可用比例（全島 5 點掃描）
+
+---
+
 ## 未來小改動（無專屬 branch）
 
 | 項目 | 說明 |
@@ -273,8 +330,14 @@
 | Email 通知 | 廠商收到新詢價 / 用戶收到回覆時發 Email |
 | ~~分享連結~~ | ✅ 已完成（Results CTA 按鈕，URL 編碼 state，開啟後直接顯示同一份結果） |
 | 碳減排計算 | 年發電量 × 0.495 kgCO₂/度，顯示在 Results |
-| ~~FIT 費率對照表~~ | ✅ `getFitRateForCapacity()` 115年度六段費率已實作，Results.tsx 自動帶入對應費率；hardcode 5.7 已取代 |
-| ~~年衰退率 UI~~ | ✅ 以 `DEFAULT_DEGRADATION_RATE = 0.005` 常數實作，Results 頁加說明文字；無 UI 輸入框（`computeResults` 保留 `degradationRateOverride` 參數，日後可直接接上輸入框）；民眾端初步評估不需用戶調整 |
+| ~~FIT 費率對照表~~ | ✅ `getFitRateForCapacity()` 115年度六段費率已實作，Results.tsx 自動帶入對應費率 |
+| ~~年衰退率 UI~~ | ✅ `DEFAULT_DEGRADATION_RATE = 0.005` 常數實作，Results 頁加說明文字 |
+| 評估流程預覽 | 進入前顯示「接下來需要填什麼、得到什麼結果」的簡短流程圖 |
+| 專有名詞 inline 說明 | 躉購費率、kWh/kWp 等術語旁加 tooltip 說明 |
+| Dark mode PDF 修復 | `@media print` 強制 light mode 配色，避免輸出黑色背景 |
+| 地區分析權重修正 | TOPSIS 權重加總超過 100% 的顯示錯誤 |
+| 台中行政區定位修正 | 太平/北屯 被誤定位至東區/北區 |
+| 退回特定步驟 | 允許跳回任一步驟調整，其他參數保留 |
 | 推薦廠商入 PDF | 評估報告末頁附推薦廠商聯絡資訊 |
 | Google OAuth | 降低用戶註冊門檻 |
 | 付款串接 | ECPay / Stripe 廠商訂閱付款 |

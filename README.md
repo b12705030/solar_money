@@ -14,9 +14,10 @@
 | 建物偵測 | 以 **GBA（GlobalBuildingAtlas）** Neon DB 為主要來源（全台 + 離島 51 萬筆）；DB 無資料時 fallback 至本地 `taiwan_polygon_fallback.ndjson.gz`（256 萬筆，含澎湖、金門、馬祖）；最終備援為 OSM Overpass API |
 | 3D 陰影預覽 | 依太陽位置即時計算周圍建物陰影（pvlib NREL SPA），可拖曳時間軸 6–19 時；結合 20m DEM 考慮地形遮蔽；**每棟建物獨立查詢 DEM 地表高程**，坡地陰影長度加入地形高差修正。選中建物以灰色顯示（與未選中建物相同），陰影疊加清晰可見；橘色外框線 + pin 標示選中狀態 |
 | 3D 地形 | Mapbox terrain-rgb 3D 地形顯示（exaggeration 1.0）+ hillshade 山體陰影；地圖左下角可一鍵切換開/關 |
-| 用電量輸入 | 輸入每月平均用電 kWh |
+| 建築類型 | 獨立建物 / 社區大樓選擇；社區大樓可輸入戶數，依 TPC 累進費率分戶計算收益 |
+| 用電量輸入 | 輸入台電帳單金額（自動換算 kWh）或直接輸入度數；可展開 12 個月明細；日間用電習慣三段選擇（影響自用比例上限） |
 | 目標選擇 | 全年最大、夏季最大、冬季最大、正午峰值、與用電曲線最匹配、投資回收最快；依地區自動推薦 |
-| 裝機參數 | 預算上限倒推可裝容量；三種面板等級（入門 / 標準 / 高效）即時試算 |
+| 裝機參數 | 預算上限動態計算（屋頂面積 × 最高效率面板單價）；三種面板等級（入門 / 標準 / 高效）+ 效率 % 主指標；點陣圖示視覺化可裝面板數量 |
 | 補助快查 | 自動對應 22 縣市政府補助金額（含來源、資料更新日期、補助公告連結） |
 | 評估結果 | 年發電量、能源自給率、回本年限、20 年累計淨收益、月發電量圖表 |
 | PDF 報告 | 一鍵下載一頁式 A4 評估報告（`window.print()`，無額外依賴） |
@@ -178,7 +179,7 @@ solar_money/
 
 - Node.js 18+
 - Python 3.11+
-- PostgreSQL（建議使用 [Neon](https://neon.tech/) 免費方案）
+- CockroachDB（`cockroachlabs.cloud` 免費方案；舊文件提到的 Neon 為遷移前方案，已不適用）
 
 ### 1. Clone & 安裝前端依賴
 
@@ -318,6 +319,7 @@ uvicorn backend.main:app --reload
 | `PATCH` | `/api/me/vendor/inquiries/{id}/status` | 更新案件狀態（new/contacted/quoted/closed） |
 | `GET` | `/api/me/vendor/leads` | 取得潛在客戶名單（進階方案顯示全部，免費前3） |
 | `GET` | `/api/me/application/status` | 查詢自己的廠商申請狀態（含拒絕原因） |
+| `POST` | `/api/me/vendor/upgrade-request` | 送出進階訂閱升級申請（免費方案限定，admin 核准後啟用） |
 
 ### 管理員（Bearer JWT，role = admin 或 X-Admin-Secret header）
 
@@ -328,6 +330,9 @@ uvicorn backend.main:app --reload
 | `POST` | `/api/admin/vendors/{id}/reject` | 退回廠商申請，可附退回原因 |
 | `GET` | `/api/admin/accounts/search?email=` | 依 Email 查詢帳號（id + 目前角色） |
 | `POST` | `/api/admin/accounts/{id}/role` | 調整帳號角色（`user` / `vendor` / `admin`） |
+| `GET` | `/api/admin/upgrade-requests` | 列出廠商升級申請（可帶 `?status=pending`） |
+| `POST` | `/api/admin/upgrade-requests/{id}/approve` | 核准升級申請，將廠商 `subscription_status` 設為 `advanced` |
+| `POST` | `/api/admin/upgrade-requests/{id}/reject` | 拒絕升級申請（可附原因） |
 
 ### 用戶（Bearer JWT，role = user）
 
@@ -416,14 +421,19 @@ usable_fraction = Σ(各時段可受光比例 × weight) / Σ(weight)
 
 ```
 容量 (kW) = min(屋頂面積上限, 預算上限 ÷ (單價 - 補助/kW))
+  預算上限 = 使用者設定值（動態上限 = 可受光面積 × 最高效率面板單價，確保不超出屋頂）
 校正後日射量 = GHI × REGION_CALIBRATION[region]
 T_cell = 氣溫 + 校正後日射量 ÷ (25 + 6.84 × 風速)      ← Faiman (2008) T_cell 模型
 動態 PR = 0.78 × [1 + γ × (T_cell − 25°C)]               ← γ = −0.0045/°C（c-Si，IEC 61215）
 月發電量 = 容量 × 校正後日射量 × 天數 × 動態PR × 目標調整係數
 年發電量 = Σ 月發電量
-年收益 = 自用省電（40% × 2.5元/度）+ 台電躉購（60% × 5.7元/度）
+自用比例 = min(selfUseHabitCap, soldRatio)                ← 習慣上限：home=0.88, normal=0.75, away=0.42
+年收益 = 自用省電（月別 TPC 累進費率差額）+ 台電躉購（容量對應的 FIT 費率）
+  自用省電 = Σ calcTpcBill(月用電, 有無夏月) - calcTpcBill(月用電 - 自用kWh, 有無夏月)
+  FIT 費率 = getFitRateForCapacity(kW)     ← 115年度六段費率，3kW 以下最高
 回本年限 = 實際自付 ÷ 年收益
 20年總收益 = Σ（年收益 × 0.995^y）  ← 0.5%/年衰退
+社區大樓 = 以單戶容量 × 戶數計算，自用省電/躉購收益各以單戶累進費率分別計算後加總
 ```
 
 ### 區域校正係數（REGION_CALIBRATION）
