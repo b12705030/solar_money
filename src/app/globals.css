@@ -3038,6 +3038,9 @@ input[type="range"]::-moz-range-thumb {
 .step-goal-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
 }
+.goal-header     { margin-bottom: 36px; }
+.goal-card       { position: relative; text-align: left; padding: 22px; border-radius: var(--radius-lg); transition: all 0.25s var(--ease-out); cursor: pointer; display: flex; flex-direction: column; gap: 12px; min-height: 160px; }
+.goal-card-title { font-size: 17px; }
 
 /* ── Results KPI card ── */
 .results-kpi-card { padding: 36px; }
@@ -3143,6 +3146,9 @@ input[type="range"]::-moz-range-thumb {
 
   /* StepGoal: single column */
   .step-goal-grid  { grid-template-columns: 1fr; }
+  .goal-header     { margin-bottom: 20px; }
+  .goal-card       { padding: 14px 16px; gap: 8px; min-height: 0; }
+  .goal-card-title { font-size: 15px; }
 
   /* StepParams: grade cards single column */
   .grade-grid         { grid-template-columns: 1fr; }
