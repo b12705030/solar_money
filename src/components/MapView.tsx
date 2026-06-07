@@ -318,6 +318,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
   const shadowCacheRef = useRef<Map<number, HourData>>(new Map());
   const buildingsRef = useRef<{ footprint: [number, number][]; height: number }[]>([]);
   const sliderFetchCtrl = useRef<AbortController | null>(null);
+  const buildingClickCtrlRef = useRef<AbortController | null>(null);
 
   useEffect(() => { onBuildingFoundRef.current = onBuildingFound; });
   useEffect(() => { onBuildingNotFoundRef.current = onBuildingNotFound; });
@@ -434,6 +435,10 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
       map.on('mouseleave', 'api-buildings-fill', () => { map.getCanvas().style.cursor = ''; });
 
       map.on('click', 'api-buildings-fill', async (e) => {
+        buildingClickCtrlRef.current?.abort();
+        buildingClickCtrlRef.current = new AbortController();
+        const { signal } = buildingClickCtrlRef.current;
+
         const clickLng = e.lngLat.lng;
         const clickLat = e.lngLat.lat;
         const clickPt: [number, number] = [clickLng, clickLat];
@@ -466,8 +471,9 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
         setHasSelectedBuilding(true);
 
         const usableFraction = await fetchUsableFractionForBuilding(
-          primary.footprint, clickLat, clickLng, buildingsRef,
+          primary.footprint, clickLat, clickLng, buildingsRef, signal,
         );
+        if (signal.aborted) return;
         onBuildingFoundRef.current?.({ height: primary.height, areaPing, usableFraction, lat: clickLat, lng: clickLng });
       });
 
@@ -499,6 +505,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       _shadowFetchCtrl?.abort();
       sliderFetchCtrl.current?.abort();
+      buildingClickCtrlRef.current?.abort();
       map.remove();
       mapDiv.remove();
       setMapInstance(null);
