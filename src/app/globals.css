@@ -110,6 +110,73 @@ a { text-decoration: none; }
   background: var(--green-50); color: var(--green-700); font-weight: 500;
 }
 
+/* Mobile hamburger — hidden on desktop */
+.topbar-mobile-right { display: none; }
+.topbar-hamburger {
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px 10px; border-radius: var(--radius-xs);
+  border: 1px solid var(--ink-200); background: transparent;
+  color: var(--ink-700); cursor: pointer;
+}
+.topbar-mobile-inbox-btn {
+  position: relative; padding: 8px; color: var(--ink-700);
+  background: transparent; border: none; cursor: pointer; font-size: 16px;
+}
+.topbar-mobile-inbox-badge {
+  position: absolute; top: 2px; right: 2px;
+  background: var(--green-700); color: #fff;
+  border-radius: 50%; width: 15px; height: 15px;
+  font-size: 9px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Mobile overlay menu — hidden on desktop */
+.topbar-mobile-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 999;
+  background: rgba(0, 0, 0, 0.4);
+  align-items: flex-start; justify-content: flex-end;
+}
+.topbar-mobile-overlay--open { display: flex; }
+.topbar-mobile-menu {
+  width: 260px; height: 100%;
+  background: var(--white);
+  display: flex; flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  overflow-y: auto;
+}
+.topbar-mobile-menu-header {
+  padding: 16px 20px;
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid var(--ink-100);
+  position: sticky; top: 0; background: var(--white);
+}
+.topbar-mobile-menu-title { font-weight: 600; font-size: 14px; color: var(--ink-900); }
+.topbar-mobile-menu-close {
+  font-size: 18px; color: var(--ink-400);
+  padding: 4px 8px; cursor: pointer; background: transparent; border: none;
+  line-height: 1;
+}
+.topbar-mobile-menu-items { display: flex; flex-direction: column; padding: 8px 0; flex: 1; }
+.topbar-mobile-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 20px; font-size: 13px; font-weight: 500;
+  color: var(--ink-900); text-decoration: none;
+  background: transparent; border: none; cursor: pointer; text-align: left;
+  transition: background 0.1s;
+}
+.topbar-mobile-menu-item:active { background: var(--green-50); }
+.topbar-mobile-menu-item--primary { color: var(--green-700); font-weight: 600; }
+.topbar-mobile-menu-item--danger  { color: var(--danger); }
+.topbar-mobile-menu-divider { height: 1px; background: var(--ink-100); margin: 8px 20px; }
+.topbar-mobile-menu-user {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 20px;
+}
+.topbar-mobile-menu-user-info { display: flex; flex-direction: column; gap: 2px; }
+.topbar-mobile-menu-email { font-size: 13px; font-weight: 600; color: var(--ink-900); }
+.topbar-mobile-menu-role  { font-size: 12px; color: var(--ink-500); }
+
 /* ========== Progress Bar ========== */
 .progress {
   padding: 28px 40px 8px;
@@ -191,6 +258,19 @@ a { text-decoration: none; }
 .body      { font-size: 15px; line-height: 1.55; color: var(--ink-700); }
 .body-sm   { font-size: 13px; line-height: 1.5; color: var(--ink-500); }
 .caption   { font-size: 12px; color: var(--ink-500); }
+.kpi-main-num { font-size: 48px; }
+.landing-flow { gap: 80px; }
+.landing-hero-desc { margin-bottom: 36px; }
+.landing-hero-section { padding-top: 40px; }
+.landing-cta-hint { flex-shrink: 0; }
+.footer {
+  border-top: 1px solid var(--ink-100);
+  padding: 24px 40px;
+  display: flex; justify-content: space-between;
+  font-size: 12px; color: var(--ink-500);
+  max-width: 1400px; margin: 0 auto; width: 100%;
+}
+.footer-links { display: flex; gap: 20px; }
 
 /* ========== Buttons ========== */
 .btn {
@@ -236,6 +316,7 @@ a { text-decoration: none; }
 }
 .btn-nav:hover { border-color: var(--green-500); color: var(--green-700); }
 .btn-nav:disabled { opacity: 0.4; cursor: not-allowed; }
+.myth-nav-btn { padding: 10px; }
 
 /* ========== Cards ========== */
 .card {
@@ -626,6 +707,10 @@ input[type="range"]::-moz-range-thumb {
 .login-banner-sub  { font-size: 12px; color: var(--ink-500); margin-top: 2px; }
 
 /* ========== StepParams: Budget Slider Card ========== */
+.params-header     { margin-bottom: 36px; }
+.grade-kwp         { font-size: 28px; font-weight: 700; line-height: 1; }
+.grade-efficiency-num { font-size: 36px; }
+.param-summary-card { padding: 24px; }
 .budget-card { padding: 26px; margin-bottom: 20px; }
 .budget-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
 .budget-amount { font-size: 28px; font-weight: 700; color: var(--green-700); }
@@ -2296,6 +2381,15 @@ input[type="range"]::-moz-range-thumb {
   gap: 8px;
 }
 
+/* ========== UserInbox two-panel layout ========== */
+.inbox-panels { flex: 1; display: flex; overflow: hidden; }
+.inbox-list-panel { width: 220px; flex-shrink: 0; border-right: 1px solid var(--ink-100); overflow-y: auto; }
+.inbox-chat-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.inbox-chat-panel.inbox-empty { align-items: center; justify-content: center; color: var(--ink-400); font-size: 14px; }
+.inbox-back-btn { display: none; }
+.inbox-modal-header { display: flex; align-items: center; gap: 12px; }
+.inbox-modal-header .modal-title { flex: 1; }
+
 /* ========== InquiryModal ========== */
 .inquiry-modal { max-width: 520px; }
 .inquiry-modal-body { display: flex; flex-direction: column; gap: 16px; padding: 20px; }
@@ -2907,19 +3001,59 @@ input[type="range"]::-moz-range-thumb {
 .step-address-map-col {
   position: sticky; top: 100px; display: flex; flex-direction: column; gap: 12px;
 }
+.step-address-map-view {
+  height: 400px;
+  border-radius: var(--radius-lg); overflow: hidden;
+  border: 1px solid var(--ink-100);
+}
+.building-info-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+.building-info-grid > .card { padding: 14px 18px; min-width: 0; }
+.building-info-num           { font-size: 22px; }
+.step-address-desc           { margin-bottom: 28px; }
+.roof-area-input             { font-size: 28px; }
+.address-confirmed-section   { margin-top: 28px; }
+.slider-card                 { padding: 20px; }
+.slider-card-header          { margin-bottom: 12px; }
+.slider-card-labels          { margin-top: 6px; }
+
+/* ── Wizard step container padding ── */
+.wizard-step-content { padding: 30px 0 40px; }
 
 /* ── StepUsage: two-column grid ── */
 .step-usage-grid {
   display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px;
 }
+.step-usage-desc     { margin-bottom: 40px; }
+.usage-input-card    { padding: 36px; }
+.usage-bill-input    { font-size: 60px; }
+.usage-kwh-input     { font-size: 72px; }
+.usage-context-card  { padding: 28px; }
+.usage-habit-section { margin-top: 36px; }
+.usage-method-toggle { margin-bottom: 28px; }
+.usage-habit-eyebrow  { margin-bottom: 6px; }
+.usage-habit-btn      { padding: 14px 16px; }
+.usage-stats-list     { display: flex; gap: 20px; }
+.usage-context-footer { margin-top: 20px; }
+.usage-context-note   { font-size: 13px; }
 
 /* ── StepGoal: three-column goal cards ── */
 .step-goal-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
 }
+.goal-header     { margin-bottom: 36px; }
+.goal-card       { position: relative; text-align: left; padding: 22px; border-radius: var(--radius-lg); transition: all 0.25s var(--ease-out); cursor: pointer; display: flex; flex-direction: column; gap: 12px; min-height: 160px; }
+.goal-card-title { font-size: 17px; }
 
 /* ── Results KPI card ── */
-.results-kpi-card { padding: 36px; }
+.results-kpi-card        { padding: 36px; margin-bottom: 28px; }
+.results-summary-header  { margin-bottom: 28px; }
+.results-gen-chart-card  { padding: 28px; }
+.results-gen-side-card   { padding: 24px; }
+.results-climate-card    { padding: 24px; margin-top: 16px; }
+.climate-legend          { gap: 16px; }
+.results-inv-card        { padding: 28px; }
 
 /* ── Results: monthly chart bars ── */
 .monthly-chart-bars {
@@ -2939,12 +3073,17 @@ input[type="range"]::-moz-range-thumb {
   /* Main content wrapper */
   .main-content { padding: 0 16px; }
 
-  /* TopBar */
+  /* TopBar: hide desktop nav, show hamburger */
   .topbar { padding: 12px 16px; }
-  .topbar-actions { gap: 10px; }
-  .topbar-source,
-  .topbar-pill,
-  .topbar-map-link { display: none; }
+  .brand-meta .sub { font-size: 10px; }
+  .body-lg { font-size: 15px; }
+  .topbar-desktop-actions { display: none; }
+  .topbar-mobile-right { display: flex; align-items: center; gap: 8px; }
+
+  /* Slider: smaller track + thumb */
+  input[type="range"] { height: 6px; }
+  input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; }
+  input[type="range"]::-moz-range-thumb    { width: 18px; height: 18px; }
 
   /* Progress bar */
   .progress { padding: 16px 16px 6px; }
@@ -2954,6 +3093,7 @@ input[type="range"]::-moz-range-thumb {
   .wizard-footer { padding: 12px 16px 20px; gap: 10px; }
   .wizard-back-label { display: none; }
   .wizard-back-btn   { padding: 12px 14px; }
+  .wizard-footer .btn-primary { padding: 11px 18px; font-size: 14px; }
 
   /* Landing hero: single column */
   .landing-hero-grid { grid-template-columns: 1fr; gap: 32px; }
@@ -2971,32 +3111,77 @@ input[type="range"]::-moz-range-thumb {
   .myth-card {
     flex: 0 0 calc(100vw - 68px);
     scroll-snap-align: center;
-    padding: 20px;
+    padding: 16px;
   }
+  .myth-card-myth-text  { font-size: 14px !important; }
+  .myth-card-truth-text { font-size: 13px !important; }
+  .myth-card-stat-box   { margin-top: 12px !important; padding: 10px 12px !important; }
+  .myth-card-stat-num   { font-size: 18px !important; }
 
-  /* StepAddress: single column, map static */
-  .step-address-grid    { grid-template-columns: 1fr; }
+  /* Wizard step container: tighter top/bottom padding */
+  .wizard-step-content { padding: 16px 0 24px; }
+
+  /* Step description text */
+  .body { font-size: 14px; }
+
+  /* StepAddress: description text bottom margin */
+  .step-address-desc         { margin-bottom: 14px; }
+
+  /* StepUsage */
+  .step-usage-desc     { margin-bottom: 16px; }
+  .usage-method-toggle { margin-bottom: 16px; }
+  .usage-habit-eyebrow { margin-bottom: 2px; }
+  .usage-habit-btn      { padding: 10px 12px; display: flex; flex-direction: column; align-items: flex-start; }
+  .usage-stats-list     { gap: 15px; }
+  .usage-context-footer { margin-top: 12px; }
+  .usage-context-note   { font-size: 11px; }
+  .usage-input-card    { padding: 20px; }
+  .usage-bill-input    { font-size: 38px; }
+  .usage-kwh-input     { font-size: 44px; }
+  .usage-context-card  { padding: 16px; }
+  .usage-habit-section { margin-top: 20px; }
+  .roof-area-input           { font-size: 20px; }
+  .address-confirmed-section { margin-top: 14px; }
+  .slider-card               { padding: 14px 16px; }
+  .slider-card-header        { margin-bottom: 0px; }
+  .slider-card-labels        { margin-top: 4px; }
+
+  /* StepAddress: single column, map static, shorter map, tighter gap */
+  .step-address-grid    { grid-template-columns: 1fr; gap: 8px; }
   .step-address-map-col { position: static; }
+  .step-address-map-view { height: 260px; }
 
   /* StepUsage: single column */
   .step-usage-grid { grid-template-columns: 1fr; gap: 20px; }
 
   /* StepGoal: single column */
   .step-goal-grid  { grid-template-columns: 1fr; }
+  .goal-header     { margin-bottom: 20px; }
+  .goal-card       { padding: 14px 16px; gap: 8px; min-height: 0; }
+  .goal-card-title { font-size: 15px; }
 
-  /* StepParams: grade cards single column */
-  .grade-grid         { grid-template-columns: 1fr; }
-  .grade-card-title   { padding-right: 80px; }   /* make room for badge */
+  /* StepParams: grade cards single column on mobile */
+  .info               { margin-left: 2px; }
+  .params-header      { margin-bottom: 20px; }
+  .grade-grid         { grid-template-columns: 1fr; gap: 10px; }
+  .grade-card         { padding: 16px; gap: 8px; flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .grade-card-title   { padding-right: 0; font-size: 13px; flex: 0 0 100%; }
+  .grade-efficiency-num  { font-size: 28px; }
+  .grade-efficiency-desc { font-size: 12px; }
+  .grade-kwp          { font-size: 18px; }
+  .grade-desc         { font-size: 10px; flex: 0 0 100%; }
+  .grade-badges       { position: absolute; top: 10px; right: 10px; flex-direction: column; align-items: flex-end; }
 
   /* StepParams: summary cards single column */
-  .param-summary-grid { grid-template-columns: 1fr; }
+  .param-summary-grid  { grid-template-columns: 1fr; gap: 12px; }
+  .param-summary-card  { padding: 16px; }
+  .cost-highlight-amount { font-size: 24px; }
 
   /* StepParams: budget amount wraps cleanly */
-  .budget-row   { flex-wrap: wrap; gap: 6px; }
+  .budget-card   { padding: 16px; margin-bottom: 12px; }
+  .slider-labels { margin-top: 3px; }
+  .budget-row   { flex-wrap: wrap; gap: 6px; margin-bottom: 2px; }
   .budget-amount { font-size: 24px; }
-
-  /* Results KPI card: reduce padding on mobile */
-  .results-kpi-card { padding: 20px; }
 
   /* Results KPI: 2 × 2 */
   .results-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
@@ -3005,30 +3190,98 @@ input[type="range"]::-moz-range-thumb {
     border-top: 1px solid var(--ink-100); padding-top: 16px;
   }
 
+  /* Results: summary header + KPI */
+  .results-summary-header { margin-bottom: 16px; }
+  .results-kpi-card       { padding: 20px; margin-bottom: 16px; }
+  .kpi-main-num           { font-size: 36px; }
+
+  /* Results: tab nav */
+  .results-tab-btn { padding: 10px 16px; font-size: 13px; }
+
   /* Results chart panels: single column */
   .results-gen-grid,
   .results-inv-grid { grid-template-columns: 1fr; }
 
-  /* Monthly chart: tighter gap so 12 bars fit within card */
-  .monthly-chart-bars { gap: 5px; padding: 0 4px; }
+  /* Results: card paddings */
+  .results-gen-chart-card { padding: 16px; }
+  .results-gen-side-card  { padding: 16px; }
+  .results-climate-card   { padding: 16px; }
+  .results-inv-card       { padding: 16px; }
 
-  /* Results investment summary: 2 columns */
-  .results-inv-summary { grid-template-columns: 1fr 1fr; }
+
+  /* Results climate legend: tighter spacing */
+  .climate-legend { flex-direction: column; gap: 4px !important; padding-left: 6px; }
+  .climate-legend span:not(:first-child) { padding-left: 4px; }
+
+  /* Results climate callout */
+  .results-climate-callout { margin-top: 8px !important; padding: 10px 10px !important; }
+
+  /* Monthly chart: shorter height + hide 月 suffix so labels fit */
+  .monthly-chart-bars { gap: 5px; padding: 0 4px; height: 160px; }
+  .monthly-month-suffix { display: none; }
+
+
+  /* Results investment summary: keep 3 columns */
+  .results-inv-summary { grid-template-columns: repeat(3, 1fr); }
 
   /* Results CTA: stack and full-width buttons */
-  .results-cta { flex-direction: column; align-items: flex-start; }
+  .results-cta { flex-direction: column; align-items: flex-start; padding: 24px; }
+  .results-cta-title { font-size: 16px; }
   .results-cta-actions {
-    --results-cta-button-width: 100%;
+    --results-cta-button-width: calc(50% - 5px);
     width: 100%;
     justify-content: stretch;
   }
+  .results-vendor-jump-btn,
+  .results-download-btn { width: 100%; }
+  .results-save-btn   { width: var(--results-cta-button-width); }
+  .results-share-btn  { width: var(--results-cta-button-width); }
 
   /* Modals */
-  .modal { width: calc(100vw - 32px); padding: 24px 20px; }
+  .modal { width: calc(100vw - 32px); padding: 24px 20px; max-height: calc(100dvh - 48px); overflow-y: auto; }
 
   /* Vendor apply modal: stack login/dismiss buttons vertically */
   .vendor-apply-login-actions { flex-direction: column; }
   .vendor-apply-login-actions .btn { width: 100%; justify-content: center; }
+
+  /* Landing: tighter section spacing */
+  .landing-flow { gap: 40px; }
+  .landing-hero-desc { margin-bottom: 30px; }
+  .landing-hero-section { padding-top: 20px; }
+  .landing-cta-row { flex-wrap: nowrap !important; gap: 10px; }
+  .landing-cta-row .btn-primary.xl { padding: 12px 20px; font-size: 14px; }
+  .landing-cta-hint { font-size: 12px; line-height: 1.4; }
+  .landing-myth-cta { margin-top: 28px !important; }
+  .landing-myth-cta .btn-primary.xl { padding: 15px 28px; font-size: 16px; }
+  .myth-section-header { flex-wrap: nowrap !important; align-items: center; }
+  .myth-section-header .h-title { font-size: 22px; }
+  .myth-nav-btns { align-items: center; }
+  .myth-nav-btn { padding: 6px; font-size: 11px; line-height: 1; }
+
+  /* Drawer: full-width on mobile (fixed 420px overflows phone screens) */
+  .footer { flex-direction: column-reverse; gap: 10px; padding: 20px 16px; }
+  .footer-links { padding-left: 4px; }
+  .footer-copyright { font-size: clamp(9px, 2.5vw, 12px); text-align: center; }
+  /* Inbox: full-screen modal, LINE-style list → chat navigation */
+  .inbox-modal {
+    width: 100vw !important; max-width: 100vw !important;
+    height: 100dvh !important; max-height: 100dvh !important;
+    border-radius: 0 !important;
+  }
+  .inbox-list-panel { width: 100%; border-right: none; }
+  .inbox-chat-panel { display: none; }
+  .inbox-chat-active .inbox-list-panel { display: none; }
+  .inbox-chat-active .inbox-chat-panel { display: flex; }
+  .inbox-chat-active .inbox-back-btn { display: flex; }
+
+  .drawer { width: 100%; }
+
+  /* Tweaks panel: stretch to viewport width on mobile */
+  .tweaks-panel {
+    width: calc(100vw - 32px);
+    right: 16px;
+    bottom: 16px;
+  }
 }
 
 /* ===== @media (max-width: 480px) — small phones ===== */
@@ -3037,14 +3290,19 @@ input[type="range"]::-moz-range-thumb {
   .results-kpi-grid { grid-template-columns: 1fr; }
   .results-kpi-item--divided { border-top: 1px solid var(--ink-100); padding-top: 16px; }
 
-  /* Investment summary: single column */
-  .results-inv-summary { grid-template-columns: 1fr; }
+  /* Investment summary: keep 3 columns on small phones */
+  .results-inv-summary { grid-template-columns: repeat(3, 1fr); }
+
+  /* KPI main numbers scale-down */
+  .kpi-main-num { font-size: 36px; }
 
   /* Typography scale-down */
   .h-display { font-size: 38px; }
   .h-title   { font-size: 26px; }
   .h-section { font-size: 18px; }
 
-  /* Brand subtitle hidden on very small screens */
-  .brand-meta .sub { display: none; }
+  /* StepAddress: building info 三欄縮小，預估可用面積欄加寬 */
+  .building-info-grid                    { grid-template-columns: 0.85fr 1fr 1.15fr; }
+  .building-info-grid > .card            { padding: 10px; }
+  .building-info-num                     { font-size: 16px; }
 }

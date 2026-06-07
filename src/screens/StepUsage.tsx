@@ -13,6 +13,12 @@ const HABITS = [
   { id: 'away'   as const, label: '白天外出',  desc: '夜間用電為主'         },
 ];
 
+const BUILDING_TYPES = [
+  { id: 'single'     as const, label: '獨棟住宅',   desc: '透天厝・獨立建物' },
+  { id: 'apartment'  as const, label: '大樓／社區', desc: '公寓・集合住宅・社區' },
+  { id: 'commercial' as const, label: '營業用建物', desc: '工廠廠房・商業大樓・公共建設' },
+];
+
 function tierLabel(kwh: number, isSummer: boolean): string {
   if (kwh <= 120)  return '第一段 1.78 元/度';
   if (kwh <= 330)  return isSummer ? '第二段 2.55 元/度' : '第二段 2.26 元/度';
@@ -28,11 +34,15 @@ export default function StepUsage({
   state: SolarState;
   update: (patch: Partial<SolarState>) => void;
 }) {
-  const inputMethod = state.inputMethod ?? 'bill';
-  const billSeason  = state.billSeason  ?? 'nonSummer';
-  const isSummer    = billSeason === 'summer';
-  const kwh         = state.monthlyKwh ?? 350;
-  const habit       = state.selfUseHabit ?? 'normal';
+  const inputMethod   = state.inputMethod   ?? 'bill';
+  const billSeason    = state.billSeason    ?? 'nonSummer';
+  const isSummer      = billSeason === 'summer';
+  const kwh           = state.monthlyKwh   ?? 350;
+  const habit         = state.selfUseHabit ?? 'normal';
+  const buildingType  = state.buildingType ?? 'single';
+  const unitCount     = state.unitCount    ?? 20;
+  const isApartment   = buildingType === 'apartment';
+  const [unitCountRaw, setUnitCountRaw] = useState(String(unitCount));
   const [expanded, setExpanded] = useState(false);
   const [billExpanded, setBillExpanded] = useState(false);
   const [billInfoOpen, setBillInfoOpen] = useState(false);
@@ -137,21 +147,88 @@ export default function StepUsage({
 
   return (
     <div>
+      {/* ── 建物類型 ── */}
+      <div style={{ marginBottom: 32 }}>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>前置條件 · 建物類型</div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {BUILDING_TYPES.map(bt => {
+            const active = buildingType === bt.id;
+            return (
+              <button key={bt.id} onClick={() => update({
+                buildingType: bt.id,
+                unitCount: bt.id === 'apartment' ? (state.unitCount ?? 20) : undefined,
+              })} style={{
+                flex: 1, textAlign: 'left', padding: '12px 14px',
+                background: active ? 'var(--green-700)' : 'var(--white)',
+                color: active ? 'var(--white)' : 'var(--ink-900)',
+                border: `1.5px solid ${active ? 'var(--green-700)' : 'var(--ink-200)'}`,
+                borderRadius: 'var(--radius-lg)',
+                cursor: 'pointer', transition: 'all 0.2s var(--ease-out)',
+                boxShadow: active ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+              }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 3 }}>{bt.label}</div>
+                <div style={{ fontSize: 11, color: active ? 'rgba(255,255,255,0.75)' : 'var(--ink-500)' }}>{bt.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {isApartment && (
+          <div style={{
+            marginTop: 16, padding: '14px 16px',
+            background: 'var(--green-50)', border: '1px solid var(--green-200)',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex', alignItems: 'center', gap: 16,
+          }}>
+            <div style={{ fontSize: 13, color: 'var(--ink-600)', flexShrink: 0 }}>住宅戶數</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <input
+                type="number" min="2" max="2000"
+                value={unitCountRaw}
+                onChange={e => setUnitCountRaw(e.target.value)}
+                onBlur={e => {
+                  const v = Math.round(+e.target.value);
+                  if (!v || v < 2) { setUnitCountRaw('2'); update({ unitCount: 2 }); return; }
+                  const clamped = Math.min(2000, v);
+                  setUnitCountRaw(String(clamped));
+                  update({ unitCount: clamped });
+                }}
+                className="num"
+                style={{
+                  fontSize: 32, fontWeight: 700, color: 'var(--green-700)',
+                  border: 'none', outline: 'none', background: 'transparent', padding: 0,
+                  textAlign: 'right',
+                  width: `${Math.max(4, unitCountRaw.length + 1)}ch`,
+                }}
+              />
+              <span style={{ fontSize: 16, color: 'var(--ink-500)' }}>戶</span>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-400)', marginLeft: 'auto' }}>
+              總用電量 = 單戶用電 × {unitCount} 戶
+            </div>
+          </div>
+        )}
+      </div>
+
       <div style={{ maxWidth: 720 }}>
         <div className="eyebrow" style={{ marginBottom: 16 }}>Step 2 · 用電狀況</div>
-        <h2 className="h-title" style={{ margin: '0 0 14px' }}>你家每個月用多少電？</h2>
-        <p className="body" style={{ marginBottom: 40, color: 'var(--ink-500)' }}>
-          直接輸入台電帳單金額即可，系統會自動換算月均度數；或切換至度數模式手動輸入。
+        <h2 className="h-title" style={{ margin: '0 0 14px' }}>
+          {isApartment ? '社區每戶用電量' : '你家每個月用多少電？'}
+        </h2>
+        <p className="body step-usage-desc" style={{ color: 'var(--ink-500)' }}>
+          {isApartment
+            ? `輸入單戶每月用電量，系統會乘以 ${unitCount} 戶計算社區總用電。`
+            : '直接輸入台電帳單金額即可，系統會自動換算月均度數；或切換至度數模式手動輸入。'}
         </p>
       </div>
 
       <div className="step-usage-grid">
         {/* ── Input card ── */}
-        <div className="card elevated" style={{ padding: 36 }}>
+        <div className="card elevated usage-input-card">
 
           {/* Method toggle */}
-          <div style={{
-            display: 'flex', marginBottom: 28,
+          <div className="usage-method-toggle" style={{
+            display: 'flex',
             border: '1px solid var(--ink-200)', borderRadius: 'var(--radius-md)',
             overflow: 'hidden', fontSize: 13,
           }}>
@@ -171,7 +248,7 @@ export default function StepUsage({
             <>
               {/* Season selector */}
               <div style={{ marginBottom: 22 }}>
-                <div className="caption" style={{ marginBottom: 10 }}>帳單所在月份</div>
+                <div className="body-sm" style={{ marginBottom: 10 }}>帳單所在月份</div>
                 <div style={{ display: 'flex', gap: 10 }}>
                   {([
                     { value: 'nonSummer' as const, label: '非夏月', sub: '10月 – 隔年5月' },
@@ -205,9 +282,9 @@ export default function StepUsage({
                     value={billRaw}
                     onChange={e => { setBillRaw(e.target.value); setBillError(false); }}
                     onBlur={e => onBillBlur(+e.target.value)}
-                    className="num"
+                    className="num usage-bill-input"
                     style={{
-                      fontSize: 60, fontWeight: 700,
+                      fontWeight: 700,
                       color: billError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
                       border: 'none', outline: 'none', background: 'transparent',
                       width: 210, padding: 0,
@@ -368,9 +445,9 @@ export default function StepUsage({
                     setKwhError(false);
                     update({ monthlyKwh: Math.min(2000, v) });
                   }}
-                  className="num"
+                  className="num usage-kwh-input"
                   style={{
-                    fontSize: 72, fontWeight: 700,
+                    fontWeight: 700,
                     color: kwhError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
                     border: 'none', outline: 'none', background: 'transparent',
                     width: `${String(kwh).length + 0.3}ch`, padding: 0,
@@ -467,12 +544,12 @@ export default function StepUsage({
         </div>
 
         {/* ── Context card ── */}
-        <div className="card" style={{ padding: 28, background: 'var(--green-50)', borderColor: 'var(--green-200)' }}>
+        <div className="card usage-context-card" style={{ background: 'var(--green-50)', borderColor: 'var(--green-200)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <SunIcon size={18} color="var(--green-700)" />
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--green-700)' }}>依此估算</div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="usage-stats-list" style={{ flexDirection: 'column' }}>
             <div>
               <div className="caption">目前邊際費率</div>
               <div style={{ fontSize: 18, fontWeight: 600, marginTop: 4 }}>{tierLabel(kwh, isSummer)}</div>
@@ -481,29 +558,34 @@ export default function StepUsage({
               </div>
             </div>
             <div>
-              <div className="caption">年用電量估計</div>
+              <div className="caption">{isApartment ? `社區年用電量（${unitCount} 戶）` : '年用電量估計'}</div>
               <div>
                 <span className="num" style={{ fontSize: 28, fontWeight: 700, color: 'var(--green-700)' }}>
-                  {(kwh * 12).toLocaleString()}
+                  {(kwh * 12 * (isApartment ? unitCount : 1)).toLocaleString()}
                 </span>
                 <span style={{ fontSize: 14, color: 'var(--ink-500)', marginLeft: 6 }}>kWh / 年</span>
               </div>
+              {isApartment && (
+                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>
+                  單戶 {(kwh * 12).toLocaleString()} kWh × {unitCount} 戶
+                </div>
+              )}
             </div>
             <div>
-              <div className="caption">年電費支出估計</div>
+              <div className="caption">{isApartment ? `社區年電費估計（${unitCount} 戶）` : '年電費支出估計'}</div>
               <div>
                 <span className="num" style={{ fontSize: 28, fontWeight: 700 }}>
-                  NT$ {annualElectricityCost.toLocaleString()}
+                  NT$ {(annualElectricityCost * (isApartment ? unitCount : 1)).toLocaleString()}
                 </span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>
-                含 4 個夏月 + 8 個非夏月累進費率
+                {isApartment ? `單戶 NT$ ${annualElectricityCost.toLocaleString()} × ${unitCount} 戶` : '含 4 個夏月 + 8 個非夏月累進費率'}
               </div>
             </div>
           </div>
 
-          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--green-200)' }}>
-            <div className="body-sm" style={{ color: 'var(--ink-500)' }}>
+          <div className="usage-context-footer" style={{ paddingTop: 16, borderTop: '1px solid var(--green-200)' }}>
+            <div className="body-sm usage-context-note" style={{ color: 'var(--ink-500)' }}>
               ⓘ 依 2025 年台電民生用電累進費率計算，實際帳單以台電 APP 查詢為準。
             </div>
           </div>
@@ -511,8 +593,8 @@ export default function StepUsage({
       </div>
 
       {/* ── 日間用電習慣 ── */}
-      <div style={{ maxWidth: 720, marginTop: 36 }}>
-        <div className="eyebrow" style={{ marginBottom: 6 }}>日間用電習慣</div>
+      <div className="usage-habit-section" style={{ maxWidth: 720 }}>
+        <div className="eyebrow usage-habit-eyebrow">日間用電習慣</div>
         <p className="body-sm" style={{ color: 'var(--ink-500)', marginBottom: 12 }}>
           未加裝儲能設備時，太陽能只能在發電當下即時使用；白天越常在家，能直接消費的發電比例越高
         </p>
@@ -521,8 +603,9 @@ export default function StepUsage({
             const active = habit === h.id;
             return (
               <button key={h.id} onClick={() => update({ selfUseHabit: h.id })}
+                className="usage-habit-btn"
                 style={{
-                  flex: 1, textAlign: 'left', padding: '14px 16px',
+                  flex: 1, textAlign: 'left',
                   background: active ? 'var(--green-700)' : 'var(--white)',
                   color: active ? 'var(--white)' : 'var(--ink-900)',
                   border: `1.5px solid ${active ? 'var(--green-700)' : 'var(--ink-200)'}`,

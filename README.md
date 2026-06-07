@@ -151,6 +151,9 @@ solar_money/
 │   ├─ taiwan_dem_100m.npy       全台 100m DEM numpy array（28.9 MB，進 git 作備用）
 │   ├─ taiwan_dem_meta.npy       DEM 空間參考元資料（160 bytes）
 │   ├─ climate/                  氣候資料 CSV（NASA POWER，已匯入 DB）
+│   ├─ validation/               模型驗證資料
+│   │   ├─ validate_model.ipynb  驗證 notebook（Faiman 模型 × 台電114年19縣市實測）
+│   │   └─ validation_L1.png     各縣市預測 vs. 實測散點圖
 │   ├─ LoD1/                     GBA LoD1 JSON 高程索引（不進 git，本機自備）
 │   ├─ Polygon/                  GBA Polygon GeoJSON 建物輪廓（不進 git，本機自備）
 │   ├─ ODbLPolygon/              GBA ODbLPolygon GeoJSON（OSM 授權，不進 git，本機自備）
@@ -394,14 +397,62 @@ moveend + 600ms debounce
 
 ```
 容量 (kW) = min(屋頂面積上限, 預算上限 ÷ (單價 - 補助/kW))
-月發電量 = 容量 × 日照強度[地區][月份] × 天數 × 0.78（性能比）× 目標調整係數
+校正後日射量 = GHI × REGION_CALIBRATION[region]
+T_cell = 氣溫 + 校正後日射量 ÷ (25 + 6.84 × 風速)      ← Faiman (2008) T_cell 模型
+動態 PR = 0.78 × [1 + γ × (T_cell − 25°C)]               ← γ = −0.0045/°C（c-Si，IEC 61215）
+月發電量 = 容量 × 校正後日射量 × 天數 × 動態PR × 目標調整係數
 年發電量 = Σ 月發電量
 年收益 = 自用省電（40% × 2.5元/度）+ 台電躉購（60% × 5.7元/度）
 回本年限 = 實際自付 ÷ 年收益
 20年總收益 = Σ（年收益 × 0.995^y）  ← 0.5%/年衰退
 ```
 
-日照資料來源：`TW_IRRADIANCE` 靜態常數（北/中/南部月均 GHI）；已匯入 `climate_monthly` 表（368 鄉鎮市 × 12 月 NASA POWER 13 年均值），後端可透過 `GET /api/climate/{township_code}` 提供更精確的鄉鎮級月均 GHI。
+### 區域校正係數（REGION_CALIBRATION）
+
+依台電114年各縣市太陽光電容量因數（19縣市 860萬kWp 實裝資料）校正，修正 ERA5/NASA POWER 衛星再分析 GHI 系統性高估及真實裝機損耗（非最佳傾角、灰塵、遮蔭、老化）：
+
+| 地區 | 係數 | 說明 |
+|------|------|------|
+| 北部 | 1.00 | 無系統性偏差 |
+| 中部 | 1.00 | 無系統性偏差 |
+| 南部 | 0.89 | ERA5 高估 +11.9%（低緯度強日照 + 高溫效應） |
+| 東部 | 0.95 | ERA5 高估 +5.4%（山脈地形遮蔽） |
+
+校正係數同時套用於 NASA POWER API 路徑與靜態常數 fallback 路徑。
+
+### 氣候適宜性門檻
+
+依台電114年實測資料校正（非論文理論值）：
+
+| 等級 | 年效率門檻 | 對應縣市範例 |
+|------|-----------|-------------|
+| 優良 | ≥ 1250 kWh/kWp | 彰化、台南、高雄 |
+| 尚可 | ≥ 1050 kWh/kWp | 台中、桃園 |
+| 偏低 | < 1050 kWh/kWp | 基隆、宜蘭 |
+
+台灣實測均值：1158 kWh/kWp/yr。
+
+### 日射量資料來源
+
+- **NASA POWER API 可用時**：使用 `/api/township` 回傳的鄉鎮級月均 GHI（MERRA-2，2013–2025 年均值）× REGION_CALIBRATION
+- **API 不可用時（fallback）**：使用 `TW_IRRADIANCE` 4 區靜態常數 × REGION_CALIBRATION
+- `climate_monthly` 表（368 鄉鎮市 × 12 月）可透過 `GET /api/climate/{township_code}` 取得
+
+---
+
+## 模型驗證
+
+驗證資料集：台電114年各縣市太陽光電容量因數（19縣市 860萬kWp）。
+
+| 預測路徑 | 全台 MAPE | 說明 |
+|---------|----------|------|
+| 4 區常數（校正前） | 6.6% | — |
+| 4 區常數（校正後） | **3.9%** | REGION_CALIBRATION 套用後 |
+| NASA POWER（校正前） | 8.7% | ERA5 未修正偏差 |
+| NASA POWER（校正後） | **5.6%** | REGION_CALIBRATION 套用後 |
+
+主要殘差來源：北部 7.5%（ERA5 梅雨季雲層低估）、南投 14.8%（山地地形）。
+完整驗證報告見 [`data/validation/validate_model.ipynb`](data/validation/validate_model.ipynb)。
 
 ---
 

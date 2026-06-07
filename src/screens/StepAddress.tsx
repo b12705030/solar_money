@@ -316,7 +316,7 @@ export default function StepAddress({
         <div>
           <div className="eyebrow" style={{ marginBottom: 16 }}>Step 1 · 地址</div>
           <h2 className="h-title" style={{ margin: '0 0 14px' }}>你家在哪裡？</h2>
-          <p className="body" style={{ marginBottom: 28, color: 'var(--ink-500)' }}>
+          <p className="body step-address-desc" style={{ color: 'var(--ink-500)' }}>
             輸入地址，系統會定位到地圖上的位置，並自動偵測建物資訊。
           </p>
 
@@ -399,7 +399,7 @@ export default function StepAddress({
 
           {/* Confirmed info */}
           {(a || buildingLoading) && (
-            <div style={{ marginTop: 28, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="address-confirmed-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="body-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {buildingLoading ? (
                   <>
@@ -426,15 +426,15 @@ export default function StepAddress({
               {/* Building info row + roof area slider */}
               {buildingLoading ? (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                  <div className="building-info-grid">
                     {[0, 1, 2].map(i => (
-                      <div key={i} className="card" style={{ padding: '14px 18px', minHeight: 66 }}>
+                      <div key={i} className="card" style={{ minHeight: 66 }}>
                         <div style={{ height: 10, width: '45%', borderRadius: 4, background: 'var(--ink-100)', marginBottom: 10 }} />
                         <div style={{ height: 22, width: '60%', borderRadius: 4, background: 'var(--ink-100)' }} />
                       </div>
                     ))}
                   </div>
-                  <div className="card" style={{ padding: 20 }}>
+                  <div className="card slider-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                       <div style={{ height: 10, width: '38%', borderRadius: 4, background: 'var(--ink-100)' }} />
                       <div style={{ height: 28, width: '15%', borderRadius: 4, background: 'var(--ink-100)' }} />
@@ -445,31 +445,31 @@ export default function StepAddress({
               ) : (
                 <>
                   {buildingInfo && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                      <div className="card" style={{ padding: '14px 18px' }}>
+                    <div className="building-info-grid">
+                      <div className="card">
                         <div className="caption" style={{ marginBottom: 4 }}>建物高度</div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                          <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.height.toFixed(1)}</span>
+                          <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.height.toFixed(1)}</span>
                           <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>m</span>
-                          {estFloors !== null && (
-                            <span style={{ fontSize: 12, color: 'var(--ink-400)', marginLeft: 4 }}>≈ {estFloors} 樓</span>
-                          )}
                         </div>
+                        {estFloors !== null && (
+                          <span style={{ fontSize: 12, color: 'var(--ink-400)', display: 'block', marginTop: 1 }}>≈ {estFloors} 樓</span>
+                        )}
                       </div>
-                      <div className="card" style={{ padding: '14px 18px' }}>
+                      <div className="card">
                         <div className="caption" style={{ marginBottom: 4 }}>建物基地面積</div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                          <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.areaPing}</span>
+                          <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{buildingInfo.areaPing}</span>
                           <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
                         </div>
                       </div>
-                      <div className="card" style={{ padding: '14px 18px' }}>
+                      <div className="card">
                         <div className="caption" style={{ marginBottom: 4 }}>
                           預估可用面積
                           <Info tip={`依陰影遮蔽模擬與邊緣退縮估算，約為基地面積的 ${Math.round((state.usableFraction ?? 0.6) * 100)}%`} />
                         </div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                          <span className="num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--green-700)' }}>{usableArea}</span>
+                          <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{usableArea}</span>
                           <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>坪</span>
                         </div>
                       </div>
@@ -477,8 +477,8 @@ export default function StepAddress({
                   )}
 
                   {/* Roof area slider */}
-                  <div className="card" style={{ padding: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 12 }}>
+                  <div className="card slider-card">
+                    <div className="slider-card-header" style={{ display: 'flex', alignItems: 'baseline' }}>
                       <div className="caption">
                         可用屋頂面積<Info tip="上限為系統依陰影模擬估算的可鋪設面積。若屋頂尚有水塔或其他設施，請向下調整坪數" />
                       </div>
@@ -504,9 +504,9 @@ export default function StepAddress({
                             setAreaError(false);
                             update({ roofArea: v, roofAreaError: false });
                           }}
-                          className="num"
+                          className="num roof-area-input"
                           style={{
-                            fontSize: 28, fontWeight: 700, width: `${Math.max(2, areaRaw.length) + 1}ch`,
+                            fontWeight: 700, width: `${Math.max(2, areaRaw.length) + 1}ch`,
                             color: areaError ? 'var(--red-600, #dc2626)' : 'var(--green-700)',
                             border: 'none', outline: 'none', background: 'transparent', padding: 0,
                             textAlign: 'right',
@@ -520,7 +520,7 @@ export default function StepAddress({
                       value={roofArea}
                       onChange={v => { update({ roofArea: v, roofAreaError: false }); setAreaError(false); }}
                     />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+                    <div className="slider-card-labels" style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span className="caption">1 坪</span>
                       <span className="caption">{usableArea ?? 200} 坪（系統估算上限）</span>
                     </div>
@@ -539,11 +539,7 @@ export default function StepAddress({
 
         {/* Map + time slider (always visible) */}
         <div className="step-address-map-col">
-          <div style={{
-            height: 400,
-            borderRadius: 'var(--radius-lg)', overflow: 'hidden',
-            border: '1px solid var(--ink-100)',
-          }}>
+          <div className="step-address-map-view">
             <MapView
               selectedAddress={a}
               onBuildingFound={handleBuildingFound}
@@ -553,8 +549,8 @@ export default function StepAddress({
           </div>
 
           {/* Shadow time slider — always visible, below the map */}
-          <div className="card" style={{ padding: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+          <div className="card slider-card">
+            <div className="slider-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <div className="caption">
                 陰影預覽<Info tip="依太陽位置即時計算建物陰影" />
               </div>
@@ -568,7 +564,7 @@ export default function StepAddress({
               </div>
             </div>
             <Slider min={sunTimes?.firstHour ?? 6} max={sunTimes?.lastHour ?? 18} value={sunHour} onChange={setSunHour} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+            <div className="slider-card-labels" style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span className="caption">日出 {sunTimes?.sunrise ?? '—'}</span>
               <span className="caption">日落 {sunTimes?.sunset ?? '—'}</span>
             </div>

@@ -47,6 +47,10 @@ export interface SolarState {
   billAmounts?: (number | null)[];
   /** 六份帳單各自的季節（'summer' | 'nonSummer'），未設時依 BILL_PAIR_META 預設值 */
   billSeasons?: ('summer' | 'nonSummer')[];
+  /** 建物類型：獨棟住宅 / 大樓社區 / 營業用建物 */
+  buildingType?: 'single' | 'apartment' | 'commercial';
+  /** 大樓/社區住宅戶數，用於計算總用電量與攤分預算 */
+  unitCount?: number;
 }
 
 export type Theme = 'forest' | 'ocean' | 'earth';

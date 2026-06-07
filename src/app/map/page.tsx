@@ -350,6 +350,9 @@ function MapPageContent() {
             display: flex !important;
           }
           .map-overlay { display: block !important; }
+          .map-info-btn { bottom: 72px !important; }
+          .map-method-card { bottom: 120px !important; }
+          .map-back-btn { display: flex !important; }
         }
         .map-panel-toggle { display: none; }
         .map-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.3); z-index: 15; }
@@ -520,9 +523,25 @@ function MapPageContent() {
           </div>
         </div>
 
+        {/* 手機版：返回按鈕 */}
+        <Link
+          href="/"
+          className="map-back-btn"
+          style={{ display: 'none', position: 'absolute', bottom: 72, left: 16, zIndex: 2,
+            background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(4px)',
+            width: 36, height: 36, borderRadius: '50%',
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.12)', textDecoration: 'none',
+            alignItems: 'center', justifyContent: 'center',
+            fontSize: 15, color: '#64748B',
+          }}
+        >
+          ←
+        </Link>
+
         {/* 右下角：方法說明卡片（獨立定位，不影響按鈕位置）*/}
         {methodOpen && (
-          <div style={{
+          <div className="map-method-card" style={{
             position: 'absolute', bottom: 78, right: 16, zIndex: 10,
             width: 300,
             background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(6px)',
@@ -585,6 +604,7 @@ function MapPageContent() {
 
         {/* ℹ 觸發按鈕（固定在右下角，不受卡片影響）*/}
         <button
+          className="map-info-btn"
           onClick={() => setMethodOpen(v => !v)}
           title="方法說明"
           style={{
@@ -606,7 +626,7 @@ function MapPageContent() {
           className="map-panel-toggle"
           onClick={() => setPanelOpen(v => !v)}
           style={{
-            position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+            position: 'absolute', bottom: 72, left: '50%', transform: 'translateX(-50%)',
             zIndex: 10, padding: '10px 20px', borderRadius: 24,
             background: '#1A202C', color: '#fff', border: 'none',
             fontSize: 13, fontWeight: 600, cursor: 'pointer',
