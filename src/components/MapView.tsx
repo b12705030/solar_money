@@ -11,6 +11,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 type Props = {
   selectedAddress?: AddressOption | null;
   onBuildingFound?: (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => void;
+  onBuildingNotFound?: () => void;
   onDetectionStart?: (early?: { lat: number; lng: number; height: number; areaPing: number }) => void;
   sunHour?: number; // local Taiwan time (UTC+8), 0–23
 };
@@ -291,7 +292,7 @@ async function fetchUsableFractionForBuilding(
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function MapView({ selectedAddress, onBuildingFound, onDetectionStart, sunHour = 12 }: Props) {
+export default function MapView({ selectedAddress, onBuildingFound, onBuildingNotFound, onDetectionStart, sunHour = 12 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -301,6 +302,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
   const [terrainEnabled, setTerrainEnabled] = useState(true);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const onBuildingFoundRef = useRef(onBuildingFound);
+  const onBuildingNotFoundRef = useRef(onBuildingNotFound);
   const onDetectionStartRef = useRef(onDetectionStart);
   const buildingCacheRef = useRef<BuildingCache | null>(null);
   const sunHourRef = useRef(sunHour);
@@ -310,6 +312,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
   const sliderFetchCtrl = useRef<AbortController | null>(null);
 
   useEffect(() => { onBuildingFoundRef.current = onBuildingFound; });
+  useEffect(() => { onBuildingNotFoundRef.current = onBuildingNotFound; });
   useEffect(() => { onDetectionStartRef.current = onDetectionStart; });
   useEffect(() => { sunHourRef.current = sunHour; }, [sunHour]);
 
@@ -584,19 +587,14 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
         const { buildings: nearby }: { buildings: { footprint: [number, number][]; height: number }[] } = await res.json();
         if (!nearby?.length || abortCtrl.signal.aborted) return;
 
-        // 優先找包含點的建物，其次取最近 polygon 邊緣距離
-        // (polygon edge distance 優於 centroid distance：地理編碼點常落在巷道上，
-        //  狹長建物的邊緣比鄰近大棟建物的 centroid 更近，可避免選到錯誤建物)
+        // 僅接受包含目標點的建物；若查無精確命中則視為該地址無建物資料，
+        // 不自動 fallback 到鄰近建物（避免靜默替換成錯誤地址）
         const point: [number, number] = lngLat;
-        let primary = nearby.find(b => pointInPolygon(point, b.footprint)) ?? null;
+        const primary = nearby.find(b => pointInPolygon(point, b.footprint)) ?? null;
         if (!primary) {
-          let minD = Infinity;
-          for (const b of nearby) {
-            const d = minDistSqToPolygon(point, b.footprint);
-            if (d < minD) { minD = d; primary = b; }
-          }
+          onBuildingNotFoundRef.current?.();
+          return;
         }
-        if (!primary) return;
 
         // 橙色 highlight 只顯示選中的那棟；周邊建物由 api-buildings-fill（灰色）統一顯示
         const primaryFeat: GeoJSON.Feature = {
