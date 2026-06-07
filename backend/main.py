@@ -315,7 +315,7 @@ async def taiwan_sun_times():
 def usable_fraction_cache_key(target_footprint: list) -> str:
     fp_str = json.dumps(target_footprint, separators=(',', ':'))
     h = hashlib.md5(fp_str.encode()).hexdigest()[:12]
-    return f'v1_uf_{h}'
+    return f'v2_uf_{h}'
 
 
 @app.post('/api/usable-fraction')

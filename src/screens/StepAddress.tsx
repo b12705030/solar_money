@@ -529,7 +529,7 @@ export default function StepAddress({
                             <div className="card">
                               <div className="caption" style={{ marginBottom: 4 }}>
                                 可受光屋頂面積
-                                <Info tip={`取樣 08/10/12/14/16 時的周邊建物陰影遮蔽比例平均，加上屋頂邊緣退縮 1m（欄杆安全距離），結果限縮於 10%–95%。\n鄰棟有效高度含 DEM 地形修正（考量地面高低差）。`} />
+                                <Info tip={`取樣 07/09/11/13/15/17 時的周邊建物陰影遮蔽比例，以各時段太陽輻射強度（sin 仰角）加權平均。正午權重最高（約 25%），清晨／傍晚權重最低（約 7%），更貼近實際發電損失。\n加上屋頂邊緣退縮 1m（欄杆安全距離），結果限縮於 10%–95%。鄰棟有效高度含 DEM 地形修正（考量地面高低差）。`} />
                               </div>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                                 <span className="num building-info-num" style={{ fontWeight: 700, color: 'var(--green-700)' }}>{usableArea}</span>
@@ -633,7 +633,7 @@ export default function StepAddress({
           <div className="card slider-card">
             <div className="slider-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <div className="caption">
-                陰影預覽<Info tip="拖曳時間軸可預覽不同時段的陰影遮蔽範圍。深色區域表示屋頂被周邊建物遮蔽、發電效率較低；淺色（無陰影）區域為有效發電面積。可受光屋頂面積已將全日平均遮蔽比例納入計算。" />
+                陰影預覽<Info tip="拖曳時間軸可預覽不同時段的陰影遮蔽範圍。深色區域表示屋頂被周邊建物遮蔽、發電效率較低；淺色（無陰影）區域為有效發電面積。可受光屋頂面積以 07/09/11/13/15/17 時的輻射強度加權平均計算，反映全日實際發電損失。" />
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                 <span className="num" style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-700)' }}>

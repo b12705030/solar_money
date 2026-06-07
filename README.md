@@ -12,7 +12,7 @@
 |------|------|
 | 地址搜尋 | Google Places API 自動完成，限台灣地區 |
 | 建物偵測 | 以 **GBA（GlobalBuildingAtlas）** Neon DB 為主要來源（全台 + 離島 51 萬筆）；DB 無資料時 fallback 至本地 `taiwan_polygon_fallback.ndjson.gz`（256 萬筆，含澎湖、金門、馬祖）；最終備援為 OSM Overpass API |
-| 3D 陰影預覽 | 依太陽位置即時計算周圍建物陰影（pvlib NREL SPA），可拖曳時間軸 6–19 時；結合 20m DEM 考慮地形遮蔽；**每棟建物獨立查詢 DEM 地表高程**，坡地陰影長度加入地形高差修正 |
+| 3D 陰影預覽 | 依太陽位置即時計算周圍建物陰影（pvlib NREL SPA），可拖曳時間軸 6–19 時；結合 20m DEM 考慮地形遮蔽；**每棟建物獨立查詢 DEM 地表高程**，坡地陰影長度加入地形高差修正。選中建物以灰色顯示（與未選中建物相同），陰影疊加清晰可見；橘色外框線 + pin 標示選中狀態 |
 | 3D 地形 | Mapbox terrain-rgb 3D 地形顯示（exaggeration 1.0）+ hillshade 山體陰影；地圖左下角可一鍵切換開/關 |
 | 用電量輸入 | 輸入每月平均用電 kWh |
 | 目標選擇 | 全年最大、夏季最大、冬季最大、正午峰值、與用電曲線最匹配、投資回收最快；依地區自動推薦 |
@@ -70,7 +70,7 @@ CockroachDB（Neon 為舊資料來源 / 遷移前 PostgreSQL 方案）
   ├─ osm_cache            OSM 建物備援快取（7 天 TTL）
   ├─ shadow_cache         陰影預計算結果（月份粒度，cache key v4，~100m 格子）
   ├─ tilt_cache           pvlib 最佳傾角結果（永久，key = v1_tilt_{lat}_{lng}_{goal}）
-  ├─ usable_fraction_cache  可用屋頂比例（footprint MD5 hash，180 天 TTL）
+  ├─ usable_fraction_cache  可用屋頂比例（footprint MD5 hash，180 天 TTL；演算法版號升級後須手動清除舊快取）
   ├─ accounts             會員帳號與角色（user / vendor / admin）
   ├─ assessments          使用者評估紀錄（匿名 or 帳號綁定）
   ├─ vendors              廠商基本資料、服務縣市、評分、訂閱狀態
@@ -372,6 +372,25 @@ moveend + 600ms debounce
 ### 拖曳時間軸
 
 直接從前端 `cacheRef`（`Map<hour, FeatureCollection>`）讀取，不發 API request。
+
+### 可受光屋頂面積計算（`/api/usable-fraction`）
+
+```
+取樣時段：07 / 09 / 11 / 13 / 15 / 17 時（台灣時間）
+加權方式：weight = sin(太陽仰角)  ← 正比於水平面太陽輻射強度（GHI）
+
+usable_fraction = Σ(各時段可受光比例 × weight) / Σ(weight)
+
+台灣（緯度 ~25°N）典型權重分布：
+  07 / 17 時 ≈  6.8%（低仰角，貢獻小）
+  09 / 15 時 ≈ 18.2%
+  11 / 13 時 ≈ 25.0%（近正午，貢獻最高）
+
+同時扣除屋頂邊緣 1m 退縮（欄杆安全距離）。
+鄰棟有效高度含 DEM 地形高差修正。
+結果限縮於 [0.10, 0.95]，fallback 0.6（全日太陽仰角過低時）。
+快取於 usable_fraction_cache（footprint MD5 hash，180 天 TTL）。
+```
 
 ### 陰影幾何計算（Python）
 
