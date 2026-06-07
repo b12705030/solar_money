@@ -205,7 +205,6 @@ export default function StepUsage({
                     value={billRaw}
                     onChange={e => { setBillRaw(e.target.value); setBillError(false); }}
                     onBlur={e => onBillBlur(+e.target.value)}
-                    className="num"
                     className="num usage-bill-input"
                     style={{
                       fontWeight: 700,
