@@ -177,7 +177,7 @@ export default function App() {
       <TopBar {...topBarProps} onHome={reset} />
       <ProgressBar step={step} steps={STEPS} onStepClick={go} />
       <main className="main-content" style={{ position: 'relative', overflow: 'hidden' }}>
-        <div style={{ padding: '30px 0 40px', position: 'relative', minHeight: 520 }}>
+        <div className="wizard-step-content" style={{ position: 'relative', minHeight: 520 }}>
           {([0, 1, 2, 3] as const).map(i => (
             <div
               key={i}

@@ -1,5 +1,5 @@
 import type { SolarState, ComputedResults, Region } from './types';
-import { TW_IRRADIANCE, DEFAULT_TEMP, DEFAULT_WIND, PANEL_GRADES } from './constants';
+import { TW_IRRADIANCE, DEFAULT_TEMP, DEFAULT_WIND, PANEL_GRADES, REGION_CALIBRATION } from './constants';
 
 // ─── Faiman (2008) T_cell model, as cited by Han et al. (2026) Eq.(13) ────────
 // T_cell = T_a + I_total / (U0 + U1·WS)
@@ -13,10 +13,12 @@ const FAIMAN = {
   base_PR: 0.78, // —    — baseline system performance ratio (inverter + wiring + soiling)
 };
 
-// Han et al. (2026) Fig.11 suitability thresholds (Z-score ±σ).
-// Paper reports values in kWh per 325W Panasonic HIT panel; divide by 0.325 kWp to get kWh/kWp.
-const PV_YIELD_GOOD = Math.round(461 / 0.325);  // 1418 kWh/kWp/yr  (+1σ)
-const PV_YIELD_POOR = Math.round(373 / 0.325);  // 1148 kWh/kWp/yr  (−1σ)
+// Suitability thresholds recalibrated from TPC 114-year county data (19 counties, 860万 kWp).
+// Method: empirical ±1σ of actual county yields (mean≈1158, σ≈90 kWh/kWp/yr).
+// Paper (Han et al. 2026) thresholds (1418/1148) assumed Panasonic HIT + optimal tilt —
+// they overestimate real-world Taiwan installations by ~13% in south, ~8% in central.
+const PV_YIELD_GOOD = 1250; // kWh/kWp/yr — top quartile Taiwan counties (彰化/台南 level)
+const PV_YIELD_POOR = 1050; // kWh/kWp/yr — below-average northern counties (基隆/台北 level)
 
 function calcMonthlyPR(ghiArr: number[], tempArr: number[], windArr: number[], basePR = FAIMAN.base_PR): number[] {
   return ghiArr.map((ghi, i) => {
@@ -152,7 +154,11 @@ export function computeResults(
   degradationRateOverride?: number,
 ): ComputedResults {
   const region = (state.address?.region ?? '北部') as Region;
-  const irr  = (monthlyGhi  && monthlyGhi.length  === 12) ? monthlyGhi  : TW_IRRADIANCE[region];
+  // REGION_CALIBRATION corrects ERA5/NASA POWER systematic GHI overestimation (South +11.9%,
+  // East +5.4%) and real-world losses (non-optimal tilt, soiling, shading). Applied to all paths.
+  const cal    = REGION_CALIBRATION[region];
+  const rawIrr = (monthlyGhi && monthlyGhi.length === 12) ? monthlyGhi : TW_IRRADIANCE[region];
+  const irr  = rawIrr.map(v => v * cal);
   const temp = (monthlyTemp && monthlyTemp.length  === 12) ? monthlyTemp : DEFAULT_TEMP[region];
   const wind = (monthlyWind && monthlyWind.length  === 12) ? monthlyWind : DEFAULT_WIND[region];
   const capacity = state.capacity ?? 7.7;
@@ -179,36 +185,37 @@ export function computeResults(
     pvYieldPerKwp >= PV_YIELD_POOR ? 'fair' : 'poor';
 
   const monthlyUse = state.monthlyKwh ?? 350;
+  const unitCount = Math.max(1, state.unitCount ?? 1);
 
-  // 年用電量：優先用使用者輸入的 12 月明細總和，否則 monthlyKwh × 12
+  // 年用電量：優先用使用者輸入的 12 月明細總和，否則 monthlyKwh × 12（單戶）
   const monthlyUsageArr = (state.monthlyUsage?.length === 12)
     ? state.monthlyUsage
     : TEPCO_MONTHLY_NORM.map(w => monthlyUse * w);
   const annualUsageTotal = monthlyUsageArr.reduce((a, b) => a + b, 0);
+  const annualUsageTotalBuilding = annualUsageTotal * unitCount;
 
-  const selfSufficiency = Math.round((annualKwh / annualUsageTotal) * 100);
+  const selfSufficiency = Math.round((annualKwh / annualUsageTotalBuilding) * 100);
 
   // selfUseRatio：受實際用電量上限約束（不可能自用超過消費量）
   // 上限依用電習慣：0.88 在宅 / 0.75 一般 / 0.42 外出（無電池儲能）
   const selfUseCapMax = SELF_USE_CAP[state.selfUseHabit ?? 'normal'];
-  const selfUseRatio = Math.min(selfUseCapMax, annualUsageTotal / annualKwh);
+  const selfUseRatio = Math.min(selfUseCapMax, annualUsageTotalBuilding / annualKwh);
   const selfUsedKwh = annualKwh * selfUseRatio;
   const soldKwh = annualKwh - selfUsedKwh;
   const fitRate = fitRateOverride ?? getFitRateForCapacity(capacity);
 
-  // 月別收益：自用電 = 月帳單差額（台電六段累進）；餘電賣台電 FIT
+  // 月別收益：大樓模式下先算單戶節電再乘以戶數，確保台電累進費率正確套用
   let selfUseRevenue = 0;
   let fitRevenue = 0;
   monthlyKwh.forEach((kwh, i) => {
-    const monthUsage = monthlyUsageArr[i];
-    const monthSelfUseRatio = monthUsage > 0
-      ? Math.min(selfUseCapMax, monthUsage / kwh)
-      : selfUseRatio;
-    const selfUsed = kwh * monthSelfUseRatio;
+    const monthUsage = monthlyUsageArr[i]; // 單戶用電
+    // 單戶可自用量 = min(selfUseCapMax × 單戶分配發電量, 單戶用電量)
+    const selfUsedPerUnit = Math.min(selfUseCapMax * kwh / unitCount, monthUsage);
     const isSummer = SUMMER_MONTH_IDX.has(i);
-    selfUseRevenue += calcTpcBill(monthUsage, isSummer)
-                    - calcTpcBill(Math.max(0, monthUsage - selfUsed), isSummer);
-    fitRevenue += (kwh - selfUsed) * fitRate;
+    const perUnitSaving = calcTpcBill(monthUsage, isSummer)
+                        - calcTpcBill(Math.max(0, monthUsage - selfUsedPerUnit), isSummer);
+    selfUseRevenue += perUnitSaving * unitCount;
+    fitRevenue += (kwh - selfUsedPerUnit * unitCount) * fitRate;
   });
   selfUseRevenue = Math.round(selfUseRevenue);
   const annualRevenue = Math.round(selfUseRevenue + fitRevenue);
