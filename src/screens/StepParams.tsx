@@ -19,8 +19,11 @@ export default function StepParams({
   const county = state.county ?? guessCounty(state.address?.label);
   const subsidy = SUBSIDIES[county] ?? SUBSIDIES['台北市'];
 
+  const premiumGrade = PANEL_GRADES[PANEL_GRADES.length - 1];
+  const maxBudget = Math.round(area * 3.3 * premiumGrade.kWpPerM2 * (premiumGrade.costPerKw - subsidy.amount) / 10000) * 10000;
+
   const defaultBudget = Math.min(
-    800000,
+    maxBudget,
     Math.round(maxCapacity * (PANEL_GRADES[1].costPerKw - subsidy.amount) / 10000) * 10000,
   );
   const budgetCeiling = state.budgetCeiling ?? defaultBudget;
@@ -66,6 +69,10 @@ export default function StepParams({
           const isFull = gCap >= gMaxCap - 0.05;
           const { annualKwh: gAnnualKwh } = computeResults({ ...state, capacity: gCap, panelGrade: g.id });
           const gAnnualSavings = Math.round(gAnnualKwh * getFitRateForCapacity(gCap));
+          const totalPanels = Math.round(gMaxCap / 0.45);
+          const budgetPanels = Math.round(gCap / 0.45);
+          const DOTS = 10;
+          const filledDots = isFull ? DOTS : Math.max(1, Math.round(gCap / gMaxCap * DOTS));
           return (
             <button
               key={g.id}
@@ -88,6 +95,20 @@ export default function StepParams({
                 <div className="grade-cap-label">轉換效率</div>
               </div>
 
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, margin: '6px 0 2px' }}>
+                {Array.from({ length: DOTS }, (_, i) => (
+                  <span key={i} style={{
+                    display: 'inline-block', width: 9, height: 9, borderRadius: 2, flexShrink: 0,
+                    background: i < filledDots
+                      ? (active ? 'rgba(255,255,255,0.9)' : 'var(--green-600)')
+                      : (active ? 'rgba(255,255,255,0.2)' : 'var(--ink-150,#e5e7eb)'),
+                  }} />
+                ))}
+                <span style={{ fontSize: 10, marginLeft: 4, color: active ? 'rgba(255,255,255,0.7)' : 'var(--ink-400)', whiteSpace: 'nowrap' }}>
+                  {budgetPanels} / {totalPanels} 片
+                </span>
+              </div>
+
               <div className="grade-desc">
                 可裝 {gCap} kWp・預估年售電 NT$ {gAnnualSavings.toLocaleString()}<br />
                 NT$ {g.costPerKw.toLocaleString()} / kW
@@ -107,7 +128,7 @@ export default function StepParams({
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
             <span className="num" style={{ fontSize: 15, color: 'var(--ink-500)' }}>NT$</span>
             <input
-              type="number" min="50000" max="800000"
+              type="number" min="50000" max={maxBudget}
               value={budgetRaw}
               onChange={e => { setBudgetRaw(e.target.value); setBudgetError(false); }}
               onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -115,7 +136,7 @@ export default function StepParams({
                 const v = +e.target.value;
                 if (!v || v < 50000) { setBudgetError(true); return; }
                 setBudgetError(false);
-                update({ budgetCeiling: Math.min(800000, Math.round(v)) });
+                update({ budgetCeiling: Math.min(maxBudget, Math.round(v)) });
               }}
               className="num budget-amount"
               style={{
@@ -127,13 +148,13 @@ export default function StepParams({
           </div>
         </div>
         <Slider
-          min={50000} max={800000} step={10000}
+          min={50000} max={maxBudget} step={10000}
           value={budgetCeiling}
           onChange={v => update({ budgetCeiling: v })}
         />
         <div className="slider-labels">
           <span className="caption">5 萬</span>
-          <span className="caption">80 萬</span>
+          <span className="caption">{Math.round(maxBudget / 10000)} 萬（全裝高效款）</span>
         </div>
       </div>
 
