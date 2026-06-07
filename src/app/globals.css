@@ -3217,8 +3217,6 @@ input[type="range"]::-moz-range-thumb {
   .monthly-chart-bars { gap: 5px; padding: 0 4px; height: 160px; }
   .monthly-month-suffix { display: none; }
 
-  /* Results revenue chart: remove fixed height so no dead space */
-  .results-revenue-chart svg { height: auto !important; }
 
   /* Results investment summary: keep 3 columns */
   .results-inv-summary { grid-template-columns: repeat(3, 1fr); }
