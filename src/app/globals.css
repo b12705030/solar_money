@@ -3046,7 +3046,13 @@ input[type="range"]::-moz-range-thumb {
 .goal-card-title { font-size: 17px; }
 
 /* ── Results KPI card ── */
-.results-kpi-card { padding: 36px; }
+.results-kpi-card        { padding: 36px; margin-bottom: 28px; }
+.results-summary-header  { margin-bottom: 28px; }
+.results-gen-chart-card  { padding: 28px; }
+.results-gen-side-card   { padding: 24px; }
+.results-climate-card    { padding: 24px; margin-top: 16px; }
+.climate-legend          { gap: 16px; }
+.results-inv-card        { padding: 28px; }
 
 /* ── Results: monthly chart bars ── */
 .monthly-chart-bars {
@@ -3174,9 +3180,6 @@ input[type="range"]::-moz-range-thumb {
   .budget-row   { flex-wrap: wrap; gap: 6px; margin-bottom: 2px; }
   .budget-amount { font-size: 24px; }
 
-  /* Results KPI card: reduce padding on mobile */
-  .results-kpi-card { padding: 20px; }
-
   /* Results KPI: 2 × 2 */
   .results-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
   .results-kpi-item--divided {
@@ -3184,24 +3187,54 @@ input[type="range"]::-moz-range-thumb {
     border-top: 1px solid var(--ink-100); padding-top: 16px;
   }
 
+  /* Results: summary header + KPI */
+  .results-summary-header { margin-bottom: 16px; }
+  .results-kpi-card       { padding: 20px; margin-bottom: 16px; }
+  .kpi-main-num           { font-size: 36px; }
+
+  /* Results: tab nav */
+  .results-tab-btn { padding: 10px 16px; font-size: 13px; }
+
   /* Results chart panels: single column */
   .results-gen-grid,
   .results-inv-grid { grid-template-columns: 1fr; }
+
+  /* Results: card paddings */
+  .results-gen-chart-card { padding: 16px; }
+  .results-gen-side-card  { padding: 16px; }
+  .results-climate-card   { padding: 16px; }
+  .results-inv-card       { padding: 16px; }
+
+
+  /* Results climate legend: tighter spacing */
+  .climate-legend { flex-direction: column; gap: 4px !important; padding-left: 6px; }
+  .climate-legend span:not(:first-child) { padding-left: 4px; }
+
+  /* Results climate callout */
+  .results-climate-callout { margin-top: 8px !important; padding: 10px 10px !important; }
 
   /* Monthly chart: shorter height + hide 月 suffix so labels fit */
   .monthly-chart-bars { gap: 5px; padding: 0 4px; height: 160px; }
   .monthly-month-suffix { display: none; }
 
-  /* Results investment summary: 2 columns */
-  .results-inv-summary { grid-template-columns: 1fr 1fr; }
+  /* Results revenue chart: remove fixed height so no dead space */
+  .results-revenue-chart svg { height: auto !important; }
+
+  /* Results investment summary: keep 3 columns */
+  .results-inv-summary { grid-template-columns: repeat(3, 1fr); }
 
   /* Results CTA: stack and full-width buttons */
-  .results-cta { flex-direction: column; align-items: flex-start; }
+  .results-cta { flex-direction: column; align-items: flex-start; padding: 24px; }
+  .results-cta-title { font-size: 16px; }
   .results-cta-actions {
-    --results-cta-button-width: 100%;
+    --results-cta-button-width: calc(50% - 5px);
     width: 100%;
     justify-content: stretch;
   }
+  .results-vendor-jump-btn,
+  .results-download-btn { width: 100%; }
+  .results-save-btn   { width: var(--results-cta-button-width); }
+  .results-share-btn  { width: var(--results-cta-button-width); }
 
   /* Modals */
   .modal { width: calc(100vw - 32px); padding: 24px 20px; max-height: calc(100dvh - 48px); overflow-y: auto; }
@@ -3256,8 +3289,8 @@ input[type="range"]::-moz-range-thumb {
   .results-kpi-grid { grid-template-columns: 1fr; }
   .results-kpi-item--divided { border-top: 1px solid var(--ink-100); padding-top: 16px; }
 
-  /* Investment summary: single column */
-  .results-inv-summary { grid-template-columns: 1fr; }
+  /* Investment summary: keep 3 columns on small phones */
+  .results-inv-summary { grid-template-columns: repeat(3, 1fr); }
 
   /* KPI main numbers scale-down */
   .kpi-main-num { font-size: 36px; }
