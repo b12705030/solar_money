@@ -27,6 +27,9 @@ function calcMonthlyPR(ghiArr: number[], tempArr: number[], windArr: number[], b
   });
 }
 
+// Fallback goalAdj when /api/township is unavailable (no lat/lng).
+// These are seasonal preference multipliers, NOT true POA/GHI ratios.
+// When the API is available it returns real pvlib POA/GHI values (always ≥ 1 for optimal tilt in Taiwan).
 const GOAL_ADJ: Record<string, number[]> = {
   annual: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
   summer: [0.85, 0.88, 0.95, 1.05, 1.10, 1.15, 1.18, 1.15, 1.05, 0.95, 0.90, 0.85],
@@ -183,7 +186,7 @@ export function computeResults(
     : TEPCO_MONTHLY_NORM.map(w => monthlyUse * w);
   const annualUsageTotal = monthlyUsageArr.reduce((a, b) => a + b, 0);
 
-  const selfSufficiency = Math.min(100, Math.round((annualKwh / annualUsageTotal) * 100));
+  const selfSufficiency = Math.round((annualKwh / annualUsageTotal) * 100);
 
   // selfUseRatio：受實際用電量上限約束（不可能自用超過消費量）
   // 上限依用電習慣：0.88 在宅 / 0.75 一般 / 0.42 外出（無電池儲能）
@@ -253,6 +256,64 @@ const COUNTY_PATTERNS: [RegExp, string][] = [
   [/金門/,       '金門縣'],
   [/連江|馬祖/,  '連江縣'],
 ];
+
+// Bi-monthly bill pair metadata (0-indexed months, dominant season for bill inversion)
+// 'split': period straddles summer/non-summer boundary; use the month with higher norm weight
+// May-Jun: norm[5]=0.97 (Jun, summer) > norm[4]=0.87 (May) → isSummer = true
+// Sep-Oct: norm[8]=1.26 (Sep, summer) > norm[9]=1.25 (Oct) → isSummer = true
+export const BILL_PAIR_META = [
+  { label: '1–2月',   months: [0, 1]  as [number, number], isSummer: false, shade: 'none'   },
+  { label: '3–4月',   months: [2, 3]  as [number, number], isSummer: false, shade: 'none'   },
+  { label: '5–6月',   months: [4, 5]  as [number, number], isSummer: true,  shade: 'split'  },
+  { label: '7–8月',   months: [6, 7]  as [number, number], isSummer: true,  shade: 'summer' },
+  { label: '9–10月',  months: [8, 9]  as [number, number], isSummer: true,  shade: 'split'  },
+  { label: '11–12月', months: [10, 11] as [number, number], isSummer: false, shade: 'none'  },
+] as const;
+
+/**
+ * Temporal disaggregation of 6 bi-monthly bills → 12 monthly kWh.
+ * Method: Denton (1971) proportional — uses TEPCO_MONTHLY_NORM as the shape indicator.
+ * For each filled bill: split proportionally by norm weights within the pair.
+ * For missing bills: estimate from the global scale derived from filled bills × norm.
+ *
+ * Denton, F.T. (1971). JASA 66(333), 99–102.
+ * Chow, G.C., Lin, A. (1971). Review of Economics and Statistics 53(4), 372–375.
+ */
+export function disaggregateBills(
+  billAmounts: (number | null | undefined)[],
+  fallbackMonthlyKwh: number,
+  billSeasons?: ('summer' | 'nonSummer')[],
+): number[] {
+  // Per-bill season: user override takes priority; fall back to BILL_PAIR_META default
+  const isSummerForK = (k: number) =>
+    billSeasons?.[k] !== undefined ? billSeasons[k] === 'summer' : BILL_PAIR_META[k].isSummer;
+
+  // Estimate "global scale" (≈ mean monthly kWh) from each filled bill
+  const scales: number[] = [];
+  BILL_PAIR_META.forEach(({ months: [m1, m2] }, k) => {
+    const bill = billAmounts[k];
+    if (!bill || bill < 50) return;
+    const totalQ = convertBillToMonthlyKwh(bill, isSummerForK(k)) * 2;
+    scales.push(totalQ / (TEPCO_MONTHLY_NORM[m1] + TEPCO_MONTHLY_NORM[m2]));
+  });
+  const globalScale = scales.length > 0
+    ? scales.reduce((a, b) => a + b, 0) / scales.length
+    : fallbackMonthlyKwh;
+
+  const result: number[] = new Array(12).fill(0);
+  BILL_PAIR_META.forEach(({ months: [m1, m2] }, k) => {
+    const bill = billAmounts[k];
+    if (!bill || bill < 50) {
+      result[m1] = Math.round(globalScale * TEPCO_MONTHLY_NORM[m1]);
+      result[m2] = Math.round(globalScale * TEPCO_MONTHLY_NORM[m2]);
+    } else {
+      const totalQ = convertBillToMonthlyKwh(bill, isSummerForK(k)) * 2;
+      result[m1] = Math.round(totalQ * TEPCO_MONTHLY_NORM[m1] / (TEPCO_MONTHLY_NORM[m1] + TEPCO_MONTHLY_NORM[m2]));
+      result[m2] = totalQ - result[m1]; // ensure exact sum preserved
+    }
+  });
+  return result;
+}
 
 export function guessCounty(label?: string): string {
   if (!label) return '台北市';

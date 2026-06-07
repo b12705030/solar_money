@@ -31,5 +31,7 @@ data/ODbLPolygon/
 data/Polygon/
 data/LoD1/
 data/LoD1_GeoJSON/
-# taiwan_polygon_fallback.ndjson.gz 透過 Git LFS 追蹤（執行 export_polygon_fallback.py 產生）
-# 若尚未設定 LFS，此檔案也可放在本地 data/ 供 fallback 使用（不提交即可）
+# GBA polygon fallback — 透過 Git LFS 追蹤（見 .gitattributes）
+# 自動生成的二進位快取（啟動時從 ndjson.gz 重建），不提交
+data/taiwan_polygon_fallback_bbox.npy
+data/taiwan_polygon_fallback_data.pkl.gz

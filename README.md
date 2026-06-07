@@ -2,6 +2,8 @@
 
 台灣屋頂太陽能自助評估系統，整合 3D 地圖陰影分析、各縣市政府補助資料、台電躉購費率，讓使用者在 5 分鐘內完成評估。
 
+> **資料庫現況**：目前正式 runtime 的 `DATABASE_URL` 指向 CockroachDB（通常是 `cockroachlabs.cloud`）。早期文件與部分一次性匯入腳本仍會提到 Neon；Neon 是原 PostgreSQL 來源/舊方案，現有 app 後端需以 CockroachDB 相容性為準。
+
 ---
 
 ## 功能總覽
@@ -55,17 +57,20 @@
   ├─ dem_tiles.py         DEM → Mapbox terrain-rgb PNG tile server（/api/dem/tile/{z}/{x}/{y}.png）
   ├─ bcrypt               密碼雜湊（直接使用，不透過 passlib）
   ├─ python-jose          JWT 簽發與驗證
+  ├─ cachetools           TTLCache 供 gba_buildings process-level bbox 快取（30s TTL）
   │
   └─ asyncpg
         │
         ▼
-PostgreSQL（Neon serverless，~480 MB / 512 MB 上限）
+CockroachDB（Neon 為舊資料來源 / 遷移前 PostgreSQL 方案）
   ├─ gba_buildings        GBA 建物永久資料庫（510,408 棟，含全台主島 + 澎湖 / 金門 / 馬祖）
   ├─ climate_annual       368 鄉鎮市年均 GHI / 溫度 / 風速（13 年均值）
   ├─ climate_monthly      368 × 12 月典型氣候（4,416 筆，NASA POWER）
   ├─ dem_cache            全台 100m DEM numpy bytea（28.9 MB，啟動時載入 RAM）
   ├─ osm_cache            OSM 建物備援快取（7 天 TTL）
-  ├─ shadow_cache         陰影預計算結果（月份粒度，cache key v3）
+  ├─ shadow_cache         陰影預計算結果（月份粒度，cache key v4，~100m 格子）
+  ├─ tilt_cache           pvlib 最佳傾角結果（永久，key = v1_tilt_{lat}_{lng}_{goal}）
+  ├─ usable_fraction_cache  可用屋頂比例（footprint MD5 hash，180 天 TTL）
   ├─ accounts             會員帳號與角色（user / vendor / admin）
   ├─ assessments          使用者評估紀錄（匿名 or 帳號綁定）
   ├─ vendors              廠商基本資料、服務縣市、評分、訂閱狀態
@@ -216,10 +221,15 @@ cp backend/.env.example backend/.env
 
 | 變數 | 說明 | 本地未設定時的行為 |
 |------|------|-------------------|
-| `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` | 必填，無預設 |
+| `DATABASE_URL` | `postgresql://user:pass@host:26257/defaultdb?sslmode=require`（CockroachDB）| 必填，無預設 |
 | `JWT_SECRET` | 任意隨機字串 | 自動產生臨時 key，重啟後 token 失效（本地開發可接受） |
 | `ADMIN_SECRET` | 管理員 API secret | 預設 `dev-admin-secret`（本地開發可接受，部署前必改） |
 | `CORS_ORIGINS` | 允許的前端來源（逗號分隔） | 允許所有來源，本地開發可不設 |
+| `R2_ACCOUNT_ID` | Cloudflare Account ID | 未設定時圖片上傳功能停用 |
+| `R2_ACCESS_KEY_ID` | R2 API Token Access Key | 同上 |
+| `R2_SECRET_ACCESS_KEY` | R2 API Token Secret Key | 同上 |
+| `R2_BUCKET_NAME` | R2 Bucket 名稱 | 同上 |
+| `R2_PUBLIC_URL` | Bucket 公開 URL（`https://pub-xxx.r2.dev`） | 同上 |
 
 
 ### 5. 啟動服務
@@ -237,6 +247,9 @@ uvicorn backend.main:app --reload
 # 啟動時應看到：
 # [DB] 連線成功，資料表已就緒
 # [shadow] DEM 載入完成（本機）shape=(3770, 2007)，origin=(150970, 2799170)
+# [GBA] Polygon fallback loading in background...
+# [Startup] pyproj CRS 預熱完成
+# [DB] Polygon fallback ready: 1,905,108 buildings (cached)
 ```
 
 ---
@@ -255,8 +268,8 @@ uvicorn backend.main:app --reload
 |--------|----------|------|
 | `POST` | `/api/shadow` | 單一建物陰影計算 |
 | `GET` | `/api/shadows` | bbox 範圍內所有建物陰影（GBA DB 優先，OSM fallback） |
-| `POST` | `/api/shadows/from-features` | 前端送入建物清單，計算**當前時刻**陰影（含地形高差修正，~300ms） |
-| `POST` | `/api/shadows/precompute` | 前端送入建物清單，預計算 **6–19 時全天**陰影並存 DB cache（v3 key） |
+| `POST` | `/api/shadows/from-features` | 前端送入建物清單，計算**當前時刻**陰影；優先查 `shadow_cache`，命中時直接回傳對應小時資料（~600ms），miss 時實時計算（4–7s） |
+| `POST` | `/api/shadows/precompute` | 前端送入建物清單，預計算 **6–19 時全天**陰影並存 DB cache（v4 key，~100m 格子 × 月份） |
 
 ### DEM Tile Server
 
@@ -264,10 +277,11 @@ uvicorn backend.main:app --reload
 |--------|----------|------|
 | `GET` | `/api/dem/tile/{z}/{x}/{y}.png` | 台灣 20m DEM 以 Mapbox terrain-rgb 格式輸出（z ≤ 15），供前端 3D 地形使用；Cache-Control: 86400s |
 
-### 氣候資料
+### 氣候資料與最佳傾角
 
 | Method | Endpoint | 說明 |
 |--------|----------|------|
+| `GET` | `/api/township?lat=&lng=&goal=` | 依座標查詢最近鄉鎮市氣候（NASA POWER 13 年均值）並以 pvlib 計算最佳安裝傾角；結果快取至 `tilt_cache`（第一次 17–20s，後續重啟依然 ~300ms） |
 | `GET` | `/api/climate/{township_code}` | 回傳指定鄉鎮市的年均統計 + 12 個月典型 GHI／溫度／風速 |
 
 ### 評估紀錄
@@ -292,7 +306,8 @@ uvicorn backend.main:app --reload
 |--------|----------|------|
 | `GET` | `/api/me/vendor` | 取得自己的廠商資料、作品集、訂閱狀態 |
 | `PATCH` | `/api/me/vendor` | 更新廠商資料（名稱、電話、email、縣市、標籤） |
-| `POST` | `/api/me/vendor/logo` | 更新廠商 Logo（base64 DataURL） |
+| `POST` | `/api/me/vendor/logo` | 更新廠商 Logo（multipart file upload → 上傳至 Cloudflare R2，回傳公開 URL） |
+| `POST` | `/api/me/vendor/upload-image` | 通用圖片上傳（作品集照片等），同上 |
 | `POST` | `/api/me/vendor/portfolios` | 新增作品集項目（含施工照、規格、客戶描述） |
 | `DELETE` | `/api/me/vendor/portfolios/{id}` | 刪除作品集項目 |
 | `GET` | `/api/me/vendor/inquiries` | 取得收到的詢價紀錄（含 case_status） |
@@ -343,10 +358,11 @@ uvicorn backend.main:app --reload
 moveend + 600ms debounce
   │
   ├─ Phase 1 → /api/shadows/from-features（當前 1 小時）
-  │              ~300ms → 立刻顯示陰影，隱藏 spinner
+  │              shadow_cache hit → ~600ms；miss → 4–7s
+  │              → 立刻顯示陰影，隱藏 spinner
   │
   └─ Phase 2 → /api/shadows/precompute（全天 14 小時）
-                 DB cache hit → ~5ms，miss → 2–5s
+                 shadow_cache hit → ~10ms；miss → 9–11s → 存入 DB
                  完成後填入前端 cacheRef → 拖曳時間軸瞬間回應
 ```
 
@@ -451,7 +467,7 @@ moveend + 600ms debounce
 
 ## 部署
 
-前端（Next.js）和後端（FastAPI）分開部署，資料庫使用現有的 Neon serverless PostgreSQL。
+前端（Next.js）和後端（FastAPI）分開部署，資料庫使用 CockroachDB（Neon 為舊資料來源 / 遷移前方案）。
 
 ### 前端 — Vercel
 
@@ -472,17 +488,22 @@ moveend + 600ms debounce
 
 | 變數 | 說明 | 本地未設定時的行為 |
 |------|------|-------------------|
-| `DATABASE_URL` | `postgresql://user:pass@host/db?sslmode=require` | 必填，無預設 |
+| `DATABASE_URL` | `postgresql://user:pass@host:26257/defaultdb?sslmode=require`（CockroachDB）；目前部署使用 CockroachDB，Neon URL 僅供舊資料來源/遷移使用 | 必填，無預設 |
 | `JWT_SECRET` | 長隨機字串，例如 `python -c "import secrets; print(secrets.token_hex(32))"` 的輸出 | **自動產生臨時 key，重啟後所有用戶 token 失效** |
 | `ADMIN_SECRET` | 自訂管理員 API secret，例如 `solar-admin-2026-xxx` | **預設為 `dev-admin-secret`，生產環境必須改掉** |
 | `CORS_ORIGINS` | 允許的前端來源，逗號分隔，例如 `https://your-app.vercel.app,http://localhost:3000` | 未設定時允許所有來源（`*`） |
+| `R2_ACCOUNT_ID` | Cloudflare Account ID | 未設定時圖片上傳功能停用 |
+| `R2_ACCESS_KEY_ID` | R2 API Token Access Key | 同上 |
+| `R2_SECRET_ACCESS_KEY` | R2 API Token Secret Key | 同上 |
+| `R2_BUCKET_NAME` | R2 Bucket 名稱，例如 `solar-money-logos` | 同上 |
+| `R2_PUBLIC_URL` | Bucket 公開 URL，例如 `https://pub-xxx.r2.dev` | 同上 |
 
 > **注意：** `JWT_SECRET` 和 `ADMIN_SECRET` 本地開發可不設，但部署前務必填入。前者未設定每次重啟都會讓用戶登出；後者預設值是公開資訊，任何人都能呼叫管理員 API。
 
 ### 注意事項
 
-- **base64 圖片儲存**：廠商 Logo 和作品集施工照都是以 base64 DataURL 存在 PostgreSQL TEXT 欄位，小張圖沒問題，但大量高解析照片會讓 DB 快速膨脹。規模化前建議改用 [Cloudinary](https://cloudinary.com) 免費方案（每月 25 GB）。
-- **Neon cold start**：Neon serverless 免費方案有連線數限制，後端已用 asyncpg connection pool 處理，應對短暫高峰沒問題。
+- **圖片儲存**：廠商 Logo 和作品集施工照上傳至 **Cloudflare R2**（免費方案：10 GB 儲存 + 零 egress 費用），DB 只存公開 URL。現有 base64 資料可用 `python -m backend.migrate_logos` 遷移。
+- **（舊 Neon 部署備註）Neon cold start**：Neon serverless 免費方案有連線數限制，後端已用 asyncpg connection pool 處理，應對短暫高峰沒問題。目前 runtime 為 CockroachDB，此行為不適用。
 - **Railway free tier**：每月 $5 額度，睡眠機制會讓第一個請求慢幾秒；如需避免可升級 Hobby 方案（$5/月）。
 
 ---
@@ -512,7 +533,7 @@ python scripts/import_climate.py
 
 主要建物資料來自 [GlobalBuildingAtlas（GBA）](https://huggingface.co/datasets/zhu-xlab/GBA.LoD1)，以 ML 估算建物高度，搭配 OSM / 非 OSM 建物輪廓。
 
-### DB 現況（Neon gba_buildings，510,408 棟）
+### DB 現況（CockroachDB gba_buildings，510,408 棟）
 
 | 地區 | 來源 tile | 建物數 |
 |------|-----------|--------|
@@ -540,4 +561,4 @@ python scripts/download_gba_tiles.py          # 下載 + 自動匯入
 python scripts/export_polygon_fallback.py --bbox 118.0,21.0,123.0,26.5
 ```
 
-> **Neon 512 MB 上限**：e115 tile 包含大量中國大陸建物，匯入時需使用精確的離島 bbox（見 `download_gba_tiles.py` 中的 `OFFSHORE_TILES`）。e120_n20_e125_n15（15–20°N，菲律賓）請勿匯入。
+> **容量限制**（舊 Neon 512 MB 免費方案上限；CockroachDB 仍應避免匯入不必要 tile）：e115 tile 包含大量中國大陸建物，匯入時需使用精確的離島 bbox（見 `download_gba_tiles.py` 中的 `OFFSHORE_TILES`）。e120_n20_e125_n15（15–20°N，菲律賓）請勿匯入。

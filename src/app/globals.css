@@ -97,7 +97,7 @@ a { text-decoration: none; }
   letter-spacing: 0.01em;
 }
 .brand-mark {
-  width: 70px; height: 70px;
+  width: 32px; height: 32px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -222,7 +222,7 @@ a { text-decoration: none; }
 }
 .btn-secondary:hover { background: var(--green-50); border-color: var(--green-300); }
 
-.btn-ghost { color: var(--ink-500); padding: 10px 14px; }
+.btn-ghost { color: var(--ink-500); padding: 10px 14px; display: inline-flex; align-items: center; gap: 6px; }
 .btn-ghost:hover { color: var(--green-700); background: var(--green-50); }
 
 .btn-nav {
@@ -259,19 +259,6 @@ a { text-decoration: none; }
   flex-shrink: 0;
 }
 .info:hover { background: var(--green-100); color: var(--green-700); }
-.info[data-tip]:hover::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-  background: var(--ink-900); color: var(--white);
-  font-size: 12px; font-weight: 400; line-height: 1.55;
-  padding: 8px 12px; border-radius: 8px;
-  white-space: normal; word-break: break-word;
-  width: max-content; max-width: min(320px, 90vw);
-  z-index: 100;
-  box-shadow: var(--shadow-md);
-  pointer-events: none;
-}
 
 /* ========== Wizard Footer Nav ========== */
 .wizard-footer {
@@ -710,6 +697,23 @@ input[type="range"]::-moz-range-thumb {
   height: 100%;
   background: linear-gradient(90deg, var(--green-500), var(--green-700));
   transition: width 1s var(--ease-out);
+}
+.results-kpi-progress-fill--overflow {
+  background: linear-gradient(90deg, var(--green-300), var(--green-500));
+  position: relative;
+  overflow: hidden;
+}
+.results-kpi-progress-fill--overflow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 50%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent);
+  animation: kpi-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes kpi-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 /* Results tab navigation (underline style) */
@@ -1368,9 +1372,10 @@ input[type="range"]::-moz-range-thumb {
 /* ========== Dashboard Pages (廠商後台 / 管理後台) ========== */
 
 .dash-page {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--paper);
 }
 
@@ -1449,6 +1454,7 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* Sidebar — expanded 220px, collapsed 52px */
@@ -1592,11 +1598,13 @@ input[type="range"]::-moz-range-thumb {
   flex: 1;
   padding: 36px 40px;
   min-width: 0;
-  max-width: 900px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .dash-content-header {
-  margin-bottom: 28px;
+  margin-bottom: 12px;
 }
 .dash-content-title {
   font-size: 22px;
@@ -1892,7 +1900,6 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-sm);
   background: var(--white);
   overflow: hidden;
-  max-width: 680px;
 }
 .dash-profile-header {
   display: flex;
@@ -2481,8 +2488,9 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-md);
   background: var(--white);
   overflow: hidden;
-  min-height: 540px;
-  margin-top: 16px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
 }
 
 /* Left contact list */

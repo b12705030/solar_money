@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import TopBar from '@/components/TopBar';
 import Footer from '@/components/Footer';
@@ -8,6 +8,7 @@ import TweaksPanel from '@/components/TweaksPanel';
 import WizardFooter from '@/components/WizardFooter';
 import AuthModal from '@/components/AuthModal';
 import HistoryDrawer from '@/components/HistoryDrawer';
+import UserInbox from '@/components/UserInbox';
 import VendorApplyModal from '@/components/VendorApplyModal';
 import Landing from '@/screens/Landing';
 import StepAddress from '@/screens/StepAddress';
@@ -32,7 +33,29 @@ export default function App() {
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
   const [vendorApplyOpen, setVendorApplyOpen] = useState(false);
+  const [pendingVendorApply, setPendingVendorApply] = useState(false);
+  const [vendorLoginToast, setVendorLoginToast] = useState(false);
+  const vendorToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevAuthOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (user && pendingVendorApply) {
+      setPendingVendorApply(false);
+      setAuthOpen(false);
+      setVendorApplyOpen(true);
+    }
+  }, [user, pendingVendorApply]);
+
+  // Bug 1 fix: 關閉登入視窗但未登入時，清除 pendingVendorApply，
+  // 避免之後透過其他路徑登入時意外開啟廠商申請表單
+  useEffect(() => {
+    if (prevAuthOpenRef.current && !authOpen && !user) {
+      setPendingVendorApply(false);
+    }
+    prevAuthOpenRef.current = authOpen;
+  }, [authOpen, user]);
 
   useEffect(() => { applyTheme(tweaks.theme); }, [tweaks.theme]);
   useEffect(() => { applyDensity(tweaks.density); }, [tweaks.density]);
@@ -75,7 +98,7 @@ export default function App() {
   };
 
   const canAdvance = () => {
-    if (step === 0) return !!state.address;
+    if (step === 0) return !!state.address && !state.roofAreaError && (!state.roofAreaMax || (state.roofArea ?? 0) <= state.roofAreaMax);
     if (step === 1) return state.monthlyKwh > 0;
     if (step === 2) return !!state.goal;
     return true;
@@ -88,7 +111,19 @@ export default function App() {
     user,
     onLoginClick:       () => setAuthOpen(true),
     onHistoryClick:     () => setHistoryOpen(true),
-    onVendorApplyClick: () => setVendorApplyOpen(true),
+    onInboxClick:       () => setInboxOpen(true),
+    onVendorApplyClick: () => {
+      if (user) { setVendorApplyOpen(true); return; }
+      setPendingVendorApply(true);
+      setVendorLoginToast(true);
+      // Bug 3 fix: 避免多次點擊累積多個 timer，先清除舊的再設新的
+      if (vendorToastTimerRef.current) clearTimeout(vendorToastTimerRef.current);
+      vendorToastTimerRef.current = setTimeout(() => {
+        setVendorLoginToast(false);
+        setAuthOpen(true);
+        vendorToastTimerRef.current = null;
+      }, 2000);
+    },
     onVendorDashClick:  () => router.push('/vendor'),
     onAdminPanelClick:  () => router.push('/admin'),
     onLogout:           logout,
@@ -97,9 +132,15 @@ export default function App() {
   const modals = (
     <>
       {tweaksOpen      && <TweaksPanel tweaks={tweaks} update={updateTweak} />}
+      {vendorLoginToast && (
+        <div className="results-save-toast" role="status" aria-live="polite">
+          需先登入才能申請廠商入駐，即將開啟登入...
+        </div>
+      )}
       {authOpen        && <AuthModal onClose={() => setAuthOpen(false)} />}
-      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} onLoginClick={() => { setVendorApplyOpen(false); setAuthOpen(true); }} />}
+      {vendorApplyOpen && <VendorApplyModal onClose={() => setVendorApplyOpen(false)} />}
       {historyOpen     && user && <HistoryDrawer onClose={() => setHistoryOpen(false)} />}
+      {inboxOpen       && user && <UserInbox onClose={() => setInboxOpen(false)} />}
     </>
   );
 
@@ -120,7 +161,7 @@ export default function App() {
     return (
       <div className="app">
         <TopBar {...topBarProps} onHome={reset} />
-        <ProgressBar step={4} steps={STEPS} />
+        <ProgressBar step={4} steps={STEPS} onStepClick={go} />
         <main className="main-content">
           <div style={{ padding: '24px 0' }}>
             <Results state={state} onRestart={reset} onLoginClick={() => setAuthOpen(true)} />
@@ -134,7 +175,7 @@ export default function App() {
   return (
     <div className="app">
       <TopBar {...topBarProps} onHome={reset} />
-      <ProgressBar step={step} steps={STEPS} />
+      <ProgressBar step={step} steps={STEPS} onStepClick={go} />
       <main className="main-content" style={{ position: 'relative', overflow: 'hidden' }}>
         <div style={{ padding: '30px 0 40px', position: 'relative', minHeight: 520 }}>
           {([0, 1, 2, 3] as const).map(i => (

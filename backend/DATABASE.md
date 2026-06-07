@@ -4,52 +4,89 @@
 
 | 功能 | 選擇 | 原因 |
 |------|------|------|
-| 永久儲存 | PostgreSQL (Neon) | 結構化查詢、JSONB 支援、免費 serverless 方案 |
+| 永久儲存 | CockroachDB Serverless | PostgreSQL wire-compatible；10 GiB 免費；asia-southeast1 節點 |
 | 短期快取 | PostgreSQL shadow_cache | 現階段流量低，不需要另外架 Redis；若日後需要水平擴展可再加 |
 
-> **為什麼不用 Redis？** 目前的 `shadow_cache` 以月份為粒度，同一區域一個月只算一次，命中率高且不需要 sub-second 過期精度。PostgreSQL 的查詢延遲（~5ms）對這個場景已足夠。
+> **為什麼從 Neon 遷移到 CockroachDB？** 本專案最初使用 Neon PostgreSQL；Neon 免費方案上限 0.5 GB，無法容納 1.9M 棟 GBA 建物（~694 MB）。CockroachDB Serverless 提供 10 GiB 免費空間，完整容納建物資料庫。
+
+> **為什麼不用 Redis？** `shadow_cache` 以月份為粒度，同一區域一個月只算一次，命中率高且不需要 sub-second 過期精度。PostgreSQL 的查詢延遲（~5ms）對這個場景已足夠。
+
+### CockroachDB 相容性注意事項
+
+CockroachDB 相容 PostgreSQL wire protocol，但**不是 100% 的 PostgreSQL 替代方案**，已知差異：
+
+| 問題 | 說明 | 解法 |
+|------|------|------|
+| **多語句單次 `execute()` 較慢** | 一次傳入多個 `;` 分隔 SQL 的批次處理比 PostgreSQL 慢 | 拆分為個別 `execute()` 呼叫；功能相同，只稍增程式碼行數 |
+| **同一連線不能有多個 active portal**（asyncpg + CockroachDB） | 在同一個 `conn` 上依序執行多個 `fetchrow` / `execute` 會報錯：`unimplemented: multiple active portals`。在 transaction 內尤其明顯。[CockroachDB issue #40195](https://go.crdb.dev/issue-v/40195/v25.4) | **不要在同一個 `conn` 上串接多個查詢**；需要多步驟原子操作時，改用單一 CTE 語句（`WITH ... AS (...) UPDATE ... RETURNING ...`），把多個 UPDATE 合進一條 SQL |
+| **CTE 內 DML 語句必須有 `RETURNING`** | PostgreSQL 允許 CTE UPDATE 不加 `RETURNING`；CockroachDB 不允許，會報 `WITH clause "xxx" does not return any columns` | CTE 裡每一個 `UPDATE` / `INSERT` / `DELETE` 都要加 `RETURNING <欄位>`，即使外層不 SELECT 它 |
+
+> 目前 `init_db()` 仍使用單一多語句 `execute()`，在 CockroachDB 上**功能正常**，只是一次性啟動略慢。若啟動時間成為瓶頸，再考慮拆分。
 
 ---
 
-## 資料表
+## 資料表總覽
+
+| 表格 | 類型 | 筆數 | 大小 |
+|------|------|------|------|
+| `gba_buildings` | 永久 | 1,905,108 | ~694 MiB |
+| `climate_monthly` | 永久 | 4,416 | ~399 KiB |
+| `climate_annual` | 永久 | 368 | ~41 KiB |
+| `region_potential` | 永久 | 368 | ~128 KiB |
+| `accounts` | 永久 | 依使用者 | — |
+| `vendors` | 永久 | 11（含 seed） | — |
+| `vendor_portfolios` | 永久 | 12（含 seed） | — |
+| `assessments` | 永久 | 依使用者 | — |
+| `inquiries` | 永久 | 依使用者 | — |
+| `inquiry_messages` | 永久 | 依使用者 | — |
+| `vendor_reviews` | 永久 | 依使用者 | — |
+| `places_cache` | 快取（90d TTL） | 依查詢量 | — |
+| `shadow_cache` | 快取（月份粒度） | 依查詢量 | — |
+| `tilt_cache` | 快取（永久） | 依查詢量 | ~360 KiB 上限 |
+| `usable_fraction_cache` | 快取（180d TTL） | 依查詢量 | — |
+| `osm_cache` | 快取（7d TTL） | 依查詢量 | — |
+| `gba_cache` | 快取 | 0（已棄用） | — |
+| `dem_cache` | 快取 | 1 | ~29 MiB |
+
+---
+
+## 資料表詳細說明
 
 ### `gba_buildings`
 GlobalBuildingAtlas (GBA) 離線建物資料，ML 估算高度 + footprint，為建物幾何查詢的主要來源。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| `id` | TEXT PK | `{tile}_{source}_{raw_key}`（例如 `e120_n25_odbl_OSM12345678TW`） |
+| `id` | TEXT PK | 建物唯一識別碼 |
 | `footprint` | JSONB | `[[lng, lat], ...]` WGS84 外牆多邊形 |
 | `height` | REAL | 建物高度 (m)，ML 估算值；無估算時預設 10.0 |
-| `source` | TEXT | 資料來源：`odbl`（ODbLPolygon）/ `polygon` |
+| `source` | TEXT | 資料來源：`odbl` / `polygon` / `fallback` |
 | `min_lon` / `max_lon` | REAL | footprint bbox 邊界（索引欄位） |
 | `min_lat` / `max_lat` | REAL | footprint bbox 邊界（索引欄位） |
 
 **索引**：`gba_buildings_bbox ON (min_lon, max_lon, min_lat, max_lat)`  
-**資料來源**：HuggingFace `zhu-xlab/GBA.LoD1`（ODbLPolygon + Polygon GeoJSON + LoD1 高度 JSON）  
-**匯入方式**：`python scripts/import_gba_to_db.py`（見 `SETUP_GBA_DATA.md`）  
-**Neon 佔用**：~480 MB（510,408 棟；主島 + 澎湖 + 金門 + 馬祖）  
-**查詢邏輯**：`WHERE min_lon <= :lng AND max_lon >= :lng AND min_lat <= :lat AND max_lat >= :lat`，取半徑內建物。
-
-> ⚠️ Neon 免費上限 512 MB，目前剩餘約 32 MB。勿再匯入新 tile；詳見 `SETUP_GBA_DATA.md`。
+**資料來源**：`data/taiwan_polygon_fallback.ndjson.gz`（1.9M 棟，LoD1 合併 ODbL + GBA ML + 高度）  
+**原始資料**：HuggingFace `zhu-xlab/GBA.LoD1`（ODbLPolygon + Polygon GeoJSON + LoD1 高度 JSON）  
+**匯入方式**：`python scripts/import_fallback_to_db.py`  
+**CockroachDB 佔用**：~694 MiB（1,905,108 棟；全台含澎湖 / 金門 / 馬祖）  
+**查詢邏輯**：`WHERE min_lon < $max_lon AND max_lon > $min_lon AND min_lat < $max_lat AND max_lat > $min_lat`
 
 ---
 
 ### `climate_monthly`
-NASA POWER API 月均氣候典型值，368 鄉鎮市 × 12 月 = 4,416 筆（13 年月均值）。
+NASA POWER API 月均氣候典型值，368 鄉鎮市 × 12 月 = 4,416 筆（2013–2025 年月均值）。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `township_code` | TEXT | 鄉鎮市代碼（複合 PK 1/2） |
 | `month` | INT | 月份 1–12（複合 PK 2/2） |
-| `ghi` | DOUBLE | 月均日射量 kWh/m²/day（`ALLSKY_SFC_SW_DWN` 欄位 13 年平均） |
+| `ghi` | DOUBLE | 月均日射量 kWh/m²/day（`ALLSKY_SFC_SW_DWN` 13 年平均） |
 | `temperature` | DOUBLE | 月均氣溫 °C（`T2M`） |
 | `wind_speed` | DOUBLE | 月均風速 m/s（`WS10M`） |
 | `humidity` | DOUBLE | 月均相對濕度 %（`RH2M`） |
 
-**資料來源**：`data/climate/nasa_power_monthly_raw.csv`（本機既有，4.6 MB，368 × 13 年 × 12 月）  
-**匯入方式**：執行 `python scripts/import_climate.py`  
-**Neon 佔用**：~300 KB
+**資料來源**：`data/climate/nasa_power_monthly_raw.csv`  
+**匯入方式**：`python scripts/import_climate.py`
 
 ---
 
@@ -68,59 +105,116 @@ NASA POWER API 月均氣候典型值，368 鄉鎮市 × 12 月 = 4,416 筆（13 
 | `wind_speed` | DOUBLE | 年均風速 m/s |
 | `relative_humidity` | DOUBLE | 年均相對濕度 % |
 
-**資料來源**：`data/climate/taiwan_climate_annual.csv`（本機既有，~50 KB）  
-**匯入方式**：執行 `python scripts/import_climate.py`  
-**Neon 佔用**：~50 KB
+---
+
+### `region_potential`
+368 鄉鎮市太陽能裝設潛力排名，由 TOPSIS 多準則分析計算（韓仁毓教授方法）。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `towncode` | TEXT PK | 鄉鎮市代碼 |
+| `countyname` / `townname` | TEXT | 縣市 / 鄉鎮市名稱 |
+| `priority_rank` | INT | 全台排名（1 = 最佳） |
+| `topsis_score` | DOUBLE | TOPSIS 綜合得分 |
+| `combined_score` | DOUBLE | 加權綜合分數 |
+| `stage1_prob` | DOUBLE | 第一階段預測概率 |
+| `stage2_pred` | DOUBLE | 第二階段預測值 |
+| `daily_solar_radiation` | DOUBLE | 年均日射量 kWh/m²/day |
+| `occupancy_owner_rate` | DOUBLE | 自有住宅比率 |
+| `median_household_income` | DOUBLE | 中位數家戶所得 |
+| `centroid_lat` / `centroid_lon` | DOUBLE | 地理中心座標 |
 
 ---
 
 ### `dem_cache`
-全台 100m DEM numpy array，以 `bytea` 存入 DB（28.9 MB），後端啟動時載入 RAM。
+全台 100m DEM numpy array，以 `bytea` 存入 DB，後端啟動時載入 RAM。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `id` | TEXT PK | 固定為 `taiwan_100m` |
-| `data` | BYTEA | `taiwan_dem_100m.npy` 的原始位元組（float32 2D array，shape 3770×2007） |
-| `meta` | BYTEA | `taiwan_dem_meta.npy` 的原始位元組（`[origin_x, origin_y, px_x, px_y]` float64） |
+| `data` | BYTEA | `taiwan_dem_100m.npy` 原始位元組（float32 2D，shape 3770×2007） |
+| `meta` | BYTEA | `taiwan_dem_meta.npy` 原始位元組（`[origin_x, origin_y, px_x, px_y]` float64） |
 | `created_at` | TIMESTAMPTZ | 最後上傳時間 |
 
-**載入邏輯**（`shadow.py load_dem()`）：
-1. 本機 `data/taiwan_dem_100m.npy` 存在 → 直接從本機載入（最快）
-2. 否則 → 從 DB 下載 → 寫回本機快取 → 載入
-3. 兩者皆無 → 警告停用，提示執行 `scripts/build_dem_cache.py`
-
-**上傳方式**：執行 `python scripts/upload_dem.py`  
-**Neon 佔用**：~28.9 MB
+**載入邏輯**（`shadow.py load_dem()`）：本機 `.npy` → DB bytea → 警告停用
 
 ---
 
 ### `osm_cache`
-存 Overpass API 抓到的 OSM 建物原始資料（GeoJSON elements），避免重複打 Overpass。
+Overpass API 抓到的 OSM 建物原始資料（GeoJSON elements），TTL = 7 天。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `bbox_key` | TEXT PK | `{min_lon:.2f},{min_lat:.2f},{max_lon:.2f},{max_lat:.2f}` |
 | `elements` | JSONB | Overpass 回傳的 way elements 陣列 |
-| `fetched_at` | TIMESTAMPTZ | 寫入時間，TTL = 7 天 |
-
-**TTL 邏輯**：查詢時過濾 `fetched_at > NOW() - INTERVAL '7 days'`，舊資料自動不被讀取（不做實際刪除）。
+| `fetched_at` | TIMESTAMPTZ | 寫入時間 |
 
 ---
 
 ### `shadow_cache`
-存每個 ~1km 格子的 6–19 時陰影預計算結果，以月份為粒度（同月份太陽角度差異 < 1°）。
+每個 ~100m 格子的 6–19 時陰影預計算結果，以月份為粒度。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| `cache_key` | TEXT PK | `{lat:.2f}_{lng:.2f}_{year}_{month:02d}` |
+| `cache_key` | TEXT PK | `v4_{lat:.3f}_{lng:.3f}_{year}_{month:02d}` |
 | `shadows` | JSONB | `{"6": FeatureCollection, "7": ..., "19": ...}` |
 | `computed_at` | TIMESTAMPTZ | 寫入時間 |
 
-**Cache key 範例**：`25.05_121.52_2026_04`（台北信義區，2026 年 4 月）
+**Cache key 版本**：目前 v4（精度從 2 位升至 3 位，~100m 格子）。舊版 v1/v2/v3 key 不被讀取，可透過 `/api/admin/cache/cleanup` 清除。  
+**複用邏輯**：`/api/shadows/from-features` 優先查此表，命中時直接回傳對應小時資料，無需重新計算。
 
-**Cache key 版本**：目前為 v3。引入每棟建物 DEM 地形高程修正後，v2 快取因計算邏輯改變而失效，已在 `shadow.py` 中升版至 v3（舊 v2 資料自動不被讀取，不需手動清除）。
+---
 
-**效果**：同月份內任何人造訪同一 ~1km 格子，直接從 DB 拿結果，省去 2–5 秒的 pvlib 計算。
+### `tilt_cache`
+pvlib 最佳安裝傾角計算結果，以地點 + 目標為 key，永久有效。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `cache_key` | TEXT PK | `v1_tilt_{lat:.3f}_{lng:.3f}_{goal}` |
+| `result` | JSONB | `{"best_angle": int, "goal_adj": [12 floats]}` |
+| `computed_at` | TIMESTAMPTZ | 寫入時間 |
+
+**為何不設 TTL**：結果只依賴地理位置（pvlib 天文計算）與 NASA POWER 長期平均氣候，兩者極少變動，永久有效。  
+**演算法改版**：bump key 前綴（`v1_` → `v2_`），舊快取自動失效，不需要手動清除。  
+**個人化請求**（帶 `monthly_use` 參數）不寫入此表，每次實時計算。  
+**容量估算**：368 鄉鎮 × 6 種 goal ≤ 2,208 筆 × ~200 bytes = ~430 KB。
+
+---
+
+### `usable_fraction_cache`
+可用屋頂比例計算結果（Shapely 多邊形運算），以目標建物 footprint hash 為 key，TTL = 180 天。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `cache_key` | TEXT PK | `v1_uf_{md5(footprint)[:12]}` |
+| `result` | JSONB | `{"usable_fraction": float, "setback_area_m2": float}` |
+| `computed_at` | TIMESTAMPTZ | 寫入時間 |
+
+**為何設 180 天 TTL**：結果依賴鄰近建物（周圍新建/拆除會使結果偏差），但台灣都市建物變動緩慢，180 天合理。  
+**Cache key 設計**：以 footprint JSON 字串的 MD5 前 12 碼為 key（衝突機率 1/2⁴⁸），不受 lat/lng 精度影響，同一棟建物永遠命中同一個 key。  
+**清除**：`/api/admin/cache/cleanup` 刪除超過 180 天的項目。
+
+---
+
+### `places_cache`
+Google Places API（Autocomplete + Place Details）後端代理快取，TTL = 90 天。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `cache_key` | TEXT PK | `ac_{query}` 或 `detail_{placeId}` |
+| `data` | JSONB | Autocomplete: `PlacePrediction[]`；Details: `{lat, lon, formattedAddress}` |
+| `cached_at` | TIMESTAMPTZ | 寫入時間 |
+
+**設計目標**：省 Google Maps API 費用（Autocomplete ~$0.00283/次，Place Details ~$0.017/次）。
+
+**四層快取架構**：
+```
+L1 session memory (~0ms)  → L2 localStorage/90d (~1ms)
+→ L3 places_cache DB/90d (~50ms)  → L4 Google Places REST API
+```
+
+**讀取邏輯**：`WHERE cache_key = $1 AND cached_at > NOW() - INTERVAL '90 days'`；miss 時懶清除過期資料。  
+**需要環境變數**：`GOOGLE_MAPS_API_KEY`（後端，不暴露於瀏覽器）
 
 ---
 
@@ -130,310 +224,179 @@ NASA POWER API 月均氣候典型值，368 鄉鎮市 × 12 月 = 4,416 筆（13 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `id` | UUID PK | auto gen |
-| `email` | TEXT UNIQUE | 不區分大小寫（資料庫層級保持原始大小寫） |
-| `password_hash` | TEXT | bcrypt hash，不儲存明文 |
-| `role` | TEXT | 帳號角色：`user` / `vendor` / `admin`，預設 `user` |
-| `created_at` | TIMESTAMPTZ | 建立時間 |
+| `email` | TEXT UNIQUE | — |
+| `password_hash` | TEXT | bcrypt hash |
+| `role` | TEXT | `user` / `vendor` / `admin`，預設 `user` |
+| `created_at` | TIMESTAMPTZ | — |
 
 ---
 
 ### `assessments`
-每次使用者完成評估流程後，自動儲存一筆紀錄。使用 `localStorage` 匿名 UUID 作為 `user_id`，不需要登入。
+使用者完成評估流程後自動儲存。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `id` | UUID PK | auto gen |
-| `user_id` | TEXT | 前端 `localStorage` 匿名 UUID |
-| `address` | TEXT | 地址文字 |
-| `lat` / `lng` | DOUBLE | 地址座標 |
-| `county` | TEXT | 縣市（補助計算用） |
+| `user_id` | TEXT | 前端 localStorage 匿名 UUID |
+| `account_id` | UUID FK | 登入後綁定（nullable） |
+| `address` / `lat` / `lng` / `county` | — | 地址資訊 |
 | `roof_area_ping` | DOUBLE | 屋頂坪數 |
-| `monthly_kwh` | DOUBLE | 每月用電量 (kWh) |
+| `monthly_kwh` | DOUBLE | 每月用電量 |
 | `goal` | TEXT | `annual` / `summer` / `winter` / `peak` / `match` / `roi` |
 | `capacity_kw` | DOUBLE | 裝機容量 (kWp) |
-| `total_cost` | BIGINT | 安裝費用 (NT$) |
-| `subsidy_amount` | BIGINT | 補助金額 (NT$) |
-| `out_of_pocket` | BIGINT | 實際自付 (NT$) |
-| `annual_kwh` | DOUBLE | 預估年發電量 |
-| `self_sufficiency` | DOUBLE | 能源自給率 (%) |
-| `payback_years` | DOUBLE | 回本年限 |
-| `total_20yr` | BIGINT | 20 年累計淨收益 (NT$) |
-| `annual_revenue` | BIGINT | 年均收益 (NT$) |
+| `total_cost` / `subsidy_amount` / `out_of_pocket` | BIGINT | 費用明細 (NT$) |
+| `annual_kwh` / `self_sufficiency` / `payback_years` | DOUBLE | 效益指標 |
+| `total_20yr` / `annual_revenue` | BIGINT | 收益 (NT$) |
 | `best_angle` | INT | 最佳安裝角度 (°) |
-| `account_id` | UUID FK | 登入後綁定的帳號（nullable，匿名評估為 NULL） |
-| `result` | JSONB | 完整月發電量陣列等彈性資料 |
-| `created_at` | TIMESTAMPTZ | 評估時間 |
+| `result` | JSONB | 月發電量陣列等彈性資料 |
+| `created_at` | TIMESTAMPTZ | — |
 
 ---
 
 ### `vendors`
-廠商推薦基礎資料。現階段啟動時會 seed 一批 mock 廠商，之後可接廠商註冊與後台審核流程。
+廠商資料，啟動時 seed 4 筆 mock 廠商。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `id` | TEXT PK | 穩定識別碼 |
-| `account_id` | UUID FK UNIQUE | 對應廠商登入帳號（nullable；目前申請 MVP 尚未綁定） |
+| `account_id` | UUID FK UNIQUE | 對應廠商登入帳號（nullable） |
 | `name` | TEXT | 廠商名稱 |
-| `company_tax_id` | TEXT | 統一編號 |
-| `contact_name` | TEXT | 聯絡人 |
+| `company_tax_id` / `contact_name` | TEXT | 申請資料 |
 | `counties` | TEXT[] | 服務縣市 |
-| `rating` | DOUBLE | 平均評分 |
-| `review_count` | INT | 評價數 |
-| `phone` | TEXT | 聯絡電話 |
-| `email` | TEXT | 聯絡 Email |
+| `rating` / `review_count` | DOUBLE / INT | 平均評分 / 評價數 |
+| `phone` / `email` | TEXT | 聯絡資訊 |
 | `tags` | TEXT[] | 標籤 |
 | `approved` | BOOLEAN | 是否公開顯示 |
-| `subscription_status` | TEXT | 方案狀態；目前 seed 資料為 `mock` |
-| `application_status` | TEXT | 申請狀態（`pending` / `approved` 等） |
-| `license_note` | TEXT | 相關執照或備註 |
-| `rejection_reason` | TEXT | 退回原因 |
-| `created_at` | TIMESTAMPTZ | 建立時間 |
+| `subscription_status` | TEXT | `mock` / `free` / `pro` 等 |
+| `application_status` | TEXT | `pending` / `approved` / `rejected` |
+| `license_note` / `rejection_reason` | TEXT | 申請備註 / 退回原因 |
+| `logo_url` | TEXT | Cloudflare R2 公開 URL |
+| `created_at` | TIMESTAMPTZ | — |
 
 ---
 
 ### `vendor_portfolios`
-廠商作品集案例。Results 頁目前取每家廠商一筆 featured case 顯示。廠商可於後台新增或刪除。
+廠商作品集案例。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `id` | UUID PK | auto gen |
 | `vendor_id` | TEXT FK | 對應 `vendors.id` |
-| `title` | TEXT | 案例標題 |
-| `meta` | TEXT | 案例摘要 |
-| `capacity_kw` | DOUBLE | 案例系統容量 |
+| `title` / `meta` | TEXT | 案例標題 / 摘要 |
+| `capacity_kw` | DOUBLE | 系統容量 |
 | `completed_year` | INT | 完工年份 |
-| `is_featured` | BOOLEAN | 是否為推薦顯示案例 |
-| `created_at` | TIMESTAMPTZ | 建立時間 |
+| `is_featured` | BOOLEAN | 是否為推薦案例 |
+| `photo_url` | TEXT | Cloudflare R2 公開 URL（nullable） |
+| `description` | TEXT | 案例詳細說明（nullable） |
+| `created_at` | TIMESTAMPTZ | — |
 
 ---
 
 ### `inquiries`
-民眾從 Results 頁點擊「聯絡廠商」時自動寫入一筆詢價紀錄，廠商可於後台儀表板查看。
+民眾點擊「聯絡廠商」時寫入一筆詢價紀錄。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | `id` | UUID PK | auto gen |
 | `vendor_id` | TEXT NOT NULL FK | 對應 `vendors.id` |
-| `account_id` | UUID FK | 詢問者帳號（nullable；未登入為 NULL） |
-| `address` | TEXT | 評估地址 |
-| `county` | TEXT | 縣市 |
-| `capacity_kw` | DOUBLE | 預估裝機容量 (kWp) |
-| `annual_kwh` | DOUBLE | 預估年發電量 |
-| `payback_years` | DOUBLE | 預估回本年限 |
+| `account_id` | UUID FK | 詢問者帳號（nullable） |
+| `address` / `county` | TEXT | 評估地址 |
+| `capacity_kw` / `annual_kwh` / `payback_years` | DOUBLE | 評估結果摘要 |
+| `case_status` | TEXT | `new` / `contacted` / `quoted` / `closed` |
+| `user_last_read_at` | TIMESTAMPTZ | 用戶最後已讀時間（nullable） |
+| `vendor_last_read_at` | TIMESTAMPTZ | 廠商最後已讀時間（nullable） |
 | `created_at` | TIMESTAMPTZ | 詢價時間 |
+
+---
+
+### `inquiry_messages`
+詢價對話訊息，廠商與用戶雙向留言。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | UUID PK | auto gen |
+| `inquiry_id` | UUID NOT NULL FK | 對應 `inquiries.id` |
+| `sender` | TEXT | `user` / `vendor` |
+| `content` | TEXT | 訊息內容 |
+| `created_at` | TIMESTAMPTZ | 發送時間 |
+
+**索引**：`idx_inquiry_messages_inquiry_id ON (inquiry_id, created_at)`
+
+---
+
+### `vendor_reviews`
+民眾對廠商的評價（每個詢價只能評一次）。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | UUID PK | auto gen |
+| `vendor_id` | TEXT NOT NULL FK | 對應 `vendors.id` |
+| `inquiry_id` | UUID UNIQUE FK | 對應 `inquiries.id`（一詢價一評價） |
+| `account_id` | UUID NOT NULL FK | 評價者帳號 |
+| `rating` | INT | 1–5 分 |
+| `comment` | TEXT | 評價文字（nullable） |
+| `created_at` | TIMESTAMPTZ | — |
 
 ---
 
 ## API Endpoints
 
-### `POST /api/assessments`
-儲存一筆評估紀錄。前端在 Results 頁面 mount 時自動呼叫。
+### Google Places 代理
 
-**Request body**：`AssessmentRequest`（所有欄位皆 optional，除了 `user_id`）
+#### `GET /api/places/autocomplete?q={input}`
+地址自動完成，後端代理 Google Places REST API，結果快取 90 天。
 
-**Response**：`{ "id": "<uuid>" }`
+**Response**：`[{ placeId, description, mainText, secondaryText }, ...]`
 
----
+#### `GET /api/places/details?id={placeId}`
+取得地點詳細資訊（座標 + 格式化地址），快取 90 天。
 
-### `GET /api/assessments?user_id=<uuid>&limit=10`
-查詢同一 `user_id` 的歷史評估紀錄（最新 10 筆）。
-
-**Response**：`[{ id, address, county, annual_kwh, payback_years, out_of_pocket, capacity_kw, created_at }, ...]`
+**Response**：`{ lat, lon, formattedAddress }`
 
 ---
 
-### `POST /api/auth/register`
-Email + 密碼 → 建立帳號 → 回傳 JWT token。
+### 評估
 
-**Request body**：`{ email: string, password: string }`（密碼至少 8 字元）
+#### `POST /api/assessments`
+儲存一筆評估紀錄。前端在 Results 頁 mount 時自動呼叫。
 
-**Response**：`{ token, user_id, email, role }`
-
-**錯誤**：`409` Email 已存在、`422` 密碼太短
-
----
-
-### `POST /api/auth/login`
-Email + 密碼驗證 → 回傳 JWT token。
-
-**Request body**：`{ email: string, password: string }`
-
-**Response**：`{ token, user_id, email, role }`
-
-**錯誤**：`401` Email 或密碼錯誤
+#### `GET /api/assessments?user_id=<uuid>&limit=10`
+查詢同一 `user_id` 的歷史評估紀錄。
 
 ---
 
-### `GET /api/me/assessments`
-取得登入帳號的歷史評估紀錄（最新 20 筆）。
+### 鑑別資訊
 
-**Header**：`Authorization: Bearer <token>`
+#### `POST /api/auth/register` / `POST /api/auth/login`
+Email + 密碼 → 建立帳號 / 登入 → 回傳 JWT token。
 
-**Response**：同 `GET /api/assessments` 格式
-
----
-
-### `POST /api/me/claim?user_id=<uuid>`
-將匿名 UUID 的評估紀錄綁定至登入帳號（`account_id` 填入）。
-
-**Header**：`Authorization: Bearer <token>`
-
-**Response**：`{ ok: true }`
+#### `GET /api/me/assessments`、`POST /api/me/claim`
+登入用戶的評估紀錄查詢與匿名紀錄綁定。
 
 ---
 
-### `GET /api/climate/{township_code}`
-取得指定鄉鎮市的氣候資料。需先執行 `scripts/import_climate.py` 匯入資料。
+### 廠商
 
-**路徑參數**：`township_code` — 內政部 7 碼鄉鎮市代碼（例如 `6300100`）
+#### `GET /api/vendors?county=<縣市>&limit=3`
+依服務縣市取得推薦廠商。
 
-**Response**：
-```json
-{
-  "annual": {
-    "township_code": "6300100",
-    "county_name": "臺北市",
-    "township_name": "中正區",
-    "centroid_lat": 25.033,
-    "centroid_lon": 121.514,
-    "daily_solar_radiation": 3.8,
-    "air_temperature": 23.2,
-    "wind_speed": 2.1,
-    "relative_humidity": 77.5
-  },
-  "monthly": [
-    { "month": 1, "ghi": 2.1, "temperature": 16.5, "wind_speed": 2.3, "humidity": 80.1 },
-    ...
-    { "month": 12, "ghi": 2.4, "temperature": 17.8, "wind_speed": 2.2, "humidity": 79.5 }
-  ]
-}
-```
+#### `GET /api/vendors/{id}`
+取得廠商詳細資料 + 作品集列表。
 
-**錯誤**：`404` 資料庫無此鄉鎮市資料（未匯入或代碼錯誤）
+#### `POST /api/vendors/apply`
+廠商入駐申請。
+
+#### 廠商儀表板（Bearer JWT）
+`GET/PATCH /api/me/vendor`、作品集 CRUD、詢價列表、訊息回覆
 
 ---
 
-### `GET /api/vendors?county=<縣市>&limit=3`
-依服務縣市取得推薦廠商。未帶 `county` 時回傳預設推薦；Results 頁會依 API 狀態顯示 loading / empty / error。
-
-**Response**：
-
-```json
-[
-  {
-    "id": "north-grid",
-    "name": "北曜能源工程",
-    "counties": ["台北市", "新北市"],
-    "portfolioTitle": "信義區集合住宅屋頂型案場",
-    "portfolioMeta": "住宅大樓 · 22.4 kWp · 2025 完工",
-    "capacityKw": 22.4,
-    "rating": 4.8,
-    "reviewCount": 36,
-    "phone": "02-2758-6108",
-    "email": "hello@northgrid.example",
-    "tags": ["集合住宅", "結構評估", "台電併聯"]
-  }
-]
-```
-
----
-
-### `GET /api/vendors/{id}`
-取得單一廠商詳細資料，包含基本資料與作品集列表。Results 頁的廠商詳細 Modal 使用此 endpoint。
-
-**Response**：同 `GET /api/vendors` 單筆資料，並額外包含：
-
-```json
-{
-  "approved": true,
-  "subscriptionStatus": "mock",
-  "portfolios": [
-    {
-      "id": "<uuid>",
-      "title": "信義區集合住宅屋頂型案場",
-      "meta": "住宅大樓 · 22.4 kWp · 2025 完工",
-      "capacityKw": 22.4,
-      "completedYear": 2025,
-      "isFeatured": true
-    }
-  ]
-}
-```
-
----
-
-### `POST /api/vendors/apply`
-廠商入駐申請。申請送出後寫入 `vendors`，預設 `approved = false`、`application_status = pending`，不會公開出現在推薦列表。
-
-**Request body**：
-
-```json
-{
-  "company_name": "範例能源工程",
-  "company_tax_id": "12345678",
-  "contact_name": "王小明",
-  "email": "vendor@example.com",
-  "phone": "02-1234-5678",
-  "counties": ["台北市", "新北市"],
-  "license_note": "電業相關執照與備註"
-}
-```
-
-**Response**：`{ "id": "vendor-...", "status": "pending" }`
-
----
-
-### 廠商儀表板（Bearer JWT，廠商本人）
-
-#### `GET /api/me/vendor`
-取得自己的廠商資料與作品集。帳號未綁定廠商時回傳 `404`。
-
-#### `PATCH /api/me/vendor`
-更新廠商資料（名稱、電話、email、服務縣市、標籤）。
-
-#### `POST /api/me/vendor/portfolios`
-新增作品集項目。request body：`{ title, meta, capacityKw?, completedYear? }`
-
-#### `DELETE /api/me/vendor/portfolios/{portfolio_id}`
-刪除作品集項目（含 vendor_id 安全檢查，只能刪自己的）。
-
-#### `GET /api/me/vendor/inquiries?limit=50`
-取得收到的詢價紀錄，LEFT JOIN accounts 取得詢問者 email。
-
-#### `POST /api/vendors/{id}/inquire`
-民眾聯絡廠商時呼叫，fire-and-forget 儲存詢價紀錄。可選 Bearer JWT（登入時附帶 account_id）。
-
----
-
-### Admin（Bearer JWT role=admin，或 `X-Admin-Secret` header）
-
-開發測試預設 `ADMIN_SECRET = dev-admin-secret`。
-
-#### `GET /api/admin/vendors/pending`
-取得待審核廠商申請列表（`application_status = pending`）。
-
-#### `POST /api/admin/vendors/{id}/approve`
-核准廠商：`approved = true`、`application_status = approved`。
-若廠商已綁定帳號，**同一 transaction** 自動將帳號 role 升為 `vendor`。
-
-#### `POST /api/admin/vendors/{id}/reject`
-退回廠商申請，可附退回原因：`{ "reason": "資料不完整" }`
-
-#### `GET /api/admin/accounts/search?email=`
-依 Email 查詢帳號，回傳 `{ id, email, role }`。用於管理後台帳號管理。
-
-#### `POST /api/admin/accounts/{id}/role`
-調整帳號角色。可設 `user`、`vendor`、`admin`；帳號需重新登入才會生效。
-
-```json
-{ "role": "admin" }
-```
+### Admin（Bearer JWT role=admin 或 `X-Admin-Secret`）
+廠商審核、帳號管理。開發預設：`ALLOW_DEV_ADMIN_SECRET=1`。
 
 ---
 
 ## 陰影載入流程（兩階段）
-
-移動地圖後，前端用兩個並行 fetch 分擔等待時間：
 
 ```
 移動地圖
@@ -442,31 +405,32 @@ Email + 密碼驗證 → 回傳 JWT token。
   │             → 立刻顯示陰影，隱藏 spinner
   │
   └─ Phase 2 → POST /api/shadows/precompute     (算全天 14 小時，2–5 s 或 DB cache 秒回)
-                → 完成後填入 cacheRef，更新顯示；拉滑桿從此瞬間回應
+                → 完成後填入 cacheRef；拉滑桿從此瞬間回應
 ```
-
-**`phase2Done` 旗標**：若 Phase 2（DB cache hit 時 ~5 ms）比 Phase 1 先回來，旗標會阻止 Phase 1 用舊資料覆蓋已顯示的正確結果。
 
 ---
 
 ## 連線設定
 
 ```
-DATABASE_URL=postgresql://<user>:<password>@<host>/neondb?sslmode=require&channel_binding=require
+# backend/.env
+DATABASE_URL=postgresql://<user>:<password>@<host>:26257/defaultdb?sslmode=require
+GOOGLE_MAPS_API_KEY=AIzaSy...   # 後端專用，不暴露於瀏覽器
 ```
 
 放在 `backend/.env`，由 `load_dotenv(Path(__file__).parent / '.env')` 在啟動時載入。
 
-連線池：`min_size=1, max_size=5`（相容 Neon serverless 免費方案的連線數限制）。
+連線池：`min_size=1, max_size=5`。  
+時區：`server_settings={'timezone': 'Asia/Taipei'}`。
 
-> **Neon 免費方案 cold start**：Neon 在無流量時會自動暫停資料庫，第一次請求需要 1–2 秒喚醒。之後維持活躍狀態不受影響。後端已做 graceful fallback：DB 無法連線時會印出警告並繼續以無 DB 模式運行（陰影仍可計算，只是不快取）。
+> **Graceful fallback**：DB 無法連線時會印出警告並繼續以無 DB 模式運行（陰影仍可計算，只是不快取）。
 
 ---
 
 ## 初始化
 
 後端啟動時 `lifespan` 自動執行 `init_db()`：
-- `CREATE TABLE IF NOT EXISTS` — 首次啟動建表（含 3 張新表）
+- `CREATE TABLE IF NOT EXISTS` — 建立所有表（含 `places_cache`）
 - `ALTER TABLE ADD COLUMN IF NOT EXISTS` — 相容舊版 schema，補齊新欄位
 - seed mock 廠商資料至 `vendors` / `vendor_portfolios`
 
@@ -476,40 +440,38 @@ DATABASE_URL=postgresql://<user>:<password>@<host>/neondb?sslmode=require&channe
 
 ## 一次性前置作業（本機執行）
 
-### 1. DEM 降采樣
-```bash
+### 1. GBA 建物匯入（1.9M 棟，約 20–40 分鐘）
+```powershell
 cd solar_money
+$env:DATABASE_URL="postgresql://solar:...@...cockroachlabs.cloud:26257/defaultdb?sslmode=require"
+.venv/Scripts/python scripts/import_fallback_to_db.py
+```
+輸入：`data/taiwan_polygon_fallback.ndjson.gz`（108 MB gz）  
+輸出：CockroachDB `gba_buildings` 1,905,108 筆
+
+### 2. Neon → CockroachDB 業務資料遷移（一次性，約 2 分鐘）
+```powershell
+$env:NEON_URL="postgresql://neondb_owner:...@...neon.tech/neondb?sslmode=require"
+.venv/Scripts/python scripts/migrate_neon_to_cockroachdb.py
+```
+遷移 10 張表：climate、region_potential、accounts、vendors、assessments、inquiries 等。
+
+### 3. DEM 降采樣
+```powershell
 python scripts/build_dem_cache.py
 ```
-輸入：`data/不分幅_全台20MDEM(2025)/DEM_tawiwan_V2025.tif`（721.8 MB GeoTIFF）  
-輸出：`data/taiwan_dem_100m.npy`（~14–34 MB）+ `data/taiwan_dem_meta.npy`  
-後端啟動時自動 `load_dem()` 載入 RAM，不存 DB。  
-依賴：`pip install rasterio`
+輸入：`data/不分幅_全台20MDEM(2025)/DEM_tawiwan_V2025.tif`（721.8 MB）  
+輸出：`data/taiwan_dem_100m.npy`
 
-### 2. 氣候資料匯入
-```bash
-cd solar_money
+### 4. 氣候資料匯入
+```powershell
 python scripts/import_climate.py
 ```
-輸入：既有兩份 CSV（`data/climate/`）  
-輸出：寫入 `climate_annual`（368 筆）+ `climate_monthly`（4,416 筆）至 Neon  
-依賴：`DATABASE_URL` 環境變數
 
-### 3. GBA 建物查詢（3 層 fallback）
+### 5. GBA 建物查詢流程（3 層 fallback）
 `shadow.py` 的 `get_buildings()` 依序嘗試：
+1. **GBA DB**（`gba_buildings`）— bbox 查詢，全台覆蓋
+2. **Polygon fallback**（`data/taiwan_polygon_fallback.ndjson.gz`）— 後端啟動時背景預載 RAM
+3. **OSM Overpass API** — 兩者均無結果時的最終備援
 
-1. **GBA DB**（`gba_buildings`）— 半徑 bbox 查詢，全台主島 + 離島均覆蓋
-2. **Polygon fallback**（`data/taiwan_polygon_fallback.ndjson.gz`）— 後端啟動時懶載入 RAM；DB miss 時從記憶體查詢
-3. **OSM Overpass API** — GBA DB + Polygon fallback 均無結果時的最終備援
-
-> 離島（澎湖 / 金門 / 馬祖）已在 GBA DB 中，第一層即可直接回應。  
-> NLSC LoD1 I3S API 嘗試實作後因連線不穩定而移除，不再納入 fallback 鏈。
-
-### 4. GBA 建物匯入（一次性前置作業）
-```bash
-cd solar_money
-# 詳細步驟見 SETUP_GBA_DATA.md
-python scripts/import_gba_to_db.py --tile e120_n25_e125_n20 --bbox 119.8,21.9,122.1,25.4 --source both
-python scripts/import_gba_to_db.py --tile e120_n30_e125_n25 --bbox 119.8,25.8,122.1,26.5 --source both
-# 澎湖、金門、馬祖各需精確 bbox，詳見 SETUP_GBA_DATA.md
-```
+> Railway 部署：設 `GBA_DISABLE_FALLBACK=1` 跳過 fallback 預載（節省 RAM）；DB 已有完整資料。

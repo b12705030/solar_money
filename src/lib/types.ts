@@ -1,4 +1,4 @@
-export type Region = '北部' | '中部' | '南部';
+export type Region = '北部' | '中部' | '南部' | '東部';
 
 export interface AddressOption {
   label: string;
@@ -39,6 +39,14 @@ export interface SolarState {
   billAmount?: number;
   /** 帳單所在季節，決定夏月/非夏月費率 */
   billSeason?: 'summer' | 'nonSummer';
+  /** 建物最大可用坪數（來自 /api/building-info），用於輸入驗證 */
+  roofAreaMax?: number;
+  /** 使用者輸入的可用坪數超出建物面積或無效，阻擋進入下一步 */
+  roofAreaError?: boolean;
+  /** 六份雙月帳單明細（NT$），null 表示該份未填；有值時由 disaggregateBills 推算 monthlyUsage */
+  billAmounts?: (number | null)[];
+  /** 六份帳單各自的季節（'summer' | 'nonSummer'），未設時依 BILL_PAIR_META 預設值 */
+  billSeasons?: ('summer' | 'nonSummer')[];
 }
 
 export type Theme = 'forest' | 'ocean' | 'earth';
@@ -83,6 +91,7 @@ export interface VendorRecommendation {
   phone: string;
   email: string;
   tags: string[];
+  logoUrl?: string | null;
 }
 
 export interface VendorPortfolio {
@@ -114,6 +123,8 @@ export interface MyVendor {
   tags: string[];
   applicationStatus: string;
   subscriptionStatus: string;
+  upgradeRequestStatus: string | null;
+  upgradeRejectionReason: string | null;
   approved: boolean;
   logoUrl: string | null;
   portfolios: VendorPortfolio[];
@@ -128,12 +139,11 @@ export interface Inquiry {
   capacityKw: number;
   annualKwh: number;
   paybackYears: number;
-  message: string | null;
-  vendorReply: string | null;
-  repliedAt: string | null;
   caseStatus: CaseStatus;
   inquirerEmail: string | null;
   createdAt: string;
+  vendorLastReadAt: string | null;
+  messages: InquiryMessage[];
 }
 
 export interface RegionPotential {
@@ -158,20 +168,29 @@ export interface PotentialLead {
   createdAt: string;
 }
 
+export interface InquiryMessage {
+  id: string;
+  sender: 'user' | 'vendor';
+  content: string;
+  createdAt: string;
+}
+
 export interface UserInquiry {
   id: string;
   vendorId: string;
   vendorName: string;
   vendorLogo: string | null;
+  vendorRating: number;
+  vendorReviewCount: number;
   address: string | null;
   county: string | null;
   capacityKw: number;
   annualKwh: number;
   paybackYears: number;
-  message: string | null;
-  vendorReply: string | null;
-  repliedAt: string | null;
   createdAt: string;
+  userLastReadAt: string | null;
+  messages: InquiryMessage[];
   reviewId: string | null;
   reviewRating: number | null;
+  reviewComment: string | null;
 }

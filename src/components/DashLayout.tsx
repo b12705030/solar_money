@@ -43,7 +43,7 @@ export default function DashLayout({
       {/* Top bar */}
       <header className="dash-topbar">
         <Link href="/" className="dash-topbar-brand">
-          <div className="brand-mark" />
+          <img src="/logo.png" alt="屋頂日光" className="brand-mark" />
           {!collapsed && <span className="dash-topbar-wordmark">屋頂日光</span>}
         </Link>
         <div className="dash-topbar-sep" />

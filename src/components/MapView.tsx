@@ -11,7 +11,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 type Props = {
   selectedAddress?: AddressOption | null;
   onBuildingFound?: (info: { height: number; areaPing: number; usableFraction?: number; lat: number; lng: number }) => void;
-  onDetectionStart?: () => void;
+  onDetectionStart?: (early?: { lat: number; lng: number; height: number; areaPing: number }) => void;
   sunHour?: number; // local Taiwan time (UTC+8), 0–23
 };
 
@@ -37,6 +37,25 @@ function polygonAreaM2(coords: [number, number][]): number {
   return (Math.abs(area) / 2) * 110540 * (111320 * Math.cos(latRad));
 }
 
+// Squared distance from point to nearest point on a segment (avoids sqrt for comparisons)
+function pointToSegmentDistSq(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return (px - x1) ** 2 + (py - y1) ** 2;
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  return (px - (x1 + t * dx)) ** 2 + (py - (y1 + t * dy)) ** 2;
+}
+
+// Minimum squared distance from a point to any polygon edge
+function minDistSqToPolygon(point: [number, number], ring: [number, number][]): number {
+  let minD = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const d = pointToSegmentDistSq(point[0], point[1], ring[j][0], ring[j][1], ring[i][0], ring[i][1]);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
 function pointInPolygon(point: [number, number], ring: [number, number][]): boolean {
   const [px, py] = point;
   let inside = false;
@@ -53,6 +72,8 @@ function pointInPolygon(point: [number, number], ring: [number, number][]): bool
 
 
 // ─── All-buildings shadow API ─────────────────────────────────────────────────
+
+const SHADOW_BUILDINGS_MAX = 500; // matches backend _SHADOW_MAX_BUILDINGS
 
 type HourData = { type: string; features: GeoJSON.Feature[]; roofShadows: GeoJSON.Feature[] };
 
@@ -87,10 +108,14 @@ async function refreshAllShadows(
   sunHourRef: React.MutableRefObject<number>,
   cacheRef: React.MutableRefObject<Map<number, HourData>>,
   buildingsRef: React.MutableRefObject<{ footprint: [number, number][]; height: number }[]>,
+  sliderFetchCtrlRef: React.MutableRefObject<AbortController | null>,
   setLoading?: (v: boolean) => void,
   setBuildingLoading?: (v: boolean) => void,
+  setTooManyBuildings?: (v: boolean) => void,
 ): Promise<void> {
   _shadowFetchCtrl?.abort();
+  sliderFetchCtrlRef.current?.abort();
+  sliderFetchCtrlRef.current = null;
   _shadowFetchCtrl = new AbortController();
   const { signal } = _shadowFetchCtrl;
   // Phase 1: show "building data loading" spinner, ensure shadow spinner is off
@@ -113,6 +138,8 @@ async function refreshAllShadows(
     }
   } catch { /* network error; buildings 留空 */ }
 
+  if (signal.aborted) { setBuildingLoading?.(false); setLoading?.(false); return; }
+
   console.log('[Shadow] buildings:', buildings.length);
 
   // 更新自訂 3D 建物 layer（GBA 資料）— buildings now visible on map
@@ -129,8 +156,20 @@ async function refreshAllShadows(
   setBuildingLoading?.(false);
 
   const source = map.getSource('all-shadows') as mapboxgl.GeoJSONSource | undefined;
+  const roofSource = map.getSource('roof-shadows') as mapboxgl.GeoJSONSource | undefined;
   if (!source || signal.aborted || buildings.length === 0) { setLoading?.(false); return; }
+
+  if (buildings.length > SHADOW_BUILDINGS_MAX) {
+    source.setData({ type: 'FeatureCollection', features: [] });
+    roofSource?.setData({ type: 'FeatureCollection', features: [] });
+    cacheRef.current.clear();
+    setTooManyBuildings?.(true);
+    setLoading?.(false);
+    return;
+  }
+  setTooManyBuildings?.(false);
   setLoading?.(true);
+  cacheRef.current.clear();
 
   const bodyBase = { buildings, lat: center.lat, lng: center.lng };
 
@@ -258,6 +297,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
   const [mapLoaded, setMapLoaded] = useState(false);
   const [buildingDataLoading, setBuildingDataLoading] = useState(false);
   const [shadowLoading, setShadowLoading] = useState(false);
+  const [tooManyBuildings, setTooManyBuildings] = useState(false);
   const [terrainEnabled, setTerrainEnabled] = useState(true);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const onBuildingFoundRef = useRef(onBuildingFound);
@@ -267,6 +307,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
   const moveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shadowCacheRef = useRef<Map<number, HourData>>(new Map());
   const buildingsRef = useRef<{ footprint: [number, number][]; height: number }[]>([]);
+  const sliderFetchCtrl = useRef<AbortController | null>(null);
 
   useEffect(() => { onBuildingFoundRef.current = onBuildingFound; });
   useEffect(() => { onDetectionStartRef.current = onDetectionStart; });
@@ -390,11 +431,11 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
         let primary: { footprint: [number, number][]; height: number } | null =
           buildings.find(b => pointInPolygon(clickPt, b.footprint)) ?? null;
         if (!primary) {
+          // Fallback: nearest polygon edge distance (handles points in narrow lanes
+          // where the geocoded point is just outside the correct building's footprint)
           let minD = Infinity;
           for (const b of buildings) {
-            const cx = b.footprint.reduce((s, p) => s + p[0], 0) / b.footprint.length;
-            const cy = b.footprint.reduce((s, p) => s + p[1], 0) / b.footprint.length;
-            const d = (cx - clickPt[0]) ** 2 + (cy - clickPt[1]) ** 2;
+            const d = minDistSqToPolygon(clickPt, b.footprint);
             if (d < minD) { minD = d; primary = b; }
           }
         }
@@ -406,7 +447,8 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
           properties: { height: primary.height },
         };
         const areaPing = Math.max(1, Math.round(polygonAreaM2(primary.footprint) * PING_PER_M2));
-        onDetectionStartRef.current?.();
+        buildingCacheRef.current = { features: [primaryFeat], footprint: primary.footprint, height: primary.height, lat: clickLat, lng: clickLng };
+        onDetectionStartRef.current?.({ lat: clickLat, lng: clickLng, height: primary.height, areaPing });
         showHighlight(map, [primaryFeat]);
 
         const usableFraction = await fetchUsableFractionForBuilding(
@@ -419,7 +461,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
 
       // style.load fires before building tiles are downloaded.
       // Wait for the first idle (all tiles loaded + rendered) before querying features.
-      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading));
+      map.once('idle', () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, sliderFetchCtrl, setShadowLoading, setBuildingDataLoading, setTooManyBuildings));
     });
 
     // After panning, refresh shadows once tiles are settled.
@@ -428,7 +470,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     map.on('moveend', () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       moveDebounceRef.current = setTimeout(() => {
-        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, setShadowLoading, setBuildingDataLoading);
+        const doRefresh = () => refreshAllShadows(map, sunHourRef, shadowCacheRef, buildingsRef, sliderFetchCtrl, setShadowLoading, setBuildingDataLoading, setTooManyBuildings);
         if (map.loaded()) {
           doRefresh();
         } else {
@@ -441,6 +483,8 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     setMapInstance(map);
     return () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
+      _shadowFetchCtrl?.abort();
+      sliderFetchCtrl.current?.abort();
       map.remove();
       mapDiv.remove();
       setMapInstance(null);
@@ -464,16 +508,20 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
     }
     // Cache miss 或全空 → 即時呼叫 from-features，結果回填記憶體快取
     const buildings = buildingsRef.current;
-    if (!buildings.length) return;
+    if (!buildings.length || buildings.length > SHADOW_BUILDINGS_MAX) return;
     const center = mapInstance.getCenter();
+    sliderFetchCtrl.current?.abort();
+    sliderFetchCtrl.current = new AbortController();
+    const { signal } = sliderFetchCtrl.current;
     fetch(`${API_URL}/api/shadows/from-features`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ buildings, lat: center.lat, lng: center.lng, local_hour: sunHour }),
+      signal,
     })
       .then(r => r.ok ? r.json() : null)
       .then((data: HourData | null) => {
-        if (data) {
+        if (data && !signal.aborted) {
           shadowCacheRef.current.set(sunHour, data);  // 回填，下次拖到同小時立即回應
           _applyHourData(mapInstance!, data);
         }
@@ -536,15 +584,15 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
         const { buildings: nearby }: { buildings: { footprint: [number, number][]; height: number }[] } = await res.json();
         if (!nearby?.length || abortCtrl.signal.aborted) return;
 
-        // 優先找包含點的建物，其次取最近 centroid
+        // 優先找包含點的建物，其次取最近 polygon 邊緣距離
+        // (polygon edge distance 優於 centroid distance：地理編碼點常落在巷道上，
+        //  狹長建物的邊緣比鄰近大棟建物的 centroid 更近，可避免選到錯誤建物)
         const point: [number, number] = lngLat;
         let primary = nearby.find(b => pointInPolygon(point, b.footprint)) ?? null;
         if (!primary) {
           let minD = Infinity;
           for (const b of nearby) {
-            const cx = b.footprint.reduce((s, p) => s + p[0], 0) / b.footprint.length;
-            const cy = b.footprint.reduce((s, p) => s + p[1], 0) / b.footprint.length;
-            const d = (cx - point[0]) ** 2 + (cy - point[1]) ** 2;
+            const d = minDistSqToPolygon(point, b.footprint);
             if (d < minD) { minD = d; primary = b; }
           }
         }
@@ -573,7 +621,16 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {(buildingDataLoading || shadowLoading) && (
+      {tooManyBuildings && !buildingDataLoading && !shadowLoading ? (
+        <div style={{
+          position: 'absolute', top: 10, left: 10, zIndex: 10,
+          background: 'rgba(255,255,255,0.88)', borderRadius: 8,
+          padding: '5px 10px', fontSize: 12, color: '#888',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.12)', pointerEvents: 'none',
+        }}>
+          請放大地圖以查看陰影
+        </div>
+      ) : (buildingDataLoading || shadowLoading) ? (
         <div style={{
           position: 'absolute', top: 10, left: 10, zIndex: 10,
           background: 'rgba(255,255,255,0.88)', borderRadius: 8,
@@ -588,7 +645,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onDetectionS
           }} />
           {buildingDataLoading ? '正在載入建物資料…' : '計算陰影中…'}
         </div>
-      )}
+      ) : null}
       {mapLoaded && (
         <button
           onClick={() => setTerrainEnabled(v => !v)}
