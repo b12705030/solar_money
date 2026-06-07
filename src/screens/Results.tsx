@@ -642,7 +642,11 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
                   </span>
                   <span style={{ fontSize: 16, color: 'var(--ink-500)', marginLeft: 6 }}>kWh</span>
                 </div>
-                <div className="body-sm" style={{ marginTop: 8 }}>相當於 {(r.annualKwh / (state.monthlyKwh || 350)).toFixed(1)} 個月用電量</div>
+                <div className="body-sm" style={{ marginTop: 8 }}>
+                  {(state.unitCount ?? 1) > 1
+                    ? `相當於社區 ${(state.unitCount ?? 1)} 戶共 ${((r.annualKwh / (state.monthlyKwh || 350)) / (state.unitCount ?? 1)).toFixed(1)} 個月用電量`
+                    : `相當於 ${(r.annualKwh / (state.monthlyKwh || 350)).toFixed(1)} 個月用電量`}
+                </div>
               </>
             )}
           </div>
@@ -1259,6 +1263,37 @@ export default function Results({ state, onRestart, onLoginClick }: { state: Sol
 
           {/* Revenue curve */}
           <div className="card" style={{ padding: 28 }}>
+            {(state.unitCount ?? 1) > 1 && (
+              <div style={{
+                marginBottom: 20, padding: '12px 16px',
+                background: 'var(--green-50)', border: '1px solid var(--green-200)',
+                borderRadius: 'var(--radius-md)',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--green-700)', marginBottom: 8 }}>
+                  每戶收益試算（社區 {state.unitCount} 戶）
+                </div>
+                <div style={{ display: 'flex', gap: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>每戶年均收益</div>
+                    <div className="num" style={{ fontSize: 16, fontWeight: 700, color: 'var(--green-900)' }}>
+                      {tiltLoading ? '計算中…' : `NT$ ${Math.round(r.annualRevenue / (state.unitCount ?? 1)).toLocaleString()}`}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>每戶自付金額</div>
+                    <div className="num" style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-700)' }}>
+                      NT$ {Math.round((state.outOfPocket ?? 0) / (state.unitCount ?? 1)).toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>每戶回本年限</div>
+                    <div className="num" style={{ fontSize: 16, fontWeight: 700, color: 'var(--green-900)' }}>
+                      {tiltLoading ? '計算中…' : `${r.paybackYears} 年`}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div style={{ marginBottom: 12 }}>
               <h3 className="h-section" style={{ margin: '0 0 4px' }}>20 年累計淨收益<Info tip="年度收益逐年以 0.5% 衰退並加總（20 年），再減去初始自付金額" /></h3>
               <div className="caption" style={{ color: 'var(--ink-400)' }}>

@@ -179,36 +179,37 @@ export function computeResults(
     pvYieldPerKwp >= PV_YIELD_POOR ? 'fair' : 'poor';
 
   const monthlyUse = state.monthlyKwh ?? 350;
+  const unitCount = Math.max(1, state.unitCount ?? 1);
 
-  // 年用電量：優先用使用者輸入的 12 月明細總和，否則 monthlyKwh × 12
+  // 年用電量：優先用使用者輸入的 12 月明細總和，否則 monthlyKwh × 12（單戶）
   const monthlyUsageArr = (state.monthlyUsage?.length === 12)
     ? state.monthlyUsage
     : TEPCO_MONTHLY_NORM.map(w => monthlyUse * w);
   const annualUsageTotal = monthlyUsageArr.reduce((a, b) => a + b, 0);
+  const annualUsageTotalBuilding = annualUsageTotal * unitCount;
 
-  const selfSufficiency = Math.round((annualKwh / annualUsageTotal) * 100);
+  const selfSufficiency = Math.round((annualKwh / annualUsageTotalBuilding) * 100);
 
   // selfUseRatio：受實際用電量上限約束（不可能自用超過消費量）
   // 上限依用電習慣：0.88 在宅 / 0.75 一般 / 0.42 外出（無電池儲能）
   const selfUseCapMax = SELF_USE_CAP[state.selfUseHabit ?? 'normal'];
-  const selfUseRatio = Math.min(selfUseCapMax, annualUsageTotal / annualKwh);
+  const selfUseRatio = Math.min(selfUseCapMax, annualUsageTotalBuilding / annualKwh);
   const selfUsedKwh = annualKwh * selfUseRatio;
   const soldKwh = annualKwh - selfUsedKwh;
   const fitRate = fitRateOverride ?? getFitRateForCapacity(capacity);
 
-  // 月別收益：自用電 = 月帳單差額（台電六段累進）；餘電賣台電 FIT
+  // 月別收益：大樓模式下先算單戶節電再乘以戶數，確保台電累進費率正確套用
   let selfUseRevenue = 0;
   let fitRevenue = 0;
   monthlyKwh.forEach((kwh, i) => {
-    const monthUsage = monthlyUsageArr[i];
-    const monthSelfUseRatio = monthUsage > 0
-      ? Math.min(selfUseCapMax, monthUsage / kwh)
-      : selfUseRatio;
-    const selfUsed = kwh * monthSelfUseRatio;
+    const monthUsage = monthlyUsageArr[i]; // 單戶用電
+    // 單戶可自用量 = min(selfUseCapMax × 單戶分配發電量, 單戶用電量)
+    const selfUsedPerUnit = Math.min(selfUseCapMax * kwh / unitCount, monthUsage);
     const isSummer = SUMMER_MONTH_IDX.has(i);
-    selfUseRevenue += calcTpcBill(monthUsage, isSummer)
-                    - calcTpcBill(Math.max(0, monthUsage - selfUsed), isSummer);
-    fitRevenue += (kwh - selfUsed) * fitRate;
+    const perUnitSaving = calcTpcBill(monthUsage, isSummer)
+                        - calcTpcBill(Math.max(0, monthUsage - selfUsedPerUnit), isSummer);
+    selfUseRevenue += perUnitSaving * unitCount;
+    fitRevenue += (kwh - selfUsedPerUnit * unitCount) * fitRate;
   });
   selfUseRevenue = Math.round(selfUseRevenue);
   const annualRevenue = Math.round(selfUseRevenue + fitRevenue);
