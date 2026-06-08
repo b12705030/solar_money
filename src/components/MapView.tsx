@@ -235,35 +235,16 @@ function applyTerrain(map: mapboxgl.Map, enabled: boolean): void {
 }
 
 function clearHighlight(map: mapboxgl.Map) {
-  ['highlight-border', 'highlight-fill'].forEach(id => {
-    if (map.getLayer(id)) map.removeLayer(id);
-  });
-  ['highlighted-building-outer', 'highlighted-building'].forEach(id => {
-    if (map.getSource(id)) map.removeSource(id);
-  });
+  if (map.getLayer('highlight-fill')) map.removeLayer('highlight-fill');
+  if (map.getSource('highlighted-building')) map.removeSource('highlighted-building');
+  // Legacy cleanup in case older layers exist
+  if (map.getLayer('highlight-border')) map.removeLayer('highlight-border');
+  if (map.getSource('highlighted-building-outer')) map.removeSource('highlighted-building-outer');
 }
 
 function showHighlight(map: mapboxgl.Map, features: GeoJSON.Feature[]) {
   clearHighlight(map);
 
-  // Donut polygon: outer 1.04x ring with 1.012x hole — no overlap with fill, no depth-test tricks needed
-  const ringData: GeoJSON.FeatureCollection = {
-    type: 'FeatureCollection',
-    features: features.map(f => {
-      const geom = f.geometry as GeoJSON.Polygon;
-      const coords = geom.coordinates[0] as [number, number][];
-      const h = f.properties?.height ?? 10;
-      const outer = scalePoly(coords, 1.04);
-      const inner = scalePoly(coords, 1.012);
-      return {
-        type: 'Feature' as const,
-        geometry: { type: 'Polygon' as const, coordinates: [outer, [...inner].reverse()] },
-        properties: { height: h },
-      };
-    }),
-  };
-
-  // Solid fill polygon: 1.012x (inner area, non-overlapping with ring)
   const fillData: GeoJSON.FeatureCollection = {
     type: 'FeatureCollection',
     features: features.map(f => {
@@ -272,29 +253,15 @@ function showHighlight(map: mapboxgl.Map, features: GeoJSON.Feature[]) {
       const h = f.properties?.height ?? 10;
       return {
         type: 'Feature' as const,
-        geometry: { type: 'Polygon' as const, coordinates: [scalePoly(coords, 1.012)] },
+        geometry: { type: 'Polygon' as const, coordinates: [scalePoly(coords, 1.015)] },
         properties: { height: h },
       };
     }),
   };
 
-  map.addSource('highlighted-building-outer', { type: 'geojson', data: ringData });
   map.addSource('highlighted-building', { type: 'geojson', data: fillData });
 
-  // Orange roof ring: donut polygon extruded from roof top (H) up 0.5m
-  (map as any).addLayer({
-    id: 'highlight-border', type: 'fill-extrusion', slot: 'middle',
-    source: 'highlighted-building-outer',
-    paint: {
-      'fill-extrusion-color': '#F97316',
-      'fill-extrusion-height': ['+', ['get', 'height'], 0.5],
-      'fill-extrusion-base': ['get', 'height'],
-      'fill-extrusion-opacity': 1,
-      'fill-extrusion-emissive-strength': 0.5,
-    },
-  });
-
-  // Light orange building body: fills center area from ground to roof top
+  // Light orange fill — slot:'middle' so roof-shadows (slot:'top') composites on top
   (map as any).addLayer({
     id: 'highlight-fill', type: 'fill-extrusion', slot: 'middle',
     source: 'highlighted-building',
@@ -302,7 +269,7 @@ function showHighlight(map: mapboxgl.Map, features: GeoJSON.Feature[]) {
       'fill-extrusion-color': '#fed7aa',
       'fill-extrusion-height': ['+', ['get', 'height'], 0.5],
       'fill-extrusion-base': 0,
-      'fill-extrusion-opacity': 0.85,
+      'fill-extrusion-opacity': 0.9,
     },
   });
 }
@@ -707,7 +674,7 @@ export default function MapView({ selectedAddress, onBuildingFound, onBuildingNo
           display: 'flex', flexDirection: 'column', gap: 5,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 14, height: 14, border: '2.5px solid #F97316', borderRadius: 2, flexShrink: 0 }} />
+            <span style={{ width: 14, height: 14, background: '#fed7aa', borderRadius: 2, flexShrink: 0 }} />
             <span>選中建物</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
