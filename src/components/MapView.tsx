@@ -235,42 +235,54 @@ function applyTerrain(map: mapboxgl.Map, enabled: boolean): void {
 }
 
 function clearHighlight(map: mapboxgl.Map) {
-  ['highlight-fill', 'highlight-outline'].forEach(id => {
+  ['highlight-border', 'highlight-fill'].forEach(id => {
     if (map.getLayer(id)) map.removeLayer(id);
   });
-  if (map.getSource('highlighted-building')) map.removeSource('highlighted-building');
+  ['highlighted-building-outer', 'highlighted-building'].forEach(id => {
+    if (map.getSource(id)) map.removeSource(id);
+  });
 }
 
 function showHighlight(map: mapboxgl.Map, features: GeoJSON.Feature[]) {
   clearHighlight(map);
-  map.addSource('highlighted-building', {
-    type: 'geojson',
-    data: {
-      type: 'FeatureCollection',
-      features: features.map(f => {
-        const geom = f.geometry as GeoJSON.Polygon;
-        return {
-          ...f,
-          geometry: { ...geom, coordinates: [scalePoly(geom.coordinates[0] as [number, number][], 1.012)] },
-          properties: { ...f.properties, height: (f.properties?.height ?? 10) + 0.5 },
-        };
-      }),
-    } as GeoJSON.FeatureCollection,
+
+  const makeData = (scale: number): GeoJSON.FeatureCollection => ({
+    type: 'FeatureCollection',
+    features: features.map(f => {
+      const geom = f.geometry as GeoJSON.Polygon;
+      return {
+        ...f,
+        geometry: { ...geom, coordinates: [scalePoly(geom.coordinates[0] as [number, number][], scale)] },
+        properties: { ...f.properties, height: (f.properties?.height ?? 10) + 0.5 },
+      };
+    }),
   });
-  // slot:'middle' 與一般灰色建物相同，讓 slot:'top' 的陰影以 2D 疊合方式覆蓋，陰影清晰可見
+
+  map.addSource('highlighted-building', { type: 'geojson', data: makeData(1.012) });
+  map.addSource('highlighted-building-outer', { type: 'geojson', data: makeData(1.04) });
+
+  // 橘色屋頂環（1.04x，從屋頂向上 0.5m）— slot:'middle' 讓陰影 2D 疊合正常
   (map as any).addLayer({
-    id: 'highlight-fill', type: 'fill-extrusion', slot: 'middle', source: 'highlighted-building',
+    id: 'highlight-border', type: 'fill-extrusion', slot: 'middle',
+    source: 'highlighted-building-outer',
     paint: {
-      'fill-extrusion-color': '#d4d0c8',
-      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-color': '#F97316',
+      'fill-extrusion-height': ['+', ['get', 'height'], 0.5],
+      'fill-extrusion-base': ['get', 'height'],
+      'fill-extrusion-opacity': 1,
+      'fill-extrusion-emissive-strength': 0.5,
+    },
+  });
+  // 灰色主體（1.012x，頂面 H+0.7 > 橘環頂面 H+0.5）— 深度測試遮住橘色中心，只露出外圈環
+  (map as any).addLayer({
+    id: 'highlight-fill', type: 'fill-extrusion', slot: 'middle',
+    source: 'highlighted-building',
+    paint: {
+      'fill-extrusion-color': '#fed7aa',
+      'fill-extrusion-height': ['+', ['get', 'height'], 0.7],
       'fill-extrusion-base': 0,
       'fill-extrusion-opacity': 0.85,
     },
-  });
-  // 綠色外框線標示選中狀態（slot:'top' 2D 線，渲染在所有 3D 建物之上）
-  (map as any).addLayer({
-    id: 'highlight-outline', type: 'line', slot: 'top', source: 'highlighted-building',
-    paint: { 'line-color': '#F97316', 'line-width': 5, 'line-opacity': 1 },
   });
 }
 
