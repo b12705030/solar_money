@@ -2994,6 +2994,41 @@ input[type="range"]::-moz-range-thumb {
   scrollbar-width: thin;
 }
 
+/* ── Landing: how-it-works flow ── */
+.how-it-works-row {
+  display: flex; align-items: flex-start; gap: 0;
+}
+.how-it-works-step {
+  flex: 1;
+  background: var(--white);
+  border: 1px solid var(--ink-100);
+  border-radius: var(--radius-md);
+  padding: 20px 18px;
+}
+.how-it-works-step-num {
+  font-family: var(--font-num);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--green-700); margin-bottom: 10px;
+}
+.how-it-works-result-badges {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+}
+.how-it-works-result-badge {
+  font-size: 11px; font-weight: 500;
+  background: var(--green-50); color: var(--green-700);
+  border-radius: 999px; padding: 3px 10px;
+}
+.how-it-works-arrow {
+  flex-shrink: 0;
+  display: flex; align-items: flex-start;
+  padding: 0 10px; padding-top: 38px;
+  color: var(--ink-300); font-size: 16px;
+}
+@media (max-width: 700px) {
+  .how-it-works-row { flex-direction: column; gap: 12px; }
+  .how-it-works-arrow { display: none; }
+}
+
 /* ── StepAddress: grid + sticky map ── */
 .step-address-grid {
   display: grid; grid-template-columns: 1.2fr 1fr; gap: 36px; align-items: start;

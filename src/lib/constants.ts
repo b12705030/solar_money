@@ -7,20 +7,30 @@ export const TWEAKS_DEFAULTS = {
   density: 'comfortable' as const,
 };
 
-export const MISCONCEPTIONS = [
+export type Misconception = {
+  myth: string;
+  truth: string;
+  stat: string;
+  statLabel: string;
+  compare: string;
+  statTip?: string;
+};
+
+export const MISCONCEPTIONS: Misconception[] = [
   {
     myth: '北部日照不足，裝了也沒用',
-    truth: '北部容量因數約 12.47%，與德國、日本水準相當，太陽能在北部依然可行。',
+    truth: '北部容量因數約 12.47%，與德國、日本水準相當，即使日照最少的基隆市每年仍可發電 965 kWh/kWp，太陽能在北部依然可行。',
     stat: '12.47%',
     statLabel: '北部容量因數',
     compare: '德國 11% · 日本 13%',
+    statTip: '容量因數 = 全年總發電量 ÷（裝置容量 × 8,760 小時）\n代表發電設備的穩定性，越高越穩定。太陽能受天氣影響，台灣平均約 14%，與德國 11%、日本 13% 相當。\n\n各縣市年發電量（kWh/kWp，台電 114 年）：\n基隆 965｜台北 1,005｜台中 1,201\n彰化 1,225｜金門 1,286｜連江 1,353\n全台平均：1,158',
   },
   {
     myth: '裝了太陽能板，室內會更熱',
-    truth: '板子擋住屋頂直射陽光，實測室內溫度反而降低 2–4°C，空調需求下降。',
-    stat: '−3.1°C',
-    statLabel: '頂樓室內降溫',
-    compare: '夏季實測平均值',
+    truth: '太陽能板遮擋屋頂直射陽光，實測頂樓室內可降溫 3–5°C，既發電又隔熱，空調需求下降。',
+    stat: '−3∼5°C',
+    statLabel: '頂樓室內降溫實測',
+    compare: '多項現場測量結果',
   },
   {
     myth: '太陽能板很難回收，對環境有害',
@@ -38,12 +48,13 @@ export const MISCONCEPTIONS = [
   },
   {
     myth: '多餘的電台電不收，自己用不完',
-    truth: '台電躉購制度 (FIT) 保障收購 20 年，小容量屋頂每度最高 5.7 元。',
-    stat: '$5.7 /度',
-    statLabel: 'FIT 最高躉購費率',
+    truth: '台電躉購制度 (FIT) 保障收購 20 年，10kW 以下屋頂每度 5.6279 元，費率依容量分級、一簽 20 年不變。',
+    stat: '5.6279元',
+    statLabel: '10kW以下 FIT 費率',
     compare: '保障 20 年收購',
+    statTip: '躉購制度（FIT）：政府保證以固定價格收購多餘綠電，一簽保障 20 年。費率每年由能源署公告，且逐年降低——越早申請、鎖定的費率越高。\n\n115年度屋頂型費率（依裝置容量分級）：\n≤10kW → 5.6279 元/度\n10–20kW → 5.3819 元/度\n20–50kW → 4.2505 元/度\n50–100kW → 4.0459 元/度',
   },
-] as const;
+];
 
 export const GOALS = [
   { id: 'annual',  title: '全年總發電量最高', desc: '讓板子一整年盡量多發電',            icon: 'annual' },

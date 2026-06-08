@@ -11,6 +11,7 @@
 
 import type { SolarState, ComputedResults } from '@/lib/types';
 import { SUBSIDIES } from '@/lib/constants';
+import { getFitRateForCapacity } from '@/lib/compute';
 
 const MONTHS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
@@ -96,6 +97,7 @@ export default function PrintReport({ state, r }: { state: SolarState; r: Comput
   const maxMonthlyKwh = Math.max(...r.monthlyKwh);
   const goalLabel = GOAL_LABELS[state.goal ?? 'annual'] ?? '全年總發電量最高';
   const today = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fitRate = getFitRateForCapacity(state.capacity ?? 0);
 
   return (
     <div className="print-report" style={{ fontFamily: '"Noto Sans TC", "PingFang TC", sans-serif', color: '#2B3A32' }}>
@@ -197,7 +199,7 @@ export default function PrintReport({ state, r }: { state: SolarState; r: Comput
         <Section title="年度收益分析">
           <DataRow label="年發電量" value={`${r.annualKwh.toLocaleString()} kWh`} />
           <DataRow label="自用省電費（2.5 元/度）" value={`NT$ ${Math.round(r.selfUsedKwh * 2.5).toLocaleString()}`} />
-          <DataRow label="台電躉購 FIT（5.7 元/度）" value={`NT$ ${Math.round(r.soldKwh * 5.7).toLocaleString()}`} />
+          <DataRow label={`台電躉購 FIT（${fitRate.toFixed(4)} 元/度）`} value={`NT$ ${Math.round(r.soldKwh * fitRate).toLocaleString()}`} />
           <DataRow label="年均總收益" value={`NT$ ${r.annualRevenue.toLocaleString()}`} highlight />
           <DataRow label="回本年限" value={`${r.paybackYears} 年`} />
           <DataRow label="20 年累計淨收益" value={`NT$ ${r.total20yr.toLocaleString()}`} highlight />
