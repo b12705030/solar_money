@@ -1,5 +1,222 @@
 # 資料庫架構說明
 
+## ER Diagram
+
+```mermaid
+erDiagram
+    accounts {
+        UUID id PK
+        TEXT email
+        TEXT password_hash
+        TEXT role
+        TIMESTAMPTZ created_at
+    }
+
+    vendors {
+        TEXT id PK
+        UUID account_id FK
+        TEXT name
+        TEXT company_tax_id
+        TEXT contact_name
+        TEXT_ARRAY counties
+        DOUBLE rating
+        INT review_count
+        TEXT phone
+        TEXT email
+        TEXT_ARRAY tags
+        BOOLEAN approved
+        TEXT subscription_status
+        TEXT application_status
+        TEXT license_note
+        TEXT rejection_reason
+        TEXT logo_url
+        TIMESTAMPTZ created_at
+    }
+
+    vendor_portfolios {
+        UUID id PK
+        TEXT vendor_id FK
+        TEXT title
+        TEXT meta
+        DOUBLE capacity_kw
+        INT completed_year
+        BOOLEAN is_featured
+        TEXT photo_url
+        TEXT description
+        TIMESTAMPTZ created_at
+    }
+
+    assessments {
+        UUID id PK
+        TEXT user_id
+        UUID account_id FK
+        TEXT address
+        DOUBLE lat
+        DOUBLE lng
+        TEXT county
+        DOUBLE roof_area_ping
+        DOUBLE monthly_kwh
+        TEXT goal
+        DOUBLE capacity_kw
+        BIGINT total_cost
+        BIGINT subsidy_amount
+        BIGINT out_of_pocket
+        DOUBLE annual_kwh
+        DOUBLE self_sufficiency
+        DOUBLE payback_years
+        BIGINT total_20yr
+        BIGINT annual_revenue
+        INT best_angle
+        JSONB result
+        TIMESTAMPTZ created_at
+    }
+
+    inquiries {
+        UUID id PK
+        TEXT vendor_id FK
+        UUID account_id FK
+        TEXT address
+        TEXT county
+        DOUBLE capacity_kw
+        DOUBLE annual_kwh
+        DOUBLE payback_years
+        TEXT case_status
+        TIMESTAMPTZ user_last_read_at
+        TIMESTAMPTZ vendor_last_read_at
+        TIMESTAMPTZ created_at
+    }
+
+    inquiry_messages {
+        UUID id PK
+        UUID inquiry_id FK
+        TEXT sender
+        TEXT content
+        TIMESTAMPTZ created_at
+    }
+
+    vendor_reviews {
+        UUID id PK
+        TEXT vendor_id FK
+        UUID inquiry_id FK
+        UUID account_id FK
+        INT rating
+        TEXT comment
+        TIMESTAMPTZ created_at
+    }
+
+    upgrade_requests {
+        UUID id PK
+        TEXT vendor_id FK
+        TEXT status
+        TEXT rejection_reason
+        TIMESTAMPTZ created_at
+    }
+
+    gba_buildings {
+        TEXT id PK
+        JSONB footprint
+        REAL height
+        TEXT source
+        REAL min_lon
+        REAL max_lon
+        REAL min_lat
+        REAL max_lat
+    }
+
+    climate_monthly {
+        TEXT township_code PK
+        INT month PK
+        DOUBLE ghi
+        DOUBLE temperature
+        DOUBLE wind_speed
+        DOUBLE humidity
+    }
+
+    climate_annual {
+        TEXT township_code PK
+        TEXT county_name
+        TEXT township_name
+        DOUBLE centroid_lat
+        DOUBLE centroid_lon
+        DOUBLE daily_solar_radiation
+        DOUBLE air_temperature
+        DOUBLE wind_speed
+        DOUBLE relative_humidity
+    }
+
+    region_potential {
+        TEXT towncode PK
+        TEXT countyname
+        TEXT townname
+        INT priority_rank
+        DOUBLE topsis_score
+        DOUBLE combined_score
+        DOUBLE stage1_prob
+        DOUBLE stage2_pred
+        DOUBLE daily_solar_radiation
+        DOUBLE occupancy_owner_rate
+        DOUBLE median_household_income
+        DOUBLE centroid_lat
+        DOUBLE centroid_lon
+    }
+
+    shadow_cache {
+        TEXT cache_key PK
+        JSONB shadows
+        TIMESTAMPTZ computed_at
+    }
+
+    tilt_cache {
+        TEXT cache_key PK
+        JSONB result
+        TIMESTAMPTZ computed_at
+    }
+
+    usable_fraction_cache {
+        TEXT cache_key PK
+        JSONB result
+        TIMESTAMPTZ computed_at
+    }
+
+    places_cache {
+        TEXT cache_key PK
+        JSONB data
+        TIMESTAMPTZ cached_at
+    }
+
+    osm_cache {
+        TEXT bbox_key PK
+        JSONB elements
+        TIMESTAMPTZ fetched_at
+    }
+
+    gba_cache {
+        TEXT bbox_key PK
+        JSONB buildings
+        TIMESTAMPTZ cached_at
+    }
+
+    dem_cache {
+        TEXT id PK
+        BYTEA data
+        BYTEA meta
+        TIMESTAMPTZ created_at
+    }
+
+    accounts ||--o{ assessments : "account_id"
+    accounts ||--o| vendors : "account_id"
+    accounts ||--o{ inquiries : "account_id"
+    accounts ||--o{ vendor_reviews : "account_id"
+
+    vendors ||--o{ vendor_portfolios : "vendor_id"
+    vendors ||--o{ inquiries : "vendor_id"
+    vendors ||--o{ vendor_reviews : "vendor_id"
+    vendors ||--o{ upgrade_requests : "vendor_id"
+
+    inquiries ||--o{ inquiry_messages : "inquiry_id"
+    inquiries ||--o| vendor_reviews : "inquiry_id"
+```
+
 ## 技術選型
 
 | 功能 | 選擇 | 原因 |
@@ -339,6 +556,21 @@ L1 session memory (~0ms)  → L2 localStorage/90d (~1ms)
 
 ---
 
+### `upgrade_requests`
+廠商訂閱升級申請，等待管理員審核。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `id` | UUID PK | auto gen |
+| `vendor_id` | TEXT NOT NULL FK | 對應 `vendors.id`，ON DELETE CASCADE |
+| `status` | TEXT | `pending` / `approved` / `rejected`，預設 `pending` |
+| `rejection_reason` | TEXT | 退回原因（nullable） |
+| `created_at` | TIMESTAMPTZ | 申請時間 |
+
+**唯一索引**：`idx_upgrade_requests_vendor_pending ON (vendor_id) WHERE status = 'pending'`（同一廠商只能有一筆待審請求）
+
+---
+
 ## API Endpoints
 
 ### Google Places 代理
@@ -475,3 +707,6 @@ python scripts/import_climate.py
 3. **OSM Overpass API** — 兩者均無結果時的最終備援
 
 > Railway 部署：設 `GBA_DISABLE_FALLBACK=1` 跳過 fallback 預載（節省 RAM）；DB 已有完整資料。
+
+---
+
