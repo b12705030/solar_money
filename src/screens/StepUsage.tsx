@@ -42,6 +42,8 @@ export default function StepUsage({
   const buildingType  = state.buildingType ?? 'single';
   const unitCount     = state.unitCount    ?? 20;
   const isApartment   = buildingType === 'apartment';
+  const isCommercial  = buildingType === 'commercial';
+  const kwhMax        = isCommercial ? 10000 : 2000;
   const [unitCountRaw, setUnitCountRaw] = useState(String(unitCount));
   const [expanded, setExpanded] = useState(false);
   const [billExpanded, setBillExpanded] = useState(false);
@@ -89,7 +91,7 @@ export default function StepUsage({
 
   function handleMonthChange(idx: number, val: number) {
     const next = [...displayMonthly];
-    next[idx] = Math.max(0, Math.min(5000, val || 0));
+    next[idx] = Math.max(0, Math.min(kwhMax, val || 0));
     update({ monthlyUsage: next });
   }
 
@@ -150,10 +152,14 @@ export default function StepUsage({
           {BUILDING_TYPES.map(bt => {
             const active = buildingType === bt.id;
             return (
-              <button key={bt.id} onClick={() => update({
-                buildingType: bt.id,
-                unitCount: bt.id === 'apartment' ? (state.unitCount ?? 20) : undefined,
-              })} style={{
+              <button key={bt.id} onClick={() => {
+                const newMax = bt.id === 'commercial' ? 10000 : 2000;
+                update({
+                  buildingType: bt.id,
+                  unitCount: bt.id === 'apartment' ? (state.unitCount ?? 20) : undefined,
+                  ...(kwh > newMax && { monthlyKwh: newMax }),
+                });
+              }} style={{
                 flex: 1, textAlign: 'left', padding: '12px 14px',
                 background: active ? 'var(--green-700)' : 'var(--white)',
                 color: active ? 'var(--white)' : 'var(--ink-900)',
@@ -434,13 +440,13 @@ export default function StepUsage({
 
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 30 }}>
                 <input
-                  type="number" min="14" max="2000" value={kwhRaw}
+                  type="number" min="14" max={kwhMax} value={kwhRaw}
                   onChange={e => { setKwhRaw(e.target.value); setKwhError(false); }}
                   onBlur={e => {
                     const v = +e.target.value;
-                    if (!v || v < 14) { setKwhError(true); return; }
+                    if (!v || v < 14 || v > kwhMax) { setKwhError(true); return; }
                     setKwhError(false);
-                    update({ monthlyKwh: Math.min(2000, v) });
+                    update({ monthlyKwh: v });
                   }}
                   className="num usage-kwh-input"
                   style={{
@@ -454,19 +460,23 @@ export default function StepUsage({
               </div>
               {kwhError && (
                 <div style={{ fontSize: 12, color: 'var(--red-600, #dc2626)', marginBottom: 8 }}>
-                  最低度數為 14 度
+                  {+kwhRaw > kwhMax ? `上限為 ${kwhMax.toLocaleString()} 度` : '最低度數為 14 度'}
                 </div>
               )}
 
-              <Slider min={14} max={1200} value={kwh} onChange={v => { update({ monthlyKwh: v }); if (!state.monthlyUsage) return; }} />
+              <Slider min={14} max={kwhMax} value={kwh} onChange={v => { update({ monthlyKwh: v }); if (!state.monthlyUsage) return; }} />
               <div style={{ position: 'relative', height: 36, marginTop: 8 }}>
-                {([
-                  { value: 100,  label: '100',    sub: '小家庭',   align: 'left'   },
-                  { value: 350,  label: '350',    sub: '平均',     align: 'center' },
-                  { value: 700,  label: '700',    sub: '多人家庭', align: 'center' },
-                  { value: 1200, label: '1,200+', sub: '大用電戶', align: 'right'  },
-                ] as const).map(({ value, label, sub, align }) => {
-                  const pct = (value - 14) / (1200 - 14) * 100;
+                {(isCommercial ? [
+                  { value: 2000,  label: '2,000',   sub: '中型辦公', align: 'left'   as const },
+                  { value: 5000,  label: '5,000',   sub: '大型商業', align: 'center' as const },
+                  { value: 10000, label: '10,000',  sub: '工廠廠房', align: 'right'  as const },
+                ] : [
+                  { value: 100,  label: '100',    sub: '小家庭',   align: 'left'   as const },
+                  { value: 350,  label: '350',    sub: '平均',     align: 'center' as const },
+                  { value: 700,  label: '700',    sub: '多人家庭', align: 'center' as const },
+                  { value: 2000, label: '2,000',  sub: '大用電戶', align: 'right'  as const },
+                ]).map(({ value, label, sub, align }) => {
+                  const pct = (value - 14) / (kwhMax - 14) * 100;
                   const left = `calc(${pct}% + ${(11 - pct * 0.22).toFixed(1)}px)`;
                   const transform = align === 'left' ? 'none' : align === 'right' ? 'translateX(-100%)' : 'translateX(-50%)';
                   return (
@@ -509,7 +519,7 @@ export default function StepUsage({
                             {label}
                           </div>
                           <input
-                            type="number" min="0" max="5000"
+                            type="number" min="0" max={kwhMax}
                             value={displayMonthly[i]}
                             onChange={e => handleMonthChange(i, +e.target.value)}
                             style={{
