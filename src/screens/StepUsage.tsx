@@ -152,10 +152,14 @@ export default function StepUsage({
           {BUILDING_TYPES.map(bt => {
             const active = buildingType === bt.id;
             return (
-              <button key={bt.id} onClick={() => update({
-                buildingType: bt.id,
-                unitCount: bt.id === 'apartment' ? (state.unitCount ?? 20) : undefined,
-              })} style={{
+              <button key={bt.id} onClick={() => {
+                const newMax = bt.id === 'commercial' ? 10000 : 2000;
+                update({
+                  buildingType: bt.id,
+                  unitCount: bt.id === 'apartment' ? (state.unitCount ?? 20) : undefined,
+                  ...(kwh > newMax && { monthlyKwh: newMax }),
+                });
+              }} style={{
                 flex: 1, textAlign: 'left', padding: '12px 14px',
                 background: active ? 'var(--green-700)' : 'var(--white)',
                 color: active ? 'var(--white)' : 'var(--ink-900)',
