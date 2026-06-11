@@ -1,5 +1,3 @@
-import { loadGoogleMapsAPI, waitForGoogleMaps } from './googleMapsLoader';
-
 export interface PlacePrediction {
   placeId: string;
   description: string;
@@ -13,56 +11,95 @@ export interface PlaceDetails {
   formattedAddress: string;
 }
 
-let placesReady = false;
+// L1: session memory cache（同 session 重打同字串 → 0ms，不打後端）
+const _acSession = new Map<string, PlacePrediction[]>();
 
-async function initPlaces() {
-  if (placesReady) return;
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
-  await loadGoogleMapsAPI(apiKey);
-  await waitForGoogleMaps();
-  // Wait until the new Place classes are available
-  let retries = 0;
-  while (!(google.maps.places as any)?.AutocompleteSuggestion && retries++ < 30) {
-    await new Promise(r => setTimeout(r, 100));
+// L2: localStorage helpers（同裝置跨 session → ~1ms，省後端 roundtrip）
+const AC_LS_PREFIX = 'gm_ac_';
+const DETAIL_LS_PREFIX = 'gm_place_';
+const LS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+function lsGet<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { data, cachedAt } = JSON.parse(raw) as { data: T; cachedAt: number };
+    if (Date.now() - cachedAt > LS_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
   }
-  placesReady = true;
 }
 
+function lsSet(key: string, data: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, cachedAt: Date.now() }));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+const _apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
+
 export async function getPlaceAutocomplete(input: string): Promise<PlacePrediction[]> {
-  if (!input.trim()) return [];
-  await initPlaces();
+  const key = input.trim().toLowerCase();
+  if (!key || key.length < 2) return [];
 
-  const { suggestions } = await (google.maps.places as any).AutocompleteSuggestion
-    .fetchAutocompleteSuggestions({
-      input: input.trim(),
-      language: 'zh-TW',
-      includedRegionCodes: ['tw'],
-    });
+  const t0 = performance.now();
 
-  return (suggestions as any[])
-    .filter((s: any) => s.placePrediction != null)
-    .map((s: any) => {
-      const p = s.placePrediction;
-      return {
-        placeId: p.placeId,
-        description: p.text?.text ?? p.mainText?.text ?? '',
-        mainText: p.mainText?.text ?? p.text?.text ?? '',
-        secondaryText: p.secondaryText?.text ?? '',
-      };
-    });
+  // L1: session memory
+  if (_acSession.has(key)) {
+    console.log(`[Places] L1 hit  key=${key} (${Math.round(performance.now() - t0)}ms)`);
+    return _acSession.get(key)!;
+  }
+
+  // L2: localStorage (same device, across sessions)
+  const lsCached = lsGet<PlacePrediction[]>(AC_LS_PREFIX + key);
+  if (lsCached) {
+    _acSession.set(key, lsCached);
+    console.log(`[Places] L2 hit  key=${key} (${Math.round(performance.now() - t0)}ms)`);
+    return lsCached;
+  }
+
+  // L3 + L4: backend proxy (checks DB cache, then calls Google API)
+  console.log(`[Places] L3+ fetch key=${key}`);
+  try {
+    const resp = await fetch(`${_apiBase}/api/places/autocomplete?q=${encodeURIComponent(key)}`);
+    if (!resp.ok) return [];
+    const results: PlacePrediction[] = await resp.json();
+    const elapsed = Math.round(performance.now() - t0);
+    if (results.length > 0) {
+      _acSession.set(key, results);
+      lsSet(AC_LS_PREFIX + key, results);
+      console.log(`[Places] L3+ done  key=${key} ${results.length} results (${elapsed}ms)`);
+    } else {
+      console.log(`[Places] L3+ done  key=${key} empty (${elapsed}ms)`);
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+export function warmAutocompleteCache(description: string, prediction: PlacePrediction): void {
+  const key = description.trim().toLowerCase();
+  if (!key) return;
+  _acSession.set(key, [prediction]);
+  lsSet(AC_LS_PREFIX + key, [prediction]);
 }
 
 export async function getPlaceDetails(placeId: string): Promise<PlaceDetails> {
-  await initPlaces();
+  // L2: localStorage
+  const lsCached = lsGet<PlaceDetails>(DETAIL_LS_PREFIX + placeId);
+  if (lsCached) return lsCached;
 
-  const place = new (google.maps.places as any).Place({ id: placeId });
-  await place.fetchFields({ fields: ['location', 'formattedAddress'] });
-
-  if (!place.location) throw new Error('Place location unavailable');
-
-  return {
-    lat: place.location.lat(),
-    lon: place.location.lng(),
-    formattedAddress: place.formattedAddress ?? '',
-  };
+  // L3 + L4: backend proxy
+  const resp = await fetch(`${_apiBase}/api/places/details?id=${encodeURIComponent(placeId)}`);
+  if (!resp.ok) throw new Error('Place details unavailable');
+  const result: PlaceDetails = await resp.json();
+  lsSet(DETAIL_LS_PREFIX + placeId, result);
+  return result;
 }

@@ -19,3 +19,19 @@ backend/.env
 *.log
 .DS_Store
 solar-app.zip
+
+# DEM 原始資料（721 MB，太大不進 repo）
+data/不分幅_全台20MDEM*/
+# 降采樣後的 .npy（28.9 MB）則刻意不排除，讓其他人 clone 即用
+
+# ─── GBA 建物原始 tiles（~6 GB，由 HuggingFace 下載後手動整理）─────────────
+# 下載/整理流程見 scripts/import_gba_to_db.py 說明
+# 台灣裁切後的建物資料已匯入 Neon gba_buildings 表，不需這些原始檔
+data/ODbLPolygon/
+data/Polygon/
+data/LoD1/
+data/LoD1_GeoJSON/
+# GBA polygon fallback — 透過 Git LFS 追蹤（見 .gitattributes）
+# 自動生成的二進位快取（啟動時從 ndjson.gz 重建），不提交
+data/taiwan_polygon_fallback_bbox.npy
+data/taiwan_polygon_fallback_data.pkl.gz

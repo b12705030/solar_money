@@ -1,13 +1,84 @@
 """PostgreSQL 連線池 + cache 工具函式（相容 Neon serverless）"""
 from __future__ import annotations
 
+import gzip
 import json
 import os
-from datetime import date
+import pickle
+import uuid
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+from cachetools import TTLCache
 
 import asyncpg
 
+# Process-level bbox cache：避免地圖拖曳時重複查詢 CockroachDB（30s TTL）
+_bldg_cache: TTLCache = TTLCache(maxsize=100, ttl=30)
+
 _pool: asyncpg.Pool | None = None
+
+_VENDOR_SEED = [
+    {
+        'id': 'north-grid',
+        'name': '北曜能源工程',
+        'counties': ['台北市', '新北市', '基隆市', '桃園市', '宜蘭縣'],
+        'portfolio_title': '信義區集合住宅屋頂型案場',
+        'portfolio_meta': '住宅大樓 · 22.4 kWp · 2025 完工',
+        'capacity_kw': 22.4,
+        'completed_year': 2025,
+        'rating': 4.8,
+        'review_count': 36,
+        'phone': '02-2758-6108',
+        'email': 'hello@northgrid.example',
+        'tags': ['集合住宅', '結構評估', '台電併聯'],
+    },
+    {
+        'id': 'central-sun',
+        'name': '中域日光設計',
+        'counties': ['台中市', '彰化縣', '南投縣', '苗栗縣', '雲林縣', '新竹市', '新竹縣'],
+        'portfolio_title': '西屯透天高效模組自用案',
+        'portfolio_meta': '透天住宅 · 8.6 kWp · 2024 完工',
+        'capacity_kw': 8.6,
+        'completed_year': 2024,
+        'rating': 4.7,
+        'review_count': 28,
+        'phone': '04-2252-3890',
+        'email': 'service@centralsun.example',
+        'tags': ['透天厝', '自用優化', '補助代辦'],
+    },
+    {
+        'id': 'south-volt',
+        'name': '南方伏特綠能',
+        'counties': ['台南市', '高雄市', '屏東縣', '嘉義市', '嘉義縣', '台東縣', '澎湖縣'],
+        'portfolio_title': '高雄前鎮屋頂售電型系統',
+        'portfolio_meta': '透天住宅 · 12.1 kWp · 2025 完工',
+        'capacity_kw': 12.1,
+        'completed_year': 2025,
+        'rating': 4.9,
+        'review_count': 42,
+        'phone': '07-335-9021',
+        'email': 'contact@southvolt.example',
+        'tags': ['售電型', '高日照區', '維運合約'],
+    },
+    {
+        'id': 'east-island',
+        'name': '東岸島嶼能源',
+        'counties': ['花蓮縣', '台東縣', '金門縣', '連江縣', '澎湖縣'],
+        'portfolio_title': '花蓮低樓層住宅抗風支架案',
+        'portfolio_meta': '透天住宅 · 7.2 kWp · 2024 完工',
+        'capacity_kw': 7.2,
+        'completed_year': 2024,
+        'rating': 4.6,
+        'review_count': 19,
+        'phone': '03-822-5170',
+        'email': 'team@eastisland.example',
+        'tags': ['離島服務', '抗風支架', '維運巡檢'],
+    },
+]
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -16,7 +87,11 @@ async def get_pool() -> asyncpg.Pool:
         url = os.environ.get('DATABASE_URL', '')
         if not url:
             raise RuntimeError('DATABASE_URL 未設定')
-        _pool = await asyncpg.create_pool(url, min_size=1, max_size=5)
+        _pool = await asyncpg.create_pool(
+            url, min_size=1, max_size=5,
+            statement_cache_size=0,
+            server_settings={'timezone': 'Asia/Taipei'},
+        )
     return _pool
 
 
@@ -41,9 +116,27 @@ async def init_db() -> None:
                 shadows     JSONB       NOT NULL,
                 computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS tilt_cache (
+                cache_key   TEXT        PRIMARY KEY,
+                result      JSONB       NOT NULL,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS usable_fraction_cache (
+                cache_key   TEXT        PRIMARY KEY,
+                result      JSONB       NOT NULL,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS accounts (
+                id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                email         TEXT        UNIQUE NOT NULL,
+                password_hash TEXT        NOT NULL,
+                role          TEXT        NOT NULL DEFAULT 'user',
+                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
             CREATE TABLE IF NOT EXISTS assessments (
                 id               UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
                 user_id          TEXT,
+                account_id       UUID             REFERENCES accounts(id),
                 address          TEXT,
                 lat              DOUBLE PRECISION,
                 lng              DOUBLE PRECISION,
@@ -64,10 +157,152 @@ async def init_db() -> None:
                 result           JSONB,
                 created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS vendors (
+                id                  TEXT        PRIMARY KEY,
+                account_id          UUID        UNIQUE REFERENCES accounts(id),
+                name                TEXT        NOT NULL,
+                company_tax_id      TEXT,
+                contact_name        TEXT,
+                counties            TEXT[]      NOT NULL DEFAULT '{}',
+                rating              DOUBLE PRECISION NOT NULL DEFAULT 0,
+                review_count        INT         NOT NULL DEFAULT 0,
+                phone               TEXT,
+                email               TEXT,
+                tags                TEXT[]      NOT NULL DEFAULT '{}',
+                approved            BOOLEAN     NOT NULL DEFAULT TRUE,
+                subscription_status TEXT        NOT NULL DEFAULT 'mock',
+                application_status  TEXT        NOT NULL DEFAULT 'approved',
+                license_note        TEXT,
+                rejection_reason    TEXT,
+                logo_url            TEXT,
+                created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS vendor_portfolios (
+                id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                vendor_id      TEXT        NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+                title          TEXT        NOT NULL,
+                meta           TEXT        NOT NULL,
+                capacity_kw    DOUBLE PRECISION,
+                completed_year INT,
+                is_featured    BOOLEAN     NOT NULL DEFAULT TRUE,
+                photo_url      TEXT,
+                description    TEXT,
+                created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS inquiries (
+                id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                vendor_id     TEXT        NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+                account_id    UUID        REFERENCES accounts(id),
+                address       TEXT,
+                county        TEXT,
+                capacity_kw   DOUBLE PRECISION,
+                annual_kwh    DOUBLE PRECISION,
+                payback_years DOUBLE PRECISION,
+                case_status         TEXT        NOT NULL DEFAULT 'new',
+                user_last_read_at   TIMESTAMPTZ,
+                vendor_last_read_at TIMESTAMPTZ,
+                created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS vendor_reviews (
+                id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                vendor_id  TEXT        NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+                inquiry_id UUID        UNIQUE REFERENCES inquiries(id) ON DELETE CASCADE,
+                account_id UUID        NOT NULL REFERENCES accounts(id),
+                rating     INT         NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                comment    TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS gba_cache (
+                bbox_key   TEXT        PRIMARY KEY,
+                buildings  JSONB       NOT NULL,
+                cached_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS gba_buildings (
+                id        TEXT   PRIMARY KEY,
+                footprint JSONB  NOT NULL,
+                height    REAL,
+                source    TEXT,
+                min_lon   REAL,
+                max_lon   REAL,
+                min_lat   REAL,
+                max_lat   REAL
+            );
+            CREATE INDEX IF NOT EXISTS gba_buildings_bbox
+                ON gba_buildings (min_lon, max_lon, min_lat, max_lat);
+            CREATE TABLE IF NOT EXISTS inquiry_messages (
+                id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                inquiry_id   UUID        NOT NULL REFERENCES inquiries(id) ON DELETE CASCADE,
+                sender       TEXT        NOT NULL CHECK (sender IN ('user', 'vendor')),
+                content      TEXT        NOT NULL,
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_inquiry_messages_inquiry_id
+                ON inquiry_messages (inquiry_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_assessments_account_id
+                ON assessments (account_id);
+            CREATE INDEX IF NOT EXISTS idx_vendor_portfolios_vendor_id
+                ON vendor_portfolios (vendor_id);
+            CREATE INDEX IF NOT EXISTS idx_inquiries_vendor_id
+                ON inquiries (vendor_id);
+            CREATE INDEX IF NOT EXISTS idx_inquiries_account_id
+                ON inquiries (account_id);
+            CREATE TABLE IF NOT EXISTS climate_monthly (
+                township_code TEXT             NOT NULL,
+                month         INT              NOT NULL,
+                ghi           DOUBLE PRECISION,
+                temperature   DOUBLE PRECISION,
+                wind_speed    DOUBLE PRECISION,
+                humidity      DOUBLE PRECISION,
+                PRIMARY KEY (township_code, month)
+            );
+            CREATE TABLE IF NOT EXISTS climate_annual (
+                township_code         TEXT             PRIMARY KEY,
+                county_name           TEXT             NOT NULL,
+                township_name         TEXT             NOT NULL,
+                centroid_lat          DOUBLE PRECISION NOT NULL,
+                centroid_lon          DOUBLE PRECISION NOT NULL,
+                daily_solar_radiation DOUBLE PRECISION,
+                air_temperature       DOUBLE PRECISION,
+                wind_speed            DOUBLE PRECISION,
+                relative_humidity     DOUBLE PRECISION
+            );
+            CREATE TABLE IF NOT EXISTS dem_cache (
+                id         TEXT        PRIMARY KEY,
+                data       BYTEA       NOT NULL,
+                meta       BYTEA       NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS region_potential (
+                towncode                TEXT             PRIMARY KEY,
+                countyname              TEXT             NOT NULL,
+                townname                TEXT             NOT NULL,
+                priority_rank           INTEGER          NOT NULL,
+                topsis_score            DOUBLE PRECISION NOT NULL,
+                combined_score          DOUBLE PRECISION,
+                stage1_prob             DOUBLE PRECISION,
+                stage2_pred             DOUBLE PRECISION,
+                daily_solar_radiation   DOUBLE PRECISION,
+                occupancy_owner_rate     DOUBLE PRECISION,
+                median_household_income DOUBLE PRECISION,
+                centroid_lat            DOUBLE PRECISION,
+                centroid_lon            DOUBLE PRECISION
+            );
+            CREATE TABLE IF NOT EXISTS places_cache (
+                cache_key  TEXT        PRIMARY KEY,
+                data       JSONB       NOT NULL,
+                cached_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
         ''')
-        # 相容舊版 assessments（若表已存在但欄位較少，補齊新欄位）
+        # 相容舊版 schema（補齊新欄位）
+        for col, definition in [
+            ('role', 'TEXT NOT NULL DEFAULT \'user\''),
+        ]:
+            await conn.execute(
+                f"ALTER TABLE accounts ADD COLUMN IF NOT EXISTS {col} {definition}"
+            )
         for col, definition in [
             ('user_id',          'TEXT'),
+            ('account_id',       'UUID'),
             ('county',           'TEXT'),
             ('roof_area_ping',   'DOUBLE PRECISION'),
             ('monthly_kwh',      'DOUBLE PRECISION'),
@@ -86,6 +321,118 @@ async def init_db() -> None:
             await conn.execute(
                 f"ALTER TABLE assessments ADD COLUMN IF NOT EXISTS {col} {definition}"
             )
+        for col, definition in [
+            ('account_id',          'UUID UNIQUE REFERENCES accounts(id)'),
+            ('company_tax_id',      'TEXT'),
+            ('contact_name',        'TEXT'),
+            ('counties',            "TEXT[] NOT NULL DEFAULT '{}'"),
+            ('rating',              'DOUBLE PRECISION NOT NULL DEFAULT 0'),
+            ('review_count',        'INT NOT NULL DEFAULT 0'),
+            ('phone',               'TEXT'),
+            ('email',               'TEXT'),
+            ('tags',                "TEXT[] NOT NULL DEFAULT '{}'"),
+            ('approved',            'BOOLEAN NOT NULL DEFAULT TRUE'),
+            ('subscription_status', "TEXT NOT NULL DEFAULT 'mock'"),
+            ('application_status',  "TEXT NOT NULL DEFAULT 'approved'"),
+            ('license_note',        'TEXT'),
+            ('rejection_reason',    'TEXT'),
+            ('logo_url',            'TEXT'),
+        ]:
+            await conn.execute(
+                f"ALTER TABLE vendors ADD COLUMN IF NOT EXISTS {col} {definition}"
+            )
+        for col, definition in [
+            ('case_status',         "TEXT NOT NULL DEFAULT 'new'"),
+            ('user_last_read_at',   'TIMESTAMPTZ'),
+            ('vendor_last_read_at', 'TIMESTAMPTZ'),
+        ]:
+            await conn.execute(
+                f"ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS {col} {definition}"
+            )
+        for col, definition in [
+            ('vendor_id',  'TEXT REFERENCES vendors(id) ON DELETE CASCADE'),
+            ('inquiry_id', 'UUID REFERENCES inquiries(id) ON DELETE CASCADE'),
+            ('account_id', 'UUID REFERENCES accounts(id)'),
+            ('rating',     'INT'),
+            ('comment',    'TEXT'),
+        ]:
+            await conn.execute(
+                f"ALTER TABLE vendor_reviews ADD COLUMN IF NOT EXISTS {col} {definition}"
+            )
+        await conn.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_reviews_inquiry_id_unique '
+            'ON vendor_reviews (inquiry_id)'
+        )
+        for col, definition in [
+            ('photo_url',   'TEXT'),
+            ('description', 'TEXT'),
+        ]:
+            await conn.execute(
+                f"ALTER TABLE vendor_portfolios ADD COLUMN IF NOT EXISTS {col} {definition}"
+            )
+        await conn.execute(
+            '''CREATE TABLE IF NOT EXISTS upgrade_requests (
+                id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                vendor_id  TEXT        NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+                status     TEXT        NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )'''
+        )
+        await conn.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_upgrade_requests_vendor_pending '
+            "ON upgrade_requests (vendor_id) WHERE status = 'pending'"
+        )
+        await conn.execute(
+            'ALTER TABLE upgrade_requests ADD COLUMN IF NOT EXISTS rejection_reason TEXT'
+        )
+        # CHECK constraints（IF NOT EXISTS → idempotent，CockroachDB 原生支援）
+        await conn.execute(
+            "ALTER TABLE accounts ADD CONSTRAINT IF NOT EXISTS accounts_role_check"
+            " CHECK (role IN ('user', 'admin', 'vendor'))"
+        )
+        await conn.execute(
+            "ALTER TABLE vendors ADD CONSTRAINT IF NOT EXISTS vendors_application_status_check"
+            " CHECK (application_status IN ('pending', 'approved', 'rejected'))"
+        )
+        await seed_vendors(conn)
+
+
+async def seed_vendors(conn: asyncpg.Connection) -> None:
+    for vendor in _VENDOR_SEED:
+        # Insert if not exists; on conflict only update static fields (name, contact, counties, tags).
+        # rating and review_count are user-generated data — never overwritten by seed.
+        await conn.execute(
+            '''INSERT INTO vendors
+               (id, name, counties, rating, review_count, phone, email, tags, approved, subscription_status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,'mock')
+               ON CONFLICT (id) DO UPDATE SET
+                 name            = EXCLUDED.name,
+                 counties        = EXCLUDED.counties,
+                 phone           = EXCLUDED.phone,
+                 email           = EXCLUDED.email,
+                 tags            = EXCLUDED.tags''',
+            vendor['id'],
+            vendor['name'],
+            vendor['counties'],
+            vendor['rating'],
+            vendor['review_count'],
+            vendor['phone'],
+            vendor['email'],
+            vendor['tags'],
+        )
+        await conn.execute(
+            '''INSERT INTO vendor_portfolios
+               (vendor_id, title, meta, capacity_kw, completed_year, is_featured)
+               SELECT $1,$2,$3,$4,$5,TRUE
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM vendor_portfolios WHERE vendor_id = $1 AND is_featured = TRUE
+               )''',
+            vendor['id'],
+            vendor['portfolio_title'],
+            vendor['portfolio_meta'],
+            vendor['capacity_kw'],
+            vendor['completed_year'],
+        )
 
 
 # ─── OSM 建物 cache（取代 in-memory dict，TTL = 7 天）────────────────────────
@@ -119,12 +466,44 @@ async def set_osm_cache(key: str, elements: list[dict]) -> None:
         pass
 
 
+# ─── GBA 建物 cache（bbox_key，TTL = 30 天）─────────────────────────────────
+
+async def get_gba_cache(bbox_key: str) -> list[dict] | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT buildings FROM gba_cache "
+                "WHERE bbox_key = $1 AND cached_at > NOW() - INTERVAL '30 days'",
+                bbox_key,
+            )
+            return json.loads(row['buildings']) if row else None
+    except Exception:
+        return None
+
+
+async def set_gba_cache(bbox_key: str, buildings: list[dict]) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO gba_cache (bbox_key, buildings)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (bbox_key) DO UPDATE
+                   SET buildings = EXCLUDED.buildings, cached_at = NOW()''',
+                bbox_key, json.dumps(buildings),
+            )
+    except Exception:
+        pass
+
+
 # ─── 陰影預計算 cache（月份粒度，相同區域同月份直接回傳）────────────────────
 
 def shadow_cache_key(lat: float, lng: float) -> str:
-    """以 ~1km 網格 × 月份為 key，同月份陰影差異很小可共用。"""
-    today = date.today()
-    return f'{lat:.2f}_{lng:.2f}_{today.year}_{today.month:02d}'
+    """以 ~100m 網格 × 月份為 key。
+    v4：精度從 2 位提升至 3 位（~100m），減少不同 viewport 共用同一快取的機率。"""
+    today = datetime.now(ZoneInfo('Asia/Taipei')).date()
+    return f'v4_{lat:.3f}_{lng:.3f}_{today.year}_{today.month:02d}'
 
 
 async def get_shadow_cache(key: str) -> dict | None:
@@ -149,6 +528,64 @@ async def set_shadow_cache(key: str, shadows: dict) -> None:
                    ON CONFLICT (cache_key) DO UPDATE
                    SET shadows = EXCLUDED.shadows, computed_at = NOW()''',
                 key, json.dumps(shadows),
+            )
+    except Exception:
+        pass
+
+
+# ─── 最佳傾角 cache（pvlib 計算結果，永久有效，演算法改版時改 key 前綴）────────
+
+async def get_tilt_cache(key: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT result FROM tilt_cache WHERE cache_key = $1', key,
+            )
+            return json.loads(row['result']) if row else None
+    except Exception:
+        return None
+
+
+async def set_tilt_cache(key: str, result: dict) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO tilt_cache (cache_key, result)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (cache_key) DO UPDATE
+                   SET result = EXCLUDED.result, computed_at = NOW()''',
+                key, json.dumps(result),
+            )
+    except Exception:
+        pass
+
+
+# ─── 可用屋頂比例 cache（依 footprint hash，180 天 TTL）─────────────────────
+
+async def get_uf_cache(key: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT result FROM usable_fraction_cache WHERE cache_key = $1', key,
+            )
+            return json.loads(row['result']) if row else None
+    except Exception:
+        return None
+
+
+async def set_uf_cache(key: str, result: dict) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO usable_fraction_cache (cache_key, result)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (cache_key) DO UPDATE
+                   SET result = EXCLUDED.result, computed_at = NOW()''',
+                key, json.dumps(result),
             )
     except Exception:
         pass
@@ -190,6 +627,89 @@ async def save_assessment(data: dict) -> str:
         return str(row['id'])
 
 
+# ─── 帳號 ────────────────────────────────────────────────────────────────────
+
+async def create_account(email: str, password_hash: str, role: str = 'user') -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            'INSERT INTO accounts (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id',
+            email, password_hash, role,
+        )
+        return str(row['id'])
+
+
+async def get_account_by_email(email: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT id, email, password_hash, role FROM accounts WHERE email = $1', email,
+            )
+            return {**dict(row), 'id': str(row['id'])} if row else None
+    except Exception:
+        return None
+
+
+async def get_account_by_id(account_id: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT id, email, role FROM accounts WHERE id = $1::uuid', account_id,
+            )
+            return {**dict(row), 'id': str(row['id'])} if row else None
+    except Exception:
+        return None
+
+
+async def set_account_role(account_id: str, role: str) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                'UPDATE accounts SET role = $2 WHERE id = $1::uuid',
+                account_id, role,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def get_account_assessments(account_id: str, limit: int = 20) -> list[dict]:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT id, address, county, annual_kwh, payback_years,
+                          out_of_pocket, capacity_kw, created_at,
+                          roof_area_ping, self_sufficiency, total_20yr, goal
+                   FROM assessments
+                   WHERE account_id = $1::uuid
+                   ORDER BY created_at DESC LIMIT $2''',
+                account_id, limit,
+            )
+            return [
+                {**dict(r), 'id': str(r['id']), 'created_at': r['created_at'].isoformat()}
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+async def claim_anonymous_assessments(user_id: str, account_id: str) -> None:
+    """登入後將同 user_id 的匿名評估綁定到帳號。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                'UPDATE assessments SET account_id = $1::uuid WHERE user_id = $2 AND account_id IS NULL',
+                account_id, user_id,
+            )
+    except Exception:
+        pass
+
+
 async def get_user_assessments(user_id: str, limit: int = 10) -> list[dict]:
     try:
         pool = await get_pool()
@@ -209,3 +729,1302 @@ async def get_user_assessments(user_id: str, limit: int = 10) -> list[dict]:
             ]
     except Exception:
         return []
+
+
+# ─── 廠商推薦 ────────────────────────────────────────────────────────────────
+
+async def list_vendors(county: str | None = None, limit: int = 3, offset: int = 0) -> list[dict]:
+    if county:
+        county = county.replace('臺', '台')  # 政府資料用臺，廠商申請表用台，統一比對
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if county:
+                rows = await conn.fetch(
+                    '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
+                              v.phone, v.email, v.tags, v.logo_url,
+                              p.title AS portfolio_title,
+                              p.meta AS portfolio_meta,
+                              p.capacity_kw
+                       FROM vendors v
+                       LEFT JOIN LATERAL (
+                           SELECT title, meta, capacity_kw
+                           FROM vendor_portfolios
+                           WHERE vendor_id = v.id
+                           ORDER BY is_featured DESC, created_at DESC
+                           LIMIT 1
+                       ) p ON TRUE
+                       WHERE v.approved = TRUE AND $1::text = ANY(v.counties)
+                       ORDER BY CASE v.subscription_status WHEN 'advanced' THEN 1 WHEN 'mock' THEN 2 ELSE 3 END,
+                                v.rating DESC, v.review_count DESC
+                       LIMIT $2 OFFSET $3''',
+                    county,
+                    limit,
+                    offset,
+                )
+            else:
+                rows = await conn.fetch(
+                    '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
+                              v.phone, v.email, v.tags, v.logo_url,
+                              p.title AS portfolio_title,
+                              p.meta AS portfolio_meta,
+                              p.capacity_kw
+                       FROM vendors v
+                       LEFT JOIN LATERAL (
+                           SELECT title, meta, capacity_kw
+                           FROM vendor_portfolios
+                           WHERE vendor_id = v.id
+                           ORDER BY is_featured DESC, created_at DESC
+                           LIMIT 1
+                       ) p ON TRUE
+                       WHERE v.approved = TRUE
+                       ORDER BY CASE v.subscription_status WHEN 'advanced' THEN 1 WHEN 'mock' THEN 2 ELSE 3 END,
+                                v.rating DESC, v.review_count DESC
+                       LIMIT $1 OFFSET $2''',
+                    limit,
+                    offset,
+                )
+            return [
+                {
+                    'id': str(r['id']),
+                    'name': r['name'],
+                    'counties': list(r['counties'] or []),
+                    'portfolioTitle': r['portfolio_title'] or '精選太陽能案場',
+                    'portfolioMeta': r['portfolio_meta'] or '作品集準備中',
+                    'capacityKw': float(r['capacity_kw'] or 0),
+                    'rating': float(r['rating'] or 0),
+                    'reviewCount': int(r['review_count'] or 0),
+                    'phone': r['phone'] or '',
+                    'email': r['email'] or '',
+                    'tags': list(r['tags'] or []),
+                    'logoUrl': r['logo_url'],
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        print(f'[list_vendors] error: {e}')
+        return []
+
+
+async def get_vendor_detail(vendor_id: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            vendor = await conn.fetchrow(
+                '''SELECT id, name, counties, rating, review_count, phone, email,
+                          tags, approved, subscription_status, logo_url
+                   FROM vendors
+                   WHERE id = $1 AND approved = TRUE''',
+                vendor_id,
+            )
+            if not vendor:
+                return None
+
+            portfolios = await conn.fetch(
+                '''SELECT id, title, meta, capacity_kw, completed_year, is_featured
+                   FROM vendor_portfolios
+                   WHERE vendor_id = $1
+                   ORDER BY is_featured DESC, completed_year DESC NULLS LAST, created_at DESC''',
+                vendor_id,
+            )
+            portfolio_list = [
+                {
+                    'id': str(p['id']),
+                    'title': p['title'],
+                    'meta': p['meta'],
+                    'capacityKw': float(p['capacity_kw'] or 0),
+                    'completedYear': p['completed_year'],
+                    'isFeatured': bool(p['is_featured']),
+                }
+                for p in portfolios
+            ]
+            featured = portfolio_list[0] if portfolio_list else None
+            return {
+                'id': str(vendor['id']),
+                'name': vendor['name'],
+                'counties': list(vendor['counties'] or []),
+                'portfolioTitle': featured['title'] if featured else '精選太陽能案場',
+                'portfolioMeta': featured['meta'] if featured else '作品集準備中',
+                'capacityKw': featured['capacityKw'] if featured else 0,
+                'rating': float(vendor['rating'] or 0),
+                'reviewCount': int(vendor['review_count'] or 0),
+                'phone': vendor['phone'] or '',
+                'email': vendor['email'] or '',
+                'tags': list(vendor['tags'] or []),
+                'approved': bool(vendor['approved']),
+                'subscriptionStatus': vendor['subscription_status'],
+                'logoUrl': vendor['logo_url'],
+                'portfolios': portfolio_list,
+            }
+    except Exception:
+        return None
+
+
+async def create_vendor_application(data: dict, account_id: str | None = None) -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # If account already has a vendor record, handle re-apply
+        if account_id:
+            existing = await conn.fetchrow(
+                'SELECT id, application_status FROM vendors WHERE account_id = $1::uuid',
+                account_id,
+            )
+            if existing:
+                status = existing['application_status']
+                if status in ('pending', 'approved'):
+                    raise ValueError(f'already_applied:{status}')
+                # rejected → allow re-apply by resetting the existing record
+                await conn.execute(
+                    '''UPDATE vendors SET
+                       name = $2, company_tax_id = $3, contact_name = $4,
+                       counties = $5, phone = $6, email = $7,
+                       license_note = $8, logo_url = $9,
+                       application_status = 'pending', approved = FALSE,
+                       rejection_reason = NULL
+                       WHERE id = $1''',
+                    existing['id'],
+                    data.get('company_name'),
+                    data.get('company_tax_id'),
+                    data.get('contact_name'),
+                    data.get('counties') or [],
+                    data.get('phone'),
+                    data.get('email'),
+                    data.get('license_note'),
+                    data.get('logo_url'),
+                )
+                return str(existing['id'])
+
+        vendor_id = f"vendor-{uuid.uuid4().hex[:12]}"
+        await conn.execute(
+            '''INSERT INTO vendors
+               (id, account_id, name, company_tax_id, contact_name, counties, rating, review_count,
+                phone, email, tags, approved, subscription_status, application_status, license_note, logo_url)
+               VALUES ($1,$2::uuid,$3,$4,$5,$6,0,0,$7,$8,'{}',FALSE,'free','pending',$9,$10)''',
+            vendor_id,
+            account_id,
+            data.get('company_name'),
+            data.get('company_tax_id'),
+            data.get('contact_name'),
+            data.get('counties') or [],
+            data.get('phone'),
+            data.get('email'),
+            data.get('license_note'),
+            data.get('logo_url'),
+        )
+    return vendor_id
+
+
+async def get_application_status(account_id: str) -> dict | None:
+    """Returns vendor application status for any account (including non-vendor roles)."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT id, application_status, rejection_reason FROM vendors WHERE account_id = $1::uuid',
+                account_id,
+            )
+            if not row:
+                return None
+            return {
+                'id': str(row['id']),
+                'status': row['application_status'],
+                'rejectionReason': row['rejection_reason'],
+            }
+    except Exception:
+        return None
+
+
+async def list_pending_vendor_applications(limit: int = 50) -> list[dict]:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT id, name, company_tax_id, contact_name, counties, phone, email,
+                          license_note, application_status, created_at
+                   FROM vendors
+                   WHERE application_status = 'pending'
+                   ORDER BY created_at DESC
+                   LIMIT $1''',
+                limit,
+            )
+            return [
+                {
+                    'id': str(r['id']),
+                    'name': r['name'],
+                    'companyTaxId': r['company_tax_id'],
+                    'contactName': r['contact_name'],
+                    'counties': list(r['counties'] or []),
+                    'phone': r['phone'] or '',
+                    'email': r['email'] or '',
+                    'licenseNote': r['license_note'],
+                    'applicationStatus': r['application_status'],
+                    'createdAt': r['created_at'].isoformat(),
+                }
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+async def approve_vendor_application(vendor_id: str) -> bool:
+    """核准廠商；自動升級對應帳號角色為 vendor。
+    優先用已綁定的 account_id；若 NULL 則以申請 email 比對 accounts 表，找到時
+    同時補寫 vendors.account_id，確保匿名申請也能正確連結。
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if True:
+                result = await conn.execute(
+                    '''UPDATE vendors
+                       SET approved = TRUE,
+                           application_status = 'approved',
+                           rejection_reason = NULL,
+                           subscription_status = CASE
+                               WHEN subscription_status = 'mock' THEN 'mock'
+                               ELSE 'free'
+                           END
+                       WHERE id = $1 AND application_status IN ('pending', 'rejected')''',
+                    vendor_id,
+                )
+                if not result.endswith('1'):
+                    return False
+
+                row = await conn.fetchrow(
+                    'SELECT account_id, email FROM vendors WHERE id = $1', vendor_id,
+                )
+                if not row:
+                    return True
+
+                account_id = row['account_id']
+
+                # 若尚未綁定帳號，嘗試以申請 email 自動配對
+                if not account_id and row['email']:
+                    acct = await conn.fetchrow(
+                        'SELECT id FROM accounts WHERE email = $1', row['email'],
+                    )
+                    if acct:
+                        account_id = acct['id']
+                        await conn.execute(
+                            'UPDATE vendors SET account_id = $1 WHERE id = $2',
+                            account_id, vendor_id,
+                        )
+
+                if account_id:
+                    await conn.execute(
+                        "UPDATE accounts SET role = 'vendor' WHERE id = $1",
+                        account_id,
+                    )
+                return True
+    except Exception:
+        return False
+
+
+async def reject_vendor_application(vendor_id: str, reason: str | None = None) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                '''UPDATE vendors
+                   SET approved = FALSE,
+                       application_status = 'rejected',
+                       rejection_reason = $2
+                   WHERE id = $1 AND application_status = 'pending' ''',
+                vendor_id,
+                reason,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+# ─── 廠商儀表板 ──────────────────────────────────────────────────────────────
+
+async def get_my_vendor(account_id: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT v.id, v.name, v.counties, v.rating, v.review_count,
+                          v.phone, v.email, v.tags, v.application_status,
+                          v.subscription_status, v.approved, v.logo_url,
+                          (SELECT status FROM upgrade_requests
+                           WHERE vendor_id = v.id
+                           ORDER BY created_at DESC, id DESC LIMIT 1
+                          ) AS upgrade_request_status,
+                          (SELECT rejection_reason FROM upgrade_requests
+                           WHERE vendor_id = v.id
+                           ORDER BY created_at DESC, id DESC LIMIT 1
+                          ) AS upgrade_rejection_reason,
+                          p.id AS p_id, p.title, p.meta, p.capacity_kw,
+                          p.completed_year, p.is_featured, p.photo_url, p.description
+                   FROM vendors v
+                   LEFT JOIN vendor_portfolios p ON p.vendor_id = v.id
+                   WHERE v.account_id = $1::uuid
+                   ORDER BY p.is_featured DESC NULLS LAST,
+                            p.completed_year DESC NULLS LAST,
+                            p.created_at DESC NULLS LAST''',
+                account_id,
+            )
+            if not rows:
+                return None
+            v = rows[0]
+            return {
+                'id': str(v['id']),
+                'name': v['name'],
+                'counties': list(v['counties'] or []),
+                'rating': float(v['rating'] or 0),
+                'reviewCount': int(v['review_count'] or 0),
+                'phone': v['phone'] or '',
+                'email': v['email'] or '',
+                'tags': list(v['tags'] or []),
+                'applicationStatus': v['application_status'],
+                'subscriptionStatus': v['subscription_status'],
+                'upgradeRequestStatus': v['upgrade_request_status'],
+                'upgradeRejectionReason': v['upgrade_rejection_reason'],
+                'approved': bool(v['approved']),
+                'logoUrl': v['logo_url'],
+                'portfolios': [
+                    {
+                        'id': str(r['p_id']),
+                        'title': r['title'],
+                        'meta': r['meta'],
+                        'capacityKw': float(r['capacity_kw'] or 0),
+                        'completedYear': r['completed_year'],
+                        'isFeatured': bool(r['is_featured']),
+                        'photoUrl': r['photo_url'],
+                        'description': r['description'],
+                    }
+                    for r in rows if r['p_id'] is not None
+                ],
+            }
+    except Exception:
+        return None
+
+
+async def update_vendor_profile(vendor_id: str, data: dict) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if data.get('remove_logo'):
+                result = await conn.execute(
+                    '''UPDATE vendors
+                       SET name     = $2,
+                           phone    = $3,
+                           email    = $4,
+                           counties = $5,
+                           tags     = $6,
+                           logo_url = NULL
+                       WHERE id = $1''',
+                    vendor_id,
+                    data.get('name'),
+                    data.get('phone'),
+                    data.get('email'),
+                    data.get('counties') or [],
+                    data.get('tags') or [],
+                )
+            else:
+                result = await conn.execute(
+                    '''UPDATE vendors
+                       SET name     = $2,
+                           phone    = $3,
+                           email    = $4,
+                           counties = $5,
+                           tags     = $6
+                       WHERE id = $1''',
+                    vendor_id,
+                    data.get('name'),
+                    data.get('phone'),
+                    data.get('email'),
+                    data.get('counties') or [],
+                    data.get('tags') or [],
+                )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def add_portfolio(
+    vendor_id: str,
+    title: str,
+    meta: str,
+    capacity_kw: float | None,
+    completed_year: int | None,
+    photo_url: str | None = None,
+    description: str | None = None,
+) -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            '''INSERT INTO vendor_portfolios
+               (vendor_id, title, meta, capacity_kw, completed_year, is_featured, photo_url, description)
+               VALUES ($1, $2, $3, $4, $5, FALSE, $6, $7)
+               RETURNING id''',
+            vendor_id, title, meta, capacity_kw, completed_year, photo_url, description,
+        )
+        return str(row['id'])
+
+
+async def delete_portfolio(portfolio_id: str, vendor_id: str) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                'DELETE FROM vendor_portfolios WHERE id = $1::uuid AND vendor_id = $2',
+                portfolio_id, vendor_id,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def save_inquiry(vendor_id: str, account_id: str | None, data: dict) -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            '''INSERT INTO inquiries
+               (vendor_id, account_id, address, county, capacity_kw, annual_kwh, payback_years)
+               VALUES ($1, $2::uuid, $3, $4, $5, $6, $7)
+               RETURNING id''',
+            vendor_id,
+            account_id,
+            data.get('address'),
+            data.get('county'),
+            data.get('capacity_kw'),
+            data.get('annual_kwh'),
+            data.get('payback_years'),
+        )
+        inquiry_id = str(row['id'])
+        if data.get('message'):
+            await conn.execute(
+                'INSERT INTO inquiry_messages (inquiry_id, sender, content) VALUES ($1::uuid, $2, $3)',
+                inquiry_id, 'user', data['message'],
+            )
+        return inquiry_id
+
+
+async def add_user_inquiry_message(inquiry_id: str, account_id: str, content: str) -> dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            inquiry = await conn.fetchrow(
+                'SELECT id FROM inquiries WHERE id = $1::uuid AND account_id = $2::uuid',
+                inquiry_id, account_id,
+            )
+            if not inquiry:
+                return None
+            row = await conn.fetchrow(
+                '''INSERT INTO inquiry_messages (inquiry_id, sender, content)
+                   VALUES ($1::uuid, $2, $3) RETURNING id, created_at''',
+                inquiry_id, 'user', content,
+            )
+            return {'id': str(row['id']), 'sender': 'user', 'content': content,
+                    'createdAt': row['created_at'].isoformat()}
+    except Exception:
+        return None
+
+
+async def get_user_inquiry_messages(inquiry_id: str, account_id: str) -> list[dict] | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            inquiry = await conn.fetchrow(
+                'SELECT id FROM inquiries WHERE id = $1::uuid AND account_id = $2::uuid',
+                inquiry_id, account_id,
+            )
+            if not inquiry:
+                return None
+            rows = await conn.fetch(
+                'SELECT id, sender, content, created_at FROM inquiry_messages WHERE inquiry_id = $1::uuid ORDER BY created_at',
+                inquiry_id,
+            )
+            return [{'id': str(r['id']), 'sender': r['sender'], 'content': r['content'],
+                     'createdAt': r['created_at'].isoformat()} for r in rows]
+    except Exception:
+        return None
+
+
+async def get_vendor_inquiries_by_account(account_id: str, limit: int = 50) -> list[dict]:
+    """廠商查詢自己收到的詢價，直接用 account_id join，省去先查 vendor 的往返。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT i.id, i.address, i.county, i.capacity_kw, i.annual_kwh,
+                          i.payback_years, i.case_status, i.created_at, i.vendor_last_read_at,
+                          a.email AS inquirer_email
+                   FROM inquiries i
+                   JOIN vendors v ON v.id = i.vendor_id
+                   LEFT JOIN accounts a ON a.id = i.account_id
+                   WHERE v.account_id = $1::uuid
+                   ORDER BY (
+                     SELECT MAX(m.created_at) FROM inquiry_messages m WHERE m.inquiry_id = i.id
+                   ) DESC NULLS LAST, i.created_at DESC
+                   LIMIT $2''',
+                account_id, limit,
+            )
+            inquiry_ids = [str(r['id']) for r in rows]
+            msg_rows: list = []
+            if inquiry_ids:
+                msg_rows = await conn.fetch(
+                    '''SELECT inquiry_id, id, sender, content, created_at
+                       FROM inquiry_messages
+                       WHERE inquiry_id = ANY($1::uuid[])
+                       ORDER BY created_at''',
+                    inquiry_ids,
+                )
+            msgs_by_inquiry: dict = {}
+            for m in msg_rows:
+                key = str(m['inquiry_id'])
+                msgs_by_inquiry.setdefault(key, []).append({
+                    'id': str(m['id']), 'sender': m['sender'],
+                    'content': m['content'], 'createdAt': m['created_at'].isoformat(),
+                })
+            return [
+                {
+                    'id': str(r['id']),
+                    'address': r['address'],
+                    'county': r['county'],
+                    'capacityKw': float(r['capacity_kw'] or 0),
+                    'annualKwh': float(r['annual_kwh'] or 0),
+                    'paybackYears': float(r['payback_years'] or 0),
+                    'caseStatus': r['case_status'] or 'new',
+                    'inquirerEmail': r['inquirer_email'],
+                    'createdAt': r['created_at'].isoformat(),
+                    'vendorLastReadAt': r['vendor_last_read_at'].isoformat() if r['vendor_last_read_at'] else None,
+                    'messages': msgs_by_inquiry.get(str(r['id']), []),
+                }
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+async def get_vendor_inquiries(vendor_id: str, limit: int = 50) -> list[dict]:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT i.id, i.address, i.county, i.capacity_kw, i.annual_kwh,
+                          i.payback_years, i.case_status, i.created_at,
+                          a.email AS inquirer_email
+                   FROM inquiries i
+                   LEFT JOIN accounts a ON a.id = i.account_id
+                   WHERE i.vendor_id = $1
+                   ORDER BY i.created_at DESC
+                   LIMIT $2''',
+                vendor_id, limit,
+            )
+            inquiry_ids = [str(r['id']) for r in rows]
+            msg_rows: list = []
+            if inquiry_ids:
+                msg_rows = await conn.fetch(
+                    '''SELECT inquiry_id, id, sender, content, created_at
+                       FROM inquiry_messages
+                       WHERE inquiry_id = ANY($1::uuid[])
+                       ORDER BY created_at''',
+                    inquiry_ids,
+                )
+            msgs_by_inquiry: dict = {}
+            for m in msg_rows:
+                key = str(m['inquiry_id'])
+                msgs_by_inquiry.setdefault(key, []).append({
+                    'id': str(m['id']), 'sender': m['sender'],
+                    'content': m['content'], 'createdAt': m['created_at'].isoformat(),
+                })
+            return [
+                {
+                    'id': str(r['id']),
+                    'address': r['address'],
+                    'county': r['county'],
+                    'capacityKw': float(r['capacity_kw'] or 0),
+                    'annualKwh': float(r['annual_kwh'] or 0),
+                    'paybackYears': float(r['payback_years'] or 0),
+                    'caseStatus': r['case_status'] or 'new',
+                    'inquirerEmail': r['inquirer_email'],
+                    'createdAt': r['created_at'].isoformat(),
+                    'messages': msgs_by_inquiry.get(str(r['id']), []),
+                }
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+async def reply_to_inquiry(inquiry_id: str, vendor_id: str, reply: str) -> dict | None:
+    """廠商回覆詢價；驗證該詢價確實屬於此廠商，並寫入 inquiry_messages。回傳新訊息或 None。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            exists = await conn.fetchval(
+                'SELECT 1 FROM inquiries WHERE id = $1::uuid AND vendor_id = $2',
+                inquiry_id, vendor_id,
+            )
+            if not exists:
+                return None
+            row = await conn.fetchrow(
+                '''INSERT INTO inquiry_messages (inquiry_id, sender, content)
+                   VALUES ($1::uuid, $2, $3)
+                   RETURNING id, sender, content, created_at''',
+                inquiry_id, 'vendor', reply,
+            )
+            return {
+                'id': str(row['id']),
+                'sender': row['sender'],
+                'content': row['content'],
+                'createdAt': row['created_at'].isoformat(),
+            }
+    except Exception:
+        return None
+
+
+async def get_user_inquiries(account_id: str, limit: int = 30) -> list[dict]:
+    """用戶查看自己送出的詢價（含 messages 陣列與評價狀態）。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT i.id, i.vendor_id, i.address, i.county, i.capacity_kw,
+                          i.annual_kwh, i.payback_years, i.created_at, i.user_last_read_at,
+                          v.name AS vendor_name, v.logo_url AS vendor_logo,
+                          v.rating AS vendor_rating, v.review_count AS vendor_review_count,
+                          r.id AS review_id, r.rating AS review_rating, r.comment AS review_comment
+                   FROM inquiries i
+                   JOIN vendors v ON v.id = i.vendor_id
+                   LEFT JOIN vendor_reviews r ON r.inquiry_id = i.id
+                   WHERE i.account_id = $1::uuid
+                   ORDER BY (
+                     SELECT MAX(m.created_at) FROM inquiry_messages m WHERE m.inquiry_id = i.id
+                   ) DESC NULLS LAST, i.created_at DESC
+                   LIMIT $2''',
+                account_id, limit,
+            )
+            inquiry_ids = [str(r['id']) for r in rows]
+            msg_rows: list = []
+            if inquiry_ids:
+                msg_rows = await conn.fetch(
+                    '''SELECT inquiry_id, id, sender, content, created_at
+                       FROM inquiry_messages
+                       WHERE inquiry_id = ANY($1::uuid[])
+                       ORDER BY created_at''',
+                    inquiry_ids,
+                )
+            msgs_by_inquiry: dict = {}
+            for m in msg_rows:
+                key = str(m['inquiry_id'])
+                msgs_by_inquiry.setdefault(key, []).append({
+                    'id': str(m['id']), 'sender': m['sender'],
+                    'content': m['content'], 'createdAt': m['created_at'].isoformat(),
+                })
+            return [
+                {
+                    'id': str(r['id']),
+                    'vendorId': r['vendor_id'],
+                    'vendorName': r['vendor_name'],
+                    'vendorLogo': r['vendor_logo'],
+                    'vendorRating': float(r['vendor_rating'] or 0),
+                    'vendorReviewCount': int(r['vendor_review_count'] or 0),
+                    'address': r['address'],
+                    'county': r['county'],
+                    'capacityKw': float(r['capacity_kw'] or 0),
+                    'annualKwh': float(r['annual_kwh'] or 0),
+                    'paybackYears': float(r['payback_years'] or 0),
+                    'createdAt': r['created_at'].isoformat(),
+                    'userLastReadAt': r['user_last_read_at'].isoformat() if r['user_last_read_at'] else None,
+                    'messages': msgs_by_inquiry.get(str(r['id']), []),
+                    'reviewId': str(r['review_id']) if r['review_id'] else None,
+                    'reviewRating': r['review_rating'],
+                    'reviewComment': r['review_comment'],
+                }
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+async def mark_vendor_inquiry_read(inquiry_id: str, account_id: str) -> bool:
+    """更新廠商最後已讀時間（透過 vendor.account_id 驗證權限）。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                '''UPDATE inquiries i SET vendor_last_read_at = NOW()
+                   FROM vendors v
+                   WHERE i.id = $1::uuid AND i.vendor_id = v.id AND v.account_id = $2::uuid''',
+                inquiry_id, account_id,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def mark_user_inquiry_read(inquiry_id: str, account_id: str) -> bool:
+    """更新用戶最後已讀時間。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                '''UPDATE inquiries SET user_last_read_at = NOW()
+                   WHERE id = $1::uuid AND account_id = $2::uuid''',
+                inquiry_id, account_id,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def add_vendor_review(
+    inquiry_id: str, account_id: str, vendor_id: str, rating: int, comment: str | None
+) -> str:
+    """新增評價，同時更新廠商平均評分。
+    回傳 'ok'、'not_found'（詢價不存在/不屬於此帳號）、'duplicate'（已評價過）。
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            inq = await conn.fetchrow(
+                'SELECT id, vendor_id FROM inquiries WHERE id = $1::uuid AND account_id = $2::uuid',
+                inquiry_id, account_id,
+            )
+            if not inq:
+                return 'not_found'
+            if vendor_id and inq['vendor_id'] != vendor_id:
+                return 'not_found'
+            row = await conn.fetchrow(
+                '''INSERT INTO vendor_reviews (vendor_id, inquiry_id, account_id, rating, comment)
+                   VALUES ($1, $2::uuid, $3::uuid, $4, $5)
+                   ON CONFLICT (inquiry_id) DO NOTHING
+                   RETURNING id''',
+                inq['vendor_id'], inquiry_id, account_id, rating, comment,
+            )
+            if not row:
+                return 'duplicate'
+            await conn.execute(
+                '''UPDATE vendors
+                   SET rating       = sub.avg_rating,
+                       review_count = sub.cnt
+                   FROM (
+                       SELECT AVG(rating)::double precision AS avg_rating,
+                              COUNT(*)::int AS cnt
+                       FROM vendor_reviews
+                       WHERE vendor_id = $1
+                   ) sub
+                   WHERE vendors.id = $1''',
+                inq['vendor_id'],
+            )
+        return 'ok'
+    except Exception as e:
+        print(f'[add_vendor_review] error: {e}')
+        return 'not_found'
+
+
+async def update_vendor_logo(vendor_id: str, logo_url: str) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                'UPDATE vendors SET logo_url = $2 WHERE id = $1',
+                vendor_id, logo_url,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def update_inquiry_status(inquiry_id: str, vendor_id: str, status: str) -> bool:
+    """廠商更新案件狀態 (new / contacted / quoted / closed)。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE inquiries SET case_status = $3 WHERE id = $1::uuid AND vendor_id = $2",
+                inquiry_id, vendor_id, status,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def get_potential_leads(
+    vendor_id: str, counties: list[str], limit: int = 30
+) -> list[dict]:
+    """進階方案：廠商服務縣市內已完成評估、但尚未聯繫過本廠商的潛在用戶。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT a.id, a.address, a.county, a.capacity_kw, a.annual_kwh,
+                          a.payback_years, a.out_of_pocket, a.created_at,
+                          acc.email AS account_email
+                   FROM assessments a
+                   JOIN accounts acc ON acc.id = a.account_id
+                   WHERE a.county = ANY($1)
+                   AND a.account_id IS NOT NULL
+                   AND NOT EXISTS (
+                       SELECT 1 FROM inquiries i
+                       WHERE i.account_id = a.account_id
+                       AND i.vendor_id = $2
+                   )
+                   ORDER BY a.created_at DESC
+                   LIMIT $3''',
+                counties, vendor_id, limit,
+            )
+            return [
+                {
+                    'id': str(r['id']),
+                    'address': r['address'],
+                    'county': r['county'],
+                    'capacityKw': float(r['capacity_kw'] or 0),
+                    'annualKwh': float(r['annual_kwh'] or 0),
+                    'paybackYears': float(r['payback_years'] or 0),
+                    'outOfPocket': int(r['out_of_pocket'] or 0),
+                    'accountEmail': r['account_email'],
+                    'createdAt': r['created_at'].isoformat(),
+                }
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+async def delete_gba_cache(bbox_key: str | None = None) -> int:
+    """清除 GBA WFS 快取。bbox_key=None → 全部清除。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if bbox_key:
+                result = await conn.execute(
+                    'DELETE FROM gba_cache WHERE bbox_key = $1', bbox_key
+                )
+            else:
+                result = await conn.execute('DELETE FROM gba_cache')
+            return int(result.split()[-1])
+    except Exception as e:
+        print(f'[DB] delete_gba_cache error: {e}')
+        return 0
+
+
+# ─── GBA 永久建物資料庫（gba_buildings）────────────────────────────────────────
+
+async def get_gba_buildings_from_db(
+    min_lon: float, min_lat: float,
+    max_lon: float, max_lat: float,
+) -> list[dict]:
+    """
+    從 gba_buildings 表以 bbox 查詢建物。
+    回傳格式：
+      [{"footprint": [[lng, lat], ...], "height": float, "build_id": str}, ...]
+
+    索引條件：min_lon < $max_lon AND max_lon > $min_lon
+              AND min_lat < $max_lat AND max_lat > $min_lat
+    """
+    cache_key = f'{min_lon:.3f},{min_lat:.3f},{max_lon:.3f},{max_lat:.3f}'
+    if cache_key in _bldg_cache:
+        cached = _bldg_cache[cache_key]
+        print(f'[TIMER] get_buildings/gba_db CACHE HIT: 0ms ({len(cached)} 棟)')
+        return cached
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT id, footprint, height FROM gba_buildings
+                   WHERE min_lon < $3 AND max_lon > $1
+                     AND min_lat < $4 AND max_lat > $2''',
+                min_lon, min_lat, max_lon, max_lat,
+            )
+        result = [
+            {
+                'build_id': r['id'],
+                'footprint': json.loads(r['footprint']),
+                'height': float(r['height']) if r['height'] is not None else 10.0,
+            }
+            for r in rows
+        ]
+        _bldg_cache[cache_key] = result
+        return result
+    except Exception as e:
+        print(f'[DB] get_gba_buildings_from_db error: {type(e).__name__}: {e}')
+        return []
+
+
+# ─── GBA Polygon fallback（本地 NDJSON.gz 檔，DB miss 時使用）──────────────────
+
+# 位於 solar_money/data/taiwan_polygon_fallback.ndjson.gz
+_FALLBACK_PATH     = Path(__file__).parent.parent / 'data' / 'taiwan_polygon_fallback.ndjson.gz'
+_FALLBACK_NPY_PATH = Path(__file__).parent.parent / 'data' / 'taiwan_polygon_fallback_bbox.npy'
+_FALLBACK_PKL_PATH = Path(__file__).parent.parent / 'data' / 'taiwan_polygon_fallback_data.pkl.gz'
+
+# 模組級單例快取
+_fallback_buildings: Optional[list] = None
+_fallback_bbox_arr: 'np.ndarray | None' = None   # float32 (N, 4): [min_lon, max_lon, min_lat, max_lat]
+_fallback_lock = __import__('threading').Lock()   # prevents double-load when background thread + request thread race
+
+
+def _load_polygon_fallback() -> list:
+    """
+    首次呼叫時載入 GBA fallback 資料：
+    - 快取存在且比來源 gz 新 → 從 .npy + .pkl.gz 快速載入（< 3 s）
+    - 否則 → 解析 NDJSON.gz → 建 numpy 陣列 → 寫入快取（一次性，10–30 s）
+    使用 threading.Lock + double-check pattern：背景執行緒載入時，若請求執行緒同時呼叫，
+    後者等待 lock 釋放後直接取得結果，不會啟動第二次載入。
+    """
+    global _fallback_buildings, _fallback_bbox_arr
+    if _fallback_buildings is not None:
+        return _fallback_buildings
+    with _fallback_lock:
+        if _fallback_buildings is not None:   # double-check after acquiring lock
+            return _fallback_buildings
+
+        if not _FALLBACK_PATH.exists():
+            print(f'[DB] Polygon fallback not found: {_FALLBACK_PATH}', flush=True)
+            _fallback_buildings = []
+            return _fallback_buildings
+
+        gz_mtime = _FALLBACK_PATH.stat().st_mtime
+
+        # ── Fast path: binary cache ─────────────────────────────────────────────────
+        if (
+            _FALLBACK_NPY_PATH.exists() and _FALLBACK_PKL_PATH.exists()
+            and _FALLBACK_NPY_PATH.stat().st_mtime >= gz_mtime
+            and _FALLBACK_PKL_PATH.stat().st_mtime >= gz_mtime
+        ):
+            try:
+                print('[DB] Loading Polygon fallback from binary cache...', flush=True)
+                _fallback_bbox_arr = np.load(str(_FALLBACK_NPY_PATH))
+                with gzip.open(_FALLBACK_PKL_PATH, 'rb') as f:
+                    _fallback_buildings = pickle.load(f)
+                print(f'[DB] Polygon fallback ready: {len(_fallback_buildings):,} buildings (cached)', flush=True)
+                return _fallback_buildings
+            except Exception as e:
+                print(f'[DB] Cache load failed ({e}), rebuilding...', flush=True)
+                _fallback_buildings = None
+                _fallback_bbox_arr  = None
+
+        # ── Slow path: parse NDJSON.gz ──────────────────────────────────────────────
+        size_mb = _FALLBACK_PATH.stat().st_size // 1024 // 1024
+        print(f'[DB] Building Polygon fallback cache ({size_mb} MB gz, one-time)...', flush=True)
+
+        buildings: list = []
+        try:
+            with gzip.open(_FALLBACK_PATH, 'rt', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    buildings.append(json.loads(line))
+        except Exception as e:
+            print(f'[DB] Polygon fallback load error: {e}', flush=True)
+            _fallback_buildings = []
+            return _fallback_buildings
+
+        # Build numpy bbox array (float32 saves ~50% vs float64, sufficient precision)
+        bbox_arr = np.array(
+            [[b['min_lon'], b['max_lon'], b['min_lat'], b['max_lat']] for b in buildings],
+            dtype=np.float32,
+        )
+
+        # Write binary cache
+        try:
+            np.save(str(_FALLBACK_NPY_PATH), bbox_arr)
+            with gzip.open(_FALLBACK_PKL_PATH, 'wb', compresslevel=1) as f:
+                pickle.dump(buildings, f, protocol=4)
+            print('[DB] Polygon fallback binary cache written.', flush=True)
+        except Exception as e:
+            print(f'[DB] Cache write failed (non-fatal): {e}', flush=True)
+
+        _fallback_buildings = buildings
+        _fallback_bbox_arr  = bbox_arr
+        print(f'[DB] Polygon fallback ready: {len(buildings):,} buildings', flush=True)
+        return _fallback_buildings
+
+
+def preload_polygon_fallback() -> None:
+    """公開預載函式，供 lifespan 在伺服器啟動時呼叫（run_in_executor）。"""
+    _load_polygon_fallback()
+
+
+def get_gba_buildings_from_fallback(
+    min_lon: float, min_lat: float,
+    max_lon: float, max_lat: float,
+) -> list[dict]:
+    """
+    從本地 NDJSON.gz fallback 以 bbox 查詢 Polygon 建物。
+    使用 numpy 向量化比較取代 Python for 迴圈，256 萬筆約 10 ms。
+    回傳格式與 get_gba_buildings_from_db 相同。
+    若 fallback 仍在背景載入中，立即回傳空 list（不阻塞請求執行緒）。
+    """
+    if _fallback_buildings is None or _fallback_bbox_arr is None:
+        return []   # 背景執行緒仍在載入，不等待
+    all_buildings = _fallback_buildings
+    if not all_buildings:
+        return []
+
+    arr = _fallback_bbox_arr
+    mask = (
+        (arr[:, 0] < max_lon) &   # min_lon < query max_lon
+        (arr[:, 1] > min_lon) &   # max_lon > query min_lon
+        (arr[:, 2] < max_lat) &   # min_lat < query max_lat
+        (arr[:, 3] > min_lat)     # max_lat > query min_lat
+    )
+    indices = np.where(mask)[0]
+    return [
+        {
+            'build_id': all_buildings[i]['id'],
+            'footprint': all_buildings[i]['footprint'],
+            'height': float(all_buildings[i].get('height') or 10.0),
+        }
+        for i in indices
+    ]
+
+
+# ─── 氣候資料查詢 ─────────────────────────────────────────────────────────────
+
+async def get_climate(township_code: str) -> dict | None:
+    """回傳年均統計；若找不到則回傳 None（呼叫端可選最近縣市 fallback）。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                '''SELECT township_code, county_name, township_name,
+                          centroid_lat, centroid_lon,
+                          daily_solar_radiation, air_temperature,
+                          wind_speed, relative_humidity
+                   FROM climate_annual WHERE township_code = $1''',
+                township_code,
+            )
+            return dict(row) if row else None
+    except Exception:
+        return None
+
+
+async def get_climate_monthly(township_code: str) -> list[dict]:
+    """回傳 12 個月典型 GHI/溫度/風速，供 pvlib 月度計算。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT month, ghi, temperature, wind_speed, humidity
+                   FROM climate_monthly
+                   WHERE township_code = $1
+                   ORDER BY month''',
+                township_code,
+            )
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+# ─── DEM bytea 儲存 ───────────────────────────────────────────────────────────
+
+async def get_dem_bytes() -> tuple[bytes, bytes] | None:
+    """從 DB 取得 DEM numpy bytes。回傳 (dem_bytes, meta_bytes) 或 None。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT data, meta FROM dem_cache WHERE id = 'taiwan_100m'"
+            )
+            if row:
+                return bytes(row['data']), bytes(row['meta'])
+    except Exception:
+        pass
+    return None
+
+
+async def set_dem_bytes(dem_bytes: bytes, meta_bytes: bytes) -> None:
+    """上傳 DEM numpy bytes 至 DB。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            '''INSERT INTO dem_cache (id, data, meta)
+               VALUES ('taiwan_100m', $1, $2)
+               ON CONFLICT (id) DO UPDATE
+               SET data = EXCLUDED.data, meta = EXCLUDED.meta, created_at = NOW()''',
+            dem_bytes, meta_bytes,
+        )
+
+
+# ─── 地區潛力排名 ──────────────────────────────────────────────────────────────
+
+async def get_region_potential(towncode: str) -> dict | None:
+    """回傳單一鄉鎮市的潛力分數與排名。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT * FROM region_potential WHERE towncode = $1',
+                towncode,
+            )
+            return dict(row) if row else None
+    except Exception:
+        return None
+
+
+async def get_all_region_potential() -> list[dict]:
+    """回傳所有 368 鄉鎮市的排名資料（供地圖初始載入）。"""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                'SELECT * FROM region_potential ORDER BY priority_rank',
+            )
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+# ─── Google Places 快取（TTL = 90 天）────────────────────────────────────────
+
+async def get_places_cache(key: str) -> list | dict | None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT data FROM places_cache "
+                "WHERE cache_key = $1 AND cached_at > NOW() - INTERVAL '90 days'",
+                key,
+            )
+            if not row:
+                await conn.execute('DELETE FROM places_cache WHERE cache_key = $1', key)
+                return None
+            return json.loads(row['data'])
+    except Exception:
+        return None
+
+
+async def update_portfolio(
+    portfolio_id: str,
+    vendor_id: str,
+    title: str,
+    meta: str,
+    capacity_kw: float | None,
+    completed_year: int | None,
+    description: str | None,
+    photo_url: str | None,
+    update_photo: bool,
+) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if update_photo:
+                result = await conn.execute(
+                    '''UPDATE vendor_portfolios
+                       SET title=$3, meta=$4, capacity_kw=$5, completed_year=$6,
+                           description=$7, photo_url=$8
+                       WHERE id=$1::uuid AND vendor_id=$2''',
+                    portfolio_id, vendor_id, title, meta,
+                    capacity_kw, completed_year, description, photo_url,
+                )
+            else:
+                result = await conn.execute(
+                    '''UPDATE vendor_portfolios
+                       SET title=$3, meta=$4, capacity_kw=$5, completed_year=$6,
+                           description=$7
+                       WHERE id=$1::uuid AND vendor_id=$2''',
+                    portfolio_id, vendor_id, title, meta,
+                    capacity_kw, completed_year, description,
+                )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def create_upgrade_request(vendor_id: str) -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            '''INSERT INTO upgrade_requests (vendor_id)
+               VALUES ($1)
+               ON CONFLICT DO NOTHING
+               RETURNING id''',
+            vendor_id,
+        )
+        if row:
+            return str(row['id'])
+        existing = await conn.fetchrow(
+            "SELECT id FROM upgrade_requests WHERE vendor_id=$1 AND status='pending'",
+            vendor_id,
+        )
+        if existing is None:
+            raise RuntimeError('upgrade_request race condition: pending request disappeared')
+        return str(existing['id'])
+
+
+async def list_upgrade_requests(status: str | None = None) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        base_sql = '''SELECT ur.id, ur.vendor_id, ur.status, ur.created_at,
+                             ur.rejection_reason,
+                             v.name AS vendor_name, v.email AS vendor_email,
+                             v.counties AS vendor_counties,
+                             v.application_status AS vendor_application_status
+                      FROM upgrade_requests ur
+                      JOIN vendors v ON v.id = ur.vendor_id'''
+        if status:
+            rows = await conn.fetch(base_sql + ' WHERE ur.status = $1 ORDER BY ur.created_at DESC', status)
+        else:
+            rows = await conn.fetch(base_sql + ' ORDER BY ur.created_at DESC')
+        return [
+            {
+                'id': str(r['id']),
+                'vendorId': r['vendor_id'],
+                'vendorName': r['vendor_name'],
+                'vendorEmail': r['vendor_email'] or '',
+                'vendorCounties': list(r['vendor_counties'] or []),
+                'vendorApplicationStatus': r['vendor_application_status'],
+                'status': r['status'],
+                'rejectionReason': r['rejection_reason'],
+                'createdAt': r['created_at'].isoformat(),
+            }
+            for r in rows
+        ]
+
+
+async def approve_upgrade_request(request_id: str) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            '''WITH req AS (
+                   UPDATE upgrade_requests
+                   SET status = 'approved'
+                   WHERE id = $1::uuid AND status = 'pending'
+                   RETURNING vendor_id
+               ),
+               vnd AS (
+                   UPDATE vendors
+                   SET subscription_status = 'advanced'
+                   WHERE id = (SELECT vendor_id FROM req)
+                   RETURNING id
+               )
+               SELECT vendor_id FROM req''',
+            request_id,
+        )
+        return row is not None
+
+
+async def reject_upgrade_request(request_id: str, reason: str | None = None) -> bool:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE upgrade_requests SET status='rejected', rejection_reason=$2 WHERE id=$1::uuid AND status='pending'",
+                request_id, reason,
+            )
+            return result.endswith('1')
+    except Exception:
+        return False
+
+
+async def set_places_cache(key: str, data: list | dict) -> None:
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                '''INSERT INTO places_cache (cache_key, data)
+                   VALUES ($1, $2::jsonb)
+                   ON CONFLICT (cache_key) DO UPDATE
+                   SET data = EXCLUDED.data, cached_at = NOW()''',
+                key, json.dumps(data, ensure_ascii=False),
+            )
+    except Exception:
+        pass

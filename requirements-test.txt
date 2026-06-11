@@ -1,0 +1,10 @@
+pytest>=8.0
+pytest-cov>=5.0
+pvlib>=0.10
+numpy>=1.24
+pandas>=2.0
+pyproj>=3.5
+shapely>=2.0
+asyncpg>=0.29
+httpx>=0.25
+cachetools>=5.0

@@ -7,20 +7,30 @@ export const TWEAKS_DEFAULTS = {
   density: 'comfortable' as const,
 };
 
-export const MISCONCEPTIONS = [
+export type Misconception = {
+  myth: string;
+  truth: string;
+  stat: string;
+  statLabel: string;
+  compare: string;
+  statTip?: string;
+};
+
+export const MISCONCEPTIONS: Misconception[] = [
   {
     myth: '北部日照不足，裝了也沒用',
-    truth: '北部容量因數約 12.47%，與德國、日本水準相當，太陽能在北部依然可行。',
+    truth: '北部容量因數約 12.47%，與德國、日本水準相當，即使日照最少的基隆市每年仍可發電 965 kWh/kWp，太陽能在北部依然可行。',
     stat: '12.47%',
     statLabel: '北部容量因數',
     compare: '德國 11% · 日本 13%',
+    statTip: '容量因數 = 全年總發電量 ÷（裝置容量 × 8,760 小時）\n代表發電設備的穩定性，越高越穩定。太陽能受天氣影響，台灣平均約 14%，與德國 11%、日本 13% 相當。\n\n各縣市年發電量（kWh/kWp，台電 114 年）：\n基隆 965｜台北 1,005｜台中 1,201\n彰化 1,225｜金門 1,286｜連江 1,353\n全台平均：1,158',
   },
   {
     myth: '裝了太陽能板，室內會更熱',
-    truth: '板子擋住屋頂直射陽光，實測室內溫度反而降低 2–4°C，空調需求下降。',
-    stat: '−3.1°C',
-    statLabel: '頂樓室內降溫',
-    compare: '夏季實測平均值',
+    truth: '太陽能板遮擋屋頂直射陽光，實測頂樓室內可降溫 3–5°C，既發電又隔熱，空調需求下降。',
+    stat: '−3∼5°C',
+    statLabel: '頂樓室內降溫實測',
+    compare: '多項現場測量結果',
   },
   {
     myth: '太陽能板很難回收，對環境有害',
@@ -38,12 +48,13 @@ export const MISCONCEPTIONS = [
   },
   {
     myth: '多餘的電台電不收，自己用不完',
-    truth: '台電躉購制度 (FIT) 保障收購 20 年，小容量屋頂每度最高 5.7 元。',
-    stat: '$5.7 /度',
-    statLabel: 'FIT 最高躉購費率',
+    truth: '台電躉購制度 (FIT) 保障收購 20 年，10kW 以下屋頂每度 5.6279 元，費率依容量分級、一簽 20 年不變。',
+    stat: '5.6279元',
+    statLabel: '10kW以下 FIT 費率',
     compare: '保障 20 年收購',
+    statTip: '躉購制度（FIT）：政府保證以固定價格收購多餘綠電，一簽保障 20 年。費率每年由能源署公告，且逐年降低——越早申請、鎖定的費率越高。\n\n115年度屋頂型費率（依裝置容量分級）：\n≤10kW → 5.6279 元/度\n10–20kW → 5.3819 元/度\n20–50kW → 4.2505 元/度\n50–100kW → 4.0459 元/度',
   },
-] as const;
+];
 
 export const GOALS = [
   { id: 'annual',  title: '全年總發電量最高', desc: '讓板子一整年盡量多發電',            icon: 'annual' },
@@ -54,33 +65,39 @@ export const GOALS = [
   { id: 'roi',     title: '投資回收最快',     desc: '最快看到錢回來',                   icon: 'roi' },
 ] as const;
 
-export const SUBSIDIES: Record<string, { amount: number; per: string; source: string }> = {
+export const PANEL_GRADES = [
+  { id: 'entry',    label: '入門款', costPerKw: 40000, efficiency: '18–19%', kWpPerM2: 0.154, perfRatio: 0.74, desc: '基礎效率，適合預算有限的屋主' },
+  { id: 'standard', label: '標準款', costPerKw: 55000, efficiency: '20–21%', kWpPerM2: 0.170, perfRatio: 0.78, desc: '市場主流，CP 值最高', recommended: true },
+  { id: 'premium',  label: '高效款', costPerKw: 70000, efficiency: '22–23%', kWpPerM2: 0.187, perfRatio: 0.82, desc: '高效模組，同樣屋頂裝更多電' },
+] as const;
+
+export const SUBSIDIES: Record<string, { amount: number; per: string; source: string; updatedAt: string; url: string }> = {
   // 六都
-  '台北市': { amount: 15000, per: 'kW', source: '台北市政府產業發展局' },
-  '新北市': { amount: 12000, per: 'kW', source: '新北市政府環境保護局' },
-  '桃園市': { amount: 10000, per: 'kW', source: '桃園市政府環境保護局' },
-  '台中市': { amount: 10000, per: 'kW', source: '台中市政府環境保護局' },
-  '台南市': { amount: 15000, per: 'kW', source: '台南市政府經濟發展局' },
-  '高雄市': { amount: 18000, per: 'kW', source: '高雄市政府經濟發展局' },
+  '台北市': { amount: 15000, per: 'kW', source: '台北市政府產業發展局', updatedAt: '2025-01', url: 'https://www.doed.gov.taipei/' },
+  '新北市': { amount: 12000, per: 'kW', source: '新北市政府環境保護局', updatedAt: '2025-01', url: 'https://www.epd.ntpc.gov.tw/' },
+  '桃園市': { amount: 10000, per: 'kW', source: '桃園市政府環境保護局', updatedAt: '2025-01', url: 'https://epb.tycg.gov.tw/' },
+  '台中市': { amount: 10000, per: 'kW', source: '台中市政府環境保護局', updatedAt: '2025-01', url: 'https://epb.taichung.gov.tw/' },
+  '台南市': { amount: 15000, per: 'kW', source: '台南市政府經濟發展局', updatedAt: '2025-01', url: 'https://ecodev.tainan.gov.tw/' },
+  '高雄市': { amount: 18000, per: 'kW', source: '高雄市政府經濟發展局', updatedAt: '2025-01', url: 'https://eda.kcg.gov.tw/' },
   // 省轄市
-  '基隆市': { amount: 10000, per: 'kW', source: '基隆市政府產業發展處' },
-  '新竹市': { amount: 10000, per: 'kW', source: '新竹市政府環境保護處' },
-  '嘉義市': { amount: 12000, per: 'kW', source: '嘉義市政府環境保護局' },
+  '基隆市': { amount: 10000, per: 'kW', source: '基隆市政府產業發展處', updatedAt: '2025-01', url: 'https://did.klcg.gov.tw/' },
+  '新竹市': { amount: 10000, per: 'kW', source: '新竹市政府環境保護處', updatedAt: '2025-01', url: 'https://www.hcepb.gov.tw/' },
+  '嘉義市': { amount: 12000, per: 'kW', source: '嘉義市政府環境保護局', updatedAt: '2025-01', url: 'https://epb.chiayi.gov.tw/' },
   // 縣
-  '新竹縣': { amount: 8000,  per: 'kW', source: '新竹縣政府環境保護局' },
-  '苗栗縣': { amount: 8000,  per: 'kW', source: '苗栗縣政府建設及工程處' },
-  '彰化縣': { amount: 10000, per: 'kW', source: '彰化縣政府環境保護局' },
-  '南投縣': { amount: 8000,  per: 'kW', source: '南投縣政府建設處' },
-  '雲林縣': { amount: 10000, per: 'kW', source: '雲林縣政府工務處' },
-  '嘉義縣': { amount: 10000, per: 'kW', source: '嘉義縣政府環境保護局' },
-  '屏東縣': { amount: 12000, per: 'kW', source: '屏東縣政府環境保護局' },
-  '宜蘭縣': { amount: 8000,  per: 'kW', source: '宜蘭縣政府建設處' },
-  '花蓮縣': { amount: 8000,  per: 'kW', source: '花蓮縣政府建設處' },
-  '台東縣': { amount: 8000,  per: 'kW', source: '台東縣政府建設處' },
+  '新竹縣': { amount: 8000,  per: 'kW', source: '新竹縣政府環境保護局',   updatedAt: '2025-01', url: 'https://epb.hsinchu.gov.tw/' },
+  '苗栗縣': { amount: 8000,  per: 'kW', source: '苗栗縣政府建設及工程處', updatedAt: '2025-01', url: 'https://www.miaoli.gov.tw/' },
+  '彰化縣': { amount: 10000, per: 'kW', source: '彰化縣政府環境保護局',   updatedAt: '2025-01', url: 'https://epb.chcg.gov.tw/' },
+  '南投縣': { amount: 8000,  per: 'kW', source: '南投縣政府建設處',       updatedAt: '2025-01', url: 'https://www.nantou.gov.tw/' },
+  '雲林縣': { amount: 10000, per: 'kW', source: '雲林縣政府工務處',       updatedAt: '2025-01', url: 'https://www.yunlin.gov.tw/' },
+  '嘉義縣': { amount: 10000, per: 'kW', source: '嘉義縣政府環境保護局',   updatedAt: '2025-01', url: 'https://epb.cyhg.gov.tw/' },
+  '屏東縣': { amount: 12000, per: 'kW', source: '屏東縣政府環境保護局',   updatedAt: '2025-01', url: 'https://epb.pthg.gov.tw/' },
+  '宜蘭縣': { amount: 8000,  per: 'kW', source: '宜蘭縣政府建設處',       updatedAt: '2025-01', url: 'https://www.e-land.gov.tw/' },
+  '花蓮縣': { amount: 8000,  per: 'kW', source: '花蓮縣政府建設處',       updatedAt: '2025-01', url: 'https://www.hl.gov.tw/' },
+  '台東縣': { amount: 8000,  per: 'kW', source: '台東縣政府建設處',       updatedAt: '2025-01', url: 'https://www.taitung.gov.tw/' },
   // 離島
-  '澎湖縣': { amount: 15000, per: 'kW', source: '澎湖縣政府建設處' },
-  '金門縣': { amount: 15000, per: 'kW', source: '金門縣政府建設局' },
-  '連江縣': { amount: 15000, per: 'kW', source: '連江縣政府建設局' },
+  '澎湖縣': { amount: 15000, per: 'kW', source: '澎湖縣政府建設處', updatedAt: '2025-01', url: 'https://www.penghu.gov.tw/' },
+  '金門縣': { amount: 15000, per: 'kW', source: '金門縣政府建設局', updatedAt: '2025-01', url: 'https://www.kinmen.gov.tw/' },
+  '連江縣': { amount: 15000, per: 'kW', source: '連江縣政府建設局', updatedAt: '2025-01', url: 'https://www.matsu.gov.tw/' },
 };
 
 export const SUGGESTIONS: AddressOption[] = [
@@ -94,4 +111,32 @@ export const TW_IRRADIANCE: Record<Region, number[]> = {
   '北部': [2.6, 2.8, 3.5, 3.9, 4.2, 4.4, 4.8, 4.6, 4.1, 3.6, 2.9, 2.5],
   '中部': [3.1, 3.4, 4.0, 4.5, 4.8, 4.9, 5.3, 5.0, 4.6, 4.1, 3.4, 2.9],
   '南部': [3.6, 3.9, 4.5, 4.9, 5.2, 5.1, 5.5, 5.2, 4.9, 4.5, 3.9, 3.4],
+  '東部': [3.2, 3.5, 4.0, 4.3, 4.5, 4.4, 4.8, 4.7, 4.4, 4.0, 3.5, 3.1],
+};
+
+// Fallback monthly temperature (°C) and wind speed (m/s) when NASA POWER API is unavailable.
+// Derived from CWA long-term averages; used by the Faiman T_cell model in compute.ts.
+export const DEFAULT_TEMP: Record<Region, number[]> = {
+  '北部': [16, 16, 18, 22, 25, 28, 30, 30, 27, 24, 21, 17],
+  '中部': [17, 17, 20, 24, 27, 29, 31, 31, 28, 25, 22, 18],
+  '南部': [19, 20, 23, 26, 29, 30, 31, 31, 29, 26, 23, 20],
+  '東部': [18, 19, 22, 25, 28, 30, 31, 31, 28, 25, 22, 19],
+};
+
+export const DEFAULT_WIND: Record<Region, number[]> = {
+  '北部': [3.5, 3.2, 3.0, 2.8, 2.5, 2.3, 3.0, 3.2, 2.8, 3.0, 3.5, 3.8],
+  '中部': [2.8, 2.6, 2.5, 2.3, 2.0, 1.8, 2.2, 2.5, 2.2, 2.3, 2.8, 3.0],
+  '南部': [3.2, 3.0, 2.8, 2.5, 2.2, 2.0, 2.5, 2.8, 2.5, 2.8, 3.2, 3.5],
+  '東部': [4.0, 3.8, 3.5, 3.0, 2.8, 2.5, 3.2, 3.5, 3.0, 3.5, 4.0, 4.2],
+};
+
+// Calibrated against TPC 114-year full-FIT data (860万 kWp, 19 counties).
+// Corrects for real-world losses not captured in theoretical GHI:
+//   non-optimal tilt/orientation, soiling, partial shading, aging-fleet mix.
+// Derived empirically: actual county average / model prediction per region.
+export const REGION_CALIBRATION: Record<Region, number> = {
+  '北部': 1.00, // MAPE 6.0%, no systematic bias (weighted actual ≈ predicted) — no correction
+  '中部': 1.00, // MAPE 2.7%, already accurate (weighted actual 1194 vs predicted 1187) — no correction
+  '南部': 0.89, // systematic +11.9% overestimate; factor = 1/1.119 (ERA5 GHI bias + high temp losses)
+  '東部': 0.95, // systematic +5.4% overestimate; factor = 1/1.054
 };
