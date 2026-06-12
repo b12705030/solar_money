@@ -1,0 +1,89 @@
+---
+title: "本地安裝"
+description: "在本機設定 Solar Money 開發環境"
+---
+
+本節供**開發者**在本機執行專案。一般使用者請直接使用已部署的網站，無需安裝。
+
+## 前置需求
+
+- Node.js 18+
+- Python 3.11+
+- CockroachDB（[cockroachlabs.cloud](https://cockroachlabs.cloud/) 免費方案）
+
+## 安裝步驟
+
+<Steps>
+  <Step title="Clone 並安裝前端依賴">
+    ```bash
+    git clone https://github.com/b12705030/solar_money.git
+    cd solar_money
+    npm install
+    ```
+  </Step>
+
+  <Step title="設定前端環境變數">
+    ```bash
+    cp .env.local.example .env.local
+    ```
+
+    | 變數 | 用途 |
+    |------|------|
+    | `NEXT_PUBLIC_MAPBOX_TOKEN` | 地圖渲染、3D 建物 |
+    | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | 地址自動完成（需開啟 Places API） |
+    | `NEXT_PUBLIC_API_URL` | 後端位址，本地保持 `http://localhost:8000` |
+  </Step>
+
+  <Step title="設定 Python 虛擬環境">
+    ```bash
+    python3.11 -m venv .venv
+    source .venv/bin/activate   # macOS / Linux
+    pip install -r requirements.txt
+    ```
+  </Step>
+
+  <Step title="設定後端環境變數">
+    ```bash
+    cp backend/.env.example backend/.env
+    ```
+
+    | 變數 | 說明 |
+    |------|------|
+    | `DATABASE_URL` | CockroachDB 連線字串（必填） |
+    | `JWT_SECRET` | JWT 簽章密鑰 |
+    | `ADMIN_SECRET` | 管理員 API secret，本地預設 `dev-admin-secret` |
+    | `CORS_ORIGINS` | 允許的前端來源，本地可不設 |
+  </Step>
+
+  <Step title="啟動服務">
+    ```bash
+    # 終端 1：前端
+    npm run dev
+    # → http://localhost:3000
+
+    # 終端 2：後端
+    uvicorn backend.main:app --reload
+    # → http://localhost:8000
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  部署至正式環境前，務必更換 `JWT_SECRET` 與 `ADMIN_SECRET`，並正確設定 `CORS_ORIGINS`。
+</Warning>
+
+## 預覽文件站
+
+```bash
+cd docs
+mint dev
+```
+
+## 相關文件
+
+專案根目錄另有：
+
+- `README.md` — 完整工程導覽
+- `SPEC.md` — 產品功能規格
+- `ROADMAP.md` — 開發排程
+- `backend/DATABASE.md` — 資料庫架構

@@ -1,0 +1,78 @@
+---
+title: "系統架構"
+description: "屋頂日光前後端技術架構與資料流"
+---
+
+## 系統架構
+
+```
+瀏覽器（React / Next.js）
+  │
+  ├─ Mapbox GL JS         3D 建物渲染、陰影圖層、地形
+  ├─ Google Places API    地址自動完成
+  │
+  └─ HTTP（fetch）
+        │
+        ▼
+後端（FastAPI / Python）
+  │
+  ├─ pvlib NREL SPA       太陽方位角、仰角計算
+  ├─ Shapely + pyproj     陰影多邊形幾何計算
+  ├─ GBA DB               全台建物資料（510K 棟）
+  ├─ DEM（20m → 100m）    地形高程與遮蔽
+  ├─ JWT + bcrypt         會員與廠商認證
+  │
+  └─ asyncpg → CockroachDB
+```
+
+## 前端結構
+
+| 目錄 | 說明 |
+|------|------|
+| `src/app/` | Next.js App Router 入口、layout、vendor/admin 頁面 |
+| `src/screens/` | 評估 wizard 各步驟（Landing、Address、Usage、Goal、Params、Results） |
+| `src/components/` | MapView、AuthModal、HistoryDrawer 等共用元件 |
+| `src/lib/compute.ts` | 核心試算邏輯（發電量、回本年限）— 純前端計算 |
+| `src/lib/constants.ts` | 縣市補助、面板等級、日照資料 |
+
+## 後端結構
+
+| 檔案 | 說明 |
+|------|------|
+| `backend/main.py` | API 路由與 FastAPI app |
+| `backend/shadow.py` | 陰影計算（pvlib + Shapely + DEM） |
+| `backend/db.py` | 資料庫連線、GBA 建物查詢、快取 |
+| `backend/auth.py` | JWT 與密碼雜湊 |
+| `backend/dem_tiles.py` | DEM → Mapbox terrain-rgb tile server |
+
+## 資料庫主要資料表
+
+| 資料表 | 用途 |
+|--------|------|
+| `gba_buildings` | GBA 建物永久資料（51 萬棟） |
+| `climate_annual` / `climate_monthly` | 鄉鎮市氣候資料（NASA POWER） |
+| `shadow_cache` | 陰影預計算快取 |
+| `assessments` | 使用者評估紀錄 |
+| `accounts` | 會員帳號（user / vendor / admin） |
+| `vendors` / `inquiries` | 廠商資料與詢價紀錄 |
+
+詳細 schema 見專案內 `backend/DATABASE.md`。
+
+## 建物資料來源優先序
+
+1. **GBA 離線 DB**（CockroachDB `gba_buildings`）— 預設
+2. **本地 fallback**（`taiwan_polygon_fallback.ndjson.gz`）— DB miss 時
+3. **OSM Overpass API** — 最終備援
+
+## 試算邏輯位置
+
+發電量與財務試算在**前端**完成（`src/lib/compute.ts`），不需呼叫後端：
+
+```
+容量 = 屋頂坪數 × 3.3 m²/坪 × 可用比例 × 0.165 kW/m²
+月發電量 = 容量 × 日照強度 × 天數 × 性能比 × 目標係數
+年收益 = 自用省電 + 台電躉購
+回本年限 = 實際自付 ÷ 年收益
+```
+
+後端主要負責建物查詢、陰影計算、氣候資料、會員與廠商 API。

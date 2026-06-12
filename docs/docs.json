@@ -1,1 +1,36 @@
-
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "屋頂日光",
+  "description": "台灣屋頂太陽能自助評估 — 陰影分析、投資試算、廠商媒合",
+  "colors": {
+    "primary": "#2e6a4e",
+    "light": "#f7b716",
+    "dark": "#1e4a36"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "使用指南",
+        "pages": [
+          "index",
+          "guide/region-analysis"
+        ]
+      },
+      {
+        "group": "開發者指南",
+        "pages": [
+          "developer-guide/installation",
+          "developer-guide/architecture",
+          "developer-guide/shadow-calculation",
+          "developer-guide/api-reference"
+        ]
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/b12705030/solar_money"
+    }
+  }
+}

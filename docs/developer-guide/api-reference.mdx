@@ -1,0 +1,72 @@
+---
+title: "API 參考"
+description: "FastAPI 後端 REST API 端點總覽"
+---
+
+後端預設位於 `http://localhost:8000`（本地開發）。正式環境由 `NEXT_PUBLIC_API_URL` 指定。
+
+互動式 API 文件：`http://localhost:8000/docs`
+
+## 健康檢查
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/healthz` | 服務健康檢查 |
+
+## 建物資料
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/buildings` | 指定範圍建物（GBA DB → fallback → OSM）<br/>參數：`lat`, `lng`, `radius_m` 或 bbox |
+
+## 陰影計算
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `POST` | `/api/shadow` | 單一建物陰影 |
+| `GET` | `/api/shadows` | bbox 內所有建物陰影 |
+| `POST` | `/api/shadows/from-features` | 前端送建物清單，計算當前時刻陰影 |
+| `POST` | `/api/shadows/precompute` | 預計算 6–19 時全天陰影並快取 |
+
+## DEM 與氣候
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/dem/tile/{z}/{x}/{y}.png` | Mapbox terrain-rgb 格式 DEM tile |
+| `GET` | `/api/township` | 依座標查鄉鎮氣候與最佳傾角 |
+| `GET` | `/api/climate/{township_code}` | 鄉鎮年均統計與 12 月 GHI |
+
+## 評估紀錄
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `POST` | `/api/assessments` | 儲存匿名評估 |
+| `GET` | `/api/assessments` | 查詢匿名 user 歷史（`user_id` 參數） |
+
+## 廠商
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `GET` | `/api/vendors` | 依縣市推薦廠商 |
+| `GET` | `/api/vendors/{id}` | 廠商詳情與作品集 |
+| `POST` | `/api/vendors/apply` | 廠商入駐申請 |
+| `POST` | `/api/vendors/{id}/inquire` | 民眾詢價 |
+
+## 會員認證
+
+| Method | Endpoint | 說明 |
+|--------|----------|------|
+| `POST` | `/api/auth/register` | 註冊 |
+| `POST` | `/api/auth/login` | 登入，回傳 JWT |
+
+## 需 JWT 的端點
+
+部分端點需在 `Authorization: Bearer <token>` 帶入 JWT：
+
+- **用戶**（`role=user`）：`/api/me/assessments`、`/api/me/inquiries` 等
+- **廠商**（`role=vendor`）：`/api/me/vendor/*`
+- **管理員**（`role=admin` 或 `X-Admin-Secret`）：`/api/admin/*`
+
+<Note>
+  完整端點列表與參數說明見專案 `README.md`。
+</Note>
