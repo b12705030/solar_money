@@ -11,7 +11,7 @@
 | 功能 | 說明 |
 |------|------|
 | 地址搜尋 | Google Places API 自動完成，限台灣地區 |
-| 建物偵測 | 以 **GBA（GlobalBuildingAtlas）** Neon DB 為主要來源（全台 + 離島 51 萬筆）；DB 無資料時 fallback 至本地 `taiwan_polygon_fallback.ndjson.gz`（256 萬筆，含澎湖、金門、馬祖）；最終備援為 OSM Overpass API |
+| 建物偵測 | 以 **GBA（GlobalBuildingAtlas）** CockroachDB 為主要來源（全台 + 離島 51 萬筆）；DB 無資料時 fallback 至本地 `taiwan_polygon_fallback.ndjson.gz`（256 萬筆，含澎湖、金門、馬祖）；最終備援為 OSM Overpass API |
 | 3D 陰影預覽 | 依太陽位置即時計算周圍建物陰影（pvlib NREL SPA），可拖曳時間軸 6–19 時；結合 20m DEM 考慮地形遮蔽；**每棟建物獨立查詢 DEM 地表高程**，坡地陰影長度加入地形高差修正。選中建物以灰色顯示（與未選中建物相同），陰影疊加清晰可見；橘色外框線 + pin 標示選中狀態 |
 | 3D 地形 | Mapbox terrain-rgb 3D 地形顯示（exaggeration 1.0）+ hillshade 山體陰影；地圖左下角可一鍵切換開/關 |
 | 建築類型 | 獨立建物 / 社區大樓選擇；社區大樓可輸入戶數，依 TPC 累進費率分戶計算收益 |
@@ -141,7 +141,7 @@ solar_money/
 │   └─ DATABASE.md               資料庫架構詳細說明
 │
 ├─ scripts/                      資料前置作業腳本（一次性 / 維護用）
-│   ├─ import_gba_to_db.py       GBA 建物匯入 Neon gba_buildings（含離島，詳見 SETUP_GBA_DATA.md）
+│   ├─ import_gba_to_db.py       GBA 建物匯入 CockroachDB gba_buildings（含離島，詳見 SETUP_GBA_DATA.md）
 │   ├─ export_polygon_fallback.py GBA Polygon → taiwan_polygon_fallback.ndjson.gz
 │   ├─ build_dem_cache.py        20m GeoTIFF → 100m numpy .npy（需本機有原始 TIF）
 │   ├─ upload_dem.py             上傳 .npy 至 Neon dem_cache（bytea）
@@ -160,9 +160,6 @@ solar_money/
 │   ├─ ODbLPolygon/              GBA ODbLPolygon GeoJSON（OSM 授權，不進 git，本機自備）
 │   └─ 不分幅_全台20MDEM(2025)/  721 MB 原始 GeoTIFF（不進 git，本機自備）
 │
-├─ project/                      設計原型（已完成實作，僅供參考）
-│   └─ *.html / *.jsx / *.css   Claude Design 匯出的 HTML 原型
-│
 ├─ .env.local                    前端環境變數（不 commit，見 .env.local.example）
 ├─ .env.local.example            前端環境變數範本
 ├─ requirements.txt              Python 依賴
@@ -178,7 +175,7 @@ solar_money/
 ### 前置需求
 
 - Node.js 18+
-- Python 3.11+
+- Python 3.13+
 - CockroachDB（`cockroachlabs.cloud` 免費方案；舊文件提到的 Neon 為遷移前方案，已不適用）
 
 ### 1. Clone & 安裝前端依賴
@@ -205,12 +202,12 @@ cp .env.local.example .env.local
 ### 3. 設定 Python 虛擬環境
 
 ```bash
-# Windows（指定 3.11）
-py -3.11 -m venv .venv
+# Windows（指定 3.13）
+py -3.13 -m venv .venv
 .venv\Scripts\Activate.ps1
 
 # macOS / Linux
-python3.11 -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
@@ -582,15 +579,10 @@ T_cell = 氣溫 + 校正後日射量 ÷ (25 + 6.84 × 風速)      ← Faiman (2
 
 ### 注意事項
 
-- **圖片儲存**：廠商 Logo 和作品集施工照上傳至 **Cloudflare R2**（免費方案：10 GB 儲存 + 零 egress 費用），DB 只存公開 URL。現有 base64 資料可用 `python -m backend.migrate_logos` 遷移。
-- **（舊 Neon 部署備註）Neon cold start**：Neon serverless 免費方案有連線數限制，後端已用 asyncpg connection pool 處理，應對短暫高峰沒問題。目前 runtime 為 CockroachDB，此行為不適用。
+- **圖片儲存**：廠商 Logo 和作品集施工照上傳至 **Cloudflare R2**（免費方案：10 GB 儲存 + 零 egress 費用），DB 只存公開 URL。
 - **Railway free tier**：每月 $5 額度，睡眠機制會讓第一個請求慢幾秒；如需避免可升級 Hobby 方案（$5/月）。
 
 ---
-
-## 關於 `project/` 資料夾
-
-`project/` 裡面是開發初期用 Claude Design 工具產出的 HTML 原型，已全部實作為 React/Next.js。目前保留僅供設計參考，不影響運作。
 
 ---
 ### 5. 初始化資料（首次設定，一次性）
@@ -601,7 +593,7 @@ T_cell = 氣溫 + 校正後日射量 ÷ (25 + 6.84 × 風速)      ← Faiman (2
 python scripts/build_dem_cache.py
 python scripts/upload_dem.py
 
-# 氣候資料：匯入 368 鄉鎮市年均 + 月典型值至 Neon
+# 氣候資料：匯入 368 鄉鎮市年均 + 月典型值至 CockroachDB
 python scripts/import_climate.py
 ```
 
@@ -633,9 +625,6 @@ python scripts/import_climate.py
 # 匯入台灣主島（e120 tiles，本機需有 data/LoD1/ 與 data/Polygon/ 檔案）
 python scripts/import_gba_to_db.py --tile e120_n25_e125_n20 --bbox 119.8,21.9,122.1,25.4 --source both
 python scripts/import_gba_to_db.py --tile e120_n30_e125_n25 --bbox 119.8,25.8,122.1,26.5 --source both
-
-# 下載並匯入 e115 離島 tile（澎湖/金門/馬祖）
-python scripts/download_gba_tiles.py          # 下載 + 自動匯入
 
 # 更新離線 fallback（涵蓋全台 + 離島）
 python scripts/export_polygon_fallback.py --bbox 118.0,21.0,123.0,26.5
