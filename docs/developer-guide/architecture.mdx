@@ -5,25 +5,53 @@ description: "屋頂日光前後端技術架構與資料流"
 
 ## 系統架構
 
+前端以 React / Next.js 在瀏覽器執行，透過 HTTP 呼叫後端 FastAPI；地圖渲染與地址搜尋則直接連線外部服務。後端負責建物查詢、陰影計算與會員 API，並以 asyncpg 存取 CockroachDB。
+
+<div className="chart-hint">
+  <span className="chart-hint__icon" aria-hidden="true">i</span>
+  <p>圖表較大時，請使用右下角的<strong>縮放與方向鍵</strong>瀏覽。箭頭表示主要資料或請求流向。</p>
+</div>
+
+```mermaid actions={true}
+%%{init: {"themeVariables": {"fontSize": "13px"}, "flowchart": {"nodeSpacing": 24, "rankSpacing": 28, "padding": 12, "diagramPadding": 24, "htmlLabels": true, "subGraphTitleMargin": {"top": 10, "bottom": 16}}, "themeCSS": ".cluster-label foreignObject { overflow: visible !important; width: 100% !important; text-align: center !important; } .cluster-label foreignObject > div { text-align: center !important; display: flex !important; justify-content: center !important; width: 100% !important; }"}}%%
+flowchart LR
+    subgraph EXT["`**External APIs**`"]
+        mapbox["Mapbox GL JS"]
+        places["Google Places"]
+        mapbox ~~~ places
+    end
+
+    subgraph FE["`**Browser**`"]
+        nextjs["Nextjs App"]
+    end
+
+    subgraph BE["`**Backend**`"]
+        direction TB
+        api["FastAPI API"]
+        shadow["Shadow Calculation"]
+        spatial["Spatial Data"]
+        auth["JWT Auth"]
+        db[("CockroachDB")]
+    end
+
+    mapbox --> nextjs
+    places --> nextjs
+    nextjs -->|HTTP| api
+    api --> shadow --> spatial
+    api --> auth
+    api --> db
 ```
-瀏覽器（React / Next.js）
-  │
-  ├─ Mapbox GL JS         3D 建物渲染、陰影圖層、地形
-  ├─ Google Places API    地址自動完成
-  │
-  └─ HTTP（fetch）
-        │
-        ▼
-後端（FastAPI / Python）
-  │
-  ├─ pvlib NREL SPA       太陽方位角、仰角計算
-  ├─ Shapely + pyproj     陰影多邊形幾何計算
-  ├─ GBA DB               全台建物資料（510K 棟）
-  ├─ DEM（20m → 100m）    地形高程與遮蔽
-  ├─ JWT + bcrypt         會員與廠商認證
-  │
-  └─ asyncpg → CockroachDB
-```
+
+| 元件 | 說明 |
+|------|------|
+| Nextjs App | React / Next.js 前端應用 |
+| Mapbox GL JS | 3D 建物渲染、陰影圖層、地形 |
+| Google Places | 地址自動完成（Google Places API） |
+| FastAPI API | 後端 API 路由（`main.py`） |
+| Shadow Calculation | pvlib NREL SPA（太陽方位角、仰角）+ Shapely / pyproj（陰影多邊形） |
+| Spatial Data | GBA 建物（約 51 萬棟）與 DEM 地形（20 m 到 100 m） |
+| JWT Auth | JWT + bcrypt，會員與廠商登入 |
+| CockroachDB | 透過 asyncpg 存取主要資料表 |
 
 ## 前端結構
 
