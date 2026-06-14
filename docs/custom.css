@@ -99,26 +99,33 @@ footer {
 /* ── Mermaid workflow diagrams ─────────────────────────────── */
 
 [data-component-name="mermaid-container"] {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
   min-height: 8rem;
   margin: 0.75rem 0 1rem;
   padding: 1rem 1.25rem;
   border-radius: 0.75rem;
-  overflow: visible !important;
+  overflow: hidden !important;
+  isolation: isolate;
 }
 
 [data-component-name="mermaid-container"] .mermaid {
-  overflow: visible !important;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 [data-component-name="mermaid-container"] svg {
-  max-width: none !important;
+  display: block;
+  max-width: 100% !important;
+  height: auto;
 }
 
-[data-component-name="mermaid-container"] .cluster-label,
-[data-component-name="mermaid-container"] .cluster-label text,
-[data-component-name="mermaid-container"] .cluster-label span,
+/* Label clipping fixes — scoped to SVG labels only, not the zoom viewport */
+[data-component-name="mermaid-container"] .nodeLabel foreignObject,
 [data-component-name="mermaid-container"] .cluster-label foreignObject,
-[data-component-name="mermaid-container"] .cluster .label foreignObject {
+[data-component-name="mermaid-container"] .cluster .label foreignObject,
+[data-component-name="mermaid-container"] .edgeLabel foreignObject {
   overflow: visible !important;
 }
 
