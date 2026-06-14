@@ -90,20 +90,59 @@ footer {
   color: #f5f5f5;
 }
 
+/* Indented detail text under a bullet point */
+.list-detail {
+  padding-left: 2rem;
+  margin: 0.5rem 0 1rem;
+}
+
 /* ── Mermaid workflow diagrams ─────────────────────────────── */
 
 [data-component-name="mermaid-container"] {
-  min-height: 22rem;
-  margin: 1.25rem 0 1.75rem;
+  min-height: 8rem;
+  margin: 0.75rem 0 1rem;
+  padding: 1rem 1.25rem;
   border-radius: 0.75rem;
+  overflow: visible !important;
+}
+
+[data-component-name="mermaid-container"] .mermaid {
+  overflow: visible !important;
 }
 
 [data-component-name="mermaid-container"] svg {
   max-width: none !important;
 }
 
-/* Bold subgraph titles only — colors use native Mermaid theme */
+[data-component-name="mermaid-container"] .cluster-label,
 [data-component-name="mermaid-container"] .cluster-label text,
-[data-component-name="mermaid-container"] .cluster-label span {
+[data-component-name="mermaid-container"] .cluster-label span,
+[data-component-name="mermaid-container"] .cluster-label foreignObject,
+[data-component-name="mermaid-container"] .cluster .label foreignObject {
+  overflow: visible !important;
+}
+
+[data-component-name="mermaid-container"] .cluster-label foreignObject > div {
+  padding: 6px 12px !important;
+  line-height: 1.4 !important;
+}
+
+[data-component-name="mermaid-container"] .edgeLabel foreignObject {
+  overflow: visible !important;
+}
+
+[data-component-name="mermaid-container"] .cluster-label,
+[data-component-name="mermaid-container"] .cluster-label text,
+[data-component-name="mermaid-container"] .cluster-label span,
+[data-component-name="mermaid-container"] .cluster-label foreignObject > div {
   font-weight: 700 !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+/* Rounded corners for flowchart nodes and subgraph boxes */
+[data-component-name="mermaid-container"] .node:not(.stadium) rect,
+[data-component-name="mermaid-container"] .cluster rect {
+  rx: 8px !important;
+  ry: 8px !important;
 }

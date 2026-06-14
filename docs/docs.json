@@ -21,6 +21,7 @@
         "group": "開發者指南",
         "pages": [
           "developer-guide/installation",
+          "developer-guide/data-pipeline",
           "developer-guide/architecture",
           "developer-guide/shadow-calculation",
           "developer-guide/api-reference"
