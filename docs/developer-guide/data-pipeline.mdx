@@ -1,11 +1,11 @@
 ---
-title: "資料處理與運算流程"
+title: "資料處理與運算"
 description: "從輸入地址到發電量與投資報酬的完整計算路徑"
 ---
 
 當使用者完成一次屋頂評估時，資料依序流經五個精靈步驟：地址、用電、目標、參數、結果。其中地址與結果兩步會與後端 API 互動；中間三步在使用者填表時於瀏覽器內累積輸入，並推導出裝置容量與自付金額。最終的發電量、收益與回本年數在結果頁一次合併計算。
 
-本頁依步驟說明地址評估管線的用途與處理邏輯，步驟之間的資料流動見總覽圖。端點欄位與請求格式請見 [API 參考](/developer-guide/api-reference)，陰影幾何細節請見 [陰影計算](/developer-guide/shadow-calculation)。
+本頁依步驟說明地址評估管線的用途與處理邏輯，步驟之間的資料流動見總覽圖。端點欄位與請求格式請見 [API 參考](/developer-guide/api-reference)。
 
 ---
 
@@ -218,5 +218,4 @@ flowchart TB
 ## 相關文件
 
 - **[系統架構](/developer-guide/architecture)** — 前後端模組與技術堆疊
-- **[陰影計算](/developer-guide/shadow-calculation)** — 地圖陰影 API 與幾何演算法
 - **[API 參考](/developer-guide/api-reference)** — 端點欄位清單
