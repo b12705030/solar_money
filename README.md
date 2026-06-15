@@ -4,7 +4,7 @@
 
 ## 文件
 
-完整說明以 [Mintlify 文件](docs/) 為準，包含使用指南、開發者指南與互動式 API 參考。
+完整說明以 [Mintlify 文件](https://solarium-1f74f072.mintlify.app/) 為準，包含使用指南、開發者指南與互動式 API 參考。
 
 ```bash
 cd docs && npx mintlify dev
