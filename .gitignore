@@ -8,6 +8,7 @@ node_modules/
 
 # Python
 .venv/
+.venv-openapi/
 __pycache__/
 *.pyc
 

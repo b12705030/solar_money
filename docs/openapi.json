@@ -1,0 +1,4071 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Solar Money API",
+    "version": "0.1.0",
+    "description": "Rooftop solar assessment API — buildings, shadows, climate, assessments, and vendor matching."
+  },
+  "paths": {
+    "/api/shadow": {
+      "post": {
+        "summary": "Compute Shadow",
+        "operationId": "compute_shadow_api_shadow_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShadowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShadowResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Shadows"
+        ]
+      }
+    },
+    "/api/shadows": {
+      "get": {
+        "summary": "Get All Shadows",
+        "description": "Fetch OSM buildings inside the bbox, compute their shadow polygons via pvlib,\nand return a GeoJSON FeatureCollection.",
+        "operationId": "get_all_shadows_api_shadows_get",
+        "parameters": [
+          {
+            "name": "min_lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Min Lon"
+            }
+          },
+          {
+            "name": "min_lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Min Lat"
+            }
+          },
+          {
+            "name": "max_lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Max Lon"
+            }
+          },
+          {
+            "name": "max_lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Max Lat"
+            }
+          },
+          {
+            "name": "local_hour",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 23,
+              "minimum": 0,
+              "title": "Local Hour"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Shadows"
+        ]
+      }
+    },
+    "/api/shadows/precompute": {
+      "post": {
+        "summary": "Precompute",
+        "description": "Compute shadows for all daylight hours (6–19). DB cache hit → instant; miss → compute + store.",
+        "operationId": "precompute_api_shadows_precompute_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShadowFromFeaturesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Shadows"
+        ]
+      }
+    },
+    "/api/sun-times/taiwan": {
+      "get": {
+        "summary": "Taiwan Sun Times",
+        "description": "Return today's sunrise/sunset for Taiwan (computed once per day, cached in memory).",
+        "operationId": "taiwan_sun_times_api_sun_times_taiwan_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "Terrain & Climate"
+        ]
+      }
+    },
+    "/api/usable-fraction": {
+      "post": {
+        "summary": "Usable Fraction Endpoint",
+        "description": "Calculate usable roof fraction for the target building.\nFetches neighbouring buildings from GBA DB (radius ~200 m) rather than\nrelying on whatever the frontend happens to have rendered.\nReturns usable_fraction (0–1) and setback_area_m2.",
+        "operationId": "usable_fraction_endpoint_api_usable_fraction_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsableFractionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Shadows"
+        ]
+      }
+    },
+    "/api/shadows/from-features": {
+      "post": {
+        "summary": "Shadows From Features",
+        "operationId": "shadows_from_features_api_shadows_from_features_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShadowFromFeaturesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Shadows"
+        ]
+      }
+    },
+    "/api/assessments": {
+      "post": {
+        "summary": "Create Assessment",
+        "operationId": "create_assessment_api_assessments_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssessmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Assessments"
+        ]
+      },
+      "get": {
+        "summary": "List Assessments",
+        "operationId": "list_assessments_api_assessments_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Assessments"
+        ]
+      }
+    },
+    "/api/dem/tile/{z}/{x}/{y}.png": {
+      "get": {
+        "summary": "Dem Tile",
+        "description": "Serve Taiwan 20m DEM as Mapbox terrain-rgb PNG tiles.",
+        "operationId": "dem_tile_api_dem_tile__z___x___y__png_get",
+        "parameters": [
+          {
+            "name": "z",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Z"
+            }
+          },
+          {
+            "name": "x",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "X"
+            }
+          },
+          {
+            "name": "y",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Y"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Terrain & Climate"
+        ]
+      }
+    },
+    "/api/buildings": {
+      "get": {
+        "summary": "Api Get Buildings",
+        "description": "回傳指定範圍內的建物清單（GBA DB → OSM Overpass fallback）。\n接受兩種形式：\n- 地圖視口 bbox：?min_lon=...&min_lat=...&max_lon=...&max_lat=...\n- 點+半徑：?lat=...&lng=...&radius_m=...（預設 300m）",
+        "operationId": "api_get_buildings_api_buildings_get",
+        "parameters": [
+          {
+            "name": "min_lon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Lon"
+            }
+          },
+          {
+            "name": "min_lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Lat"
+            }
+          },
+          {
+            "name": "max_lon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Lon"
+            }
+          },
+          {
+            "name": "max_lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Lat"
+            }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lng"
+            }
+          },
+          {
+            "name": "radius_m",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 2000,
+              "default": 300,
+              "title": "Radius M"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Buildings"
+        ]
+      }
+    },
+    "/api/buildings/cache": {
+      "delete": {
+        "summary": "Clear Buildings Cache",
+        "description": "清除 GBA 建物快取，強制下次請求重新從 DB 抓取。\n需要 X-Admin-Secret header（與 ADMIN_SECRET 環境變數一致）。",
+        "operationId": "clear_buildings_cache_api_buildings_cache_delete",
+        "parameters": [
+          {
+            "name": "gba",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "清除 gba_cache",
+              "default": true,
+              "title": "Gba"
+            },
+            "description": "清除 gba_cache"
+          },
+          {
+            "name": "X-Admin-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Buildings"
+        ]
+      }
+    },
+    "/api/admin/cache/cleanup": {
+      "post": {
+        "summary": "Cleanup Stale Caches",
+        "description": "清除過期快取與廢棄資料，用於 Neon 免費 512 MB 容量管理。\n- dem_cache：.npy 已 commit 進 git，DB 備份永遠不需要\n- shadow_cache：只保留當前版本 (v4_*)，舊版 v1/v2/v3 已失效\n- osm_cache：刪除超過 7 天（永遠不會再被讀取）\n- gba_cache：刪除超過 30 天（永遠不會再被讀取）",
+        "operationId": "cleanup_stale_caches_api_admin_cache_cleanup_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/township": {
+      "get": {
+        "summary": "Get Township Climate",
+        "description": "依座標查詢最近鄉鎮市的 12 個月 NASA POWER 氣候資料，並以 pvlib 計算最佳仰角。\n前端 Results.tsx 用此取代靜態 TW_IRRADIANCE 三區常數與硬編碼 GOAL_ADJ。\n回傳：(\n  township_code, county_name,\n  monthly_ghi:  [12 floats, kWh/m²/day],\n  monthly_temp: [12 floats, °C],\n  monthly_wind: [12 floats, m/s],\n  best_angle:   int  (pvlib 最佳仰角，南向),\n  goal_adj:     [12 floats]  (POA/GHI ratio，乘上 monthly_ghi 得有效輻照)\n)",
+        "operationId": "get_township_climate_api_township_get",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Lng"
+            }
+          },
+          {
+            "name": "goal",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "annual",
+              "title": "Goal"
+            }
+          },
+          {
+            "name": "monthly_use",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Monthly Use"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Terrain & Climate"
+        ]
+      }
+    },
+    "/api/climate/{township_code}": {
+      "get": {
+        "summary": "Get Climate Data",
+        "description": "回傳指定鄉鎮市的氣候資料：\n- annual：年均統計（GHI、氣溫、風速、濕度、地理中心）\n- monthly：12 個月典型 GHI/溫度/風速/濕度\n\ntownship_code 為內政部 7 碼鄉鎮市代碼，例如 6300100（台北市中正區）。\n若資料庫尚未匯入（需先執行 scripts/import_climate.py），回傳 404。",
+        "operationId": "get_climate_data_api_climate__township_code__get",
+        "parameters": [
+          {
+            "name": "township_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Township Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Terrain & Climate"
+        ]
+      }
+    },
+    "/api/vendors": {
+      "get": {
+        "summary": "Vendors",
+        "operationId": "vendors_api_vendors_get",
+        "parameters": [
+          {
+            "name": "county",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "County"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "default": 3,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VendorResponse"
+                  },
+                  "title": "Response Vendors Api Vendors Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Vendors"
+        ]
+      }
+    },
+    "/api/vendors/apply": {
+      "post": {
+        "summary": "Apply Vendor",
+        "operationId": "apply_vendor_api_vendors_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "tags": [
+          "Vendors"
+        ]
+      }
+    },
+    "/api/vendors/{vendor_id}": {
+      "get": {
+        "summary": "Vendor Detail",
+        "operationId": "vendor_detail_api_vendors__vendor_id__get",
+        "parameters": [
+          {
+            "name": "vendor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vendor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Vendors"
+        ]
+      }
+    },
+    "/api/admin/vendors/pending": {
+      "get": {
+        "summary": "Admin Pending Vendors",
+        "operationId": "admin_pending_vendors_api_admin_vendors_pending_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VendorApplicationResponse"
+                  },
+                  "title": "Response Admin Pending Vendors Api Admin Vendors Pending Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/vendors/{vendor_id}/approve": {
+      "post": {
+        "summary": "Admin Approve Vendor",
+        "operationId": "admin_approve_vendor_api_admin_vendors__vendor_id__approve_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vendor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vendor Id"
+            }
+          },
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/vendors/{vendor_id}/reject": {
+      "post": {
+        "summary": "Admin Reject Vendor",
+        "operationId": "admin_reject_vendor_api_admin_vendors__vendor_id__reject_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vendor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vendor Id"
+            }
+          },
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorRejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/upgrade-requests": {
+      "get": {
+        "summary": "Admin List Upgrade Requests",
+        "operationId": "admin_list_upgrade_requests_api_admin_upgrade_requests_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/upgrade-requests/{request_id}/approve": {
+      "post": {
+        "summary": "Admin Approve Upgrade",
+        "operationId": "admin_approve_upgrade_api_admin_upgrade_requests__request_id__approve_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/upgrade-requests/{request_id}/reject": {
+      "post": {
+        "summary": "Admin Reject Upgrade",
+        "operationId": "admin_reject_upgrade_api_admin_upgrade_requests__request_id__reject_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorRejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register",
+        "operationId": "register_api_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/admin/accounts/search": {
+      "get": {
+        "summary": "Admin Search Account",
+        "operationId": "admin_search_account_api_admin_accounts_search_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email"
+            }
+          },
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/accounts/{account_id}/role": {
+      "post": {
+        "summary": "Admin Set Account Role",
+        "operationId": "admin_set_account_role_api_admin_accounts__account_id__role_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "x-admin-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Secret"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountRoleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/me/assessments": {
+      "get": {
+        "summary": "Me Assessments",
+        "operationId": "me_assessments_api_me_assessments_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/claim": {
+      "post": {
+        "summary": "Claim Assessments",
+        "description": "登入後將匿名評估綁定到帳號。",
+        "operationId": "claim_assessments_api_me_claim_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "匿名 localStorage UUID",
+              "title": "User Id"
+            },
+            "description": "匿名 localStorage UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor": {
+      "get": {
+        "summary": "Me Vendor",
+        "operationId": "me_vendor_api_me_vendor_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "User Account"
+        ]
+      },
+      "patch": {
+        "summary": "Me Update Vendor",
+        "operationId": "me_update_vendor_api_me_vendor_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/portfolios": {
+      "post": {
+        "summary": "Me Add Portfolio",
+        "operationId": "me_add_portfolio_api_me_vendor_portfolios_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/portfolios/{portfolio_id}": {
+      "delete": {
+        "summary": "Me Delete Portfolio",
+        "operationId": "me_delete_portfolio_api_me_vendor_portfolios__portfolio_id__delete",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "portfolio_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portfolio Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      },
+      "patch": {
+        "summary": "Me Update Portfolio",
+        "operationId": "me_update_portfolio_api_me_vendor_portfolios__portfolio_id__patch",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "portfolio_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portfolio Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/upgrade-request": {
+      "post": {
+        "summary": "Me Upgrade Request",
+        "operationId": "me_upgrade_request_api_me_vendor_upgrade_request_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/inquiries": {
+      "get": {
+        "summary": "Me Vendor Inquiries",
+        "operationId": "me_vendor_inquiries_api_me_vendor_inquiries_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/vendors/{vendor_id}/inquire": {
+      "post": {
+        "summary": "Vendor Inquire",
+        "operationId": "vendor_inquire_api_vendors__vendor_id__inquire_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vendor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vendor Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InquireRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Vendors"
+        ]
+      }
+    },
+    "/api/me/application/status": {
+      "get": {
+        "summary": "Me Application Status",
+        "description": "用戶查詢自己的廠商入駐申請狀態。",
+        "operationId": "me_application_status_api_me_application_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/logo": {
+      "post": {
+        "summary": "Me Upload Logo",
+        "operationId": "me_upload_logo_api_me_vendor_logo_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_me_upload_logo_api_me_vendor_logo_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/upload-image": {
+      "post": {
+        "summary": "Me Upload Image",
+        "description": "通用圖片上傳（logo、作品集照片等），回傳 R2 公開 URL。\n此端點供申請流程使用，申請提交前即需上傳 logo，故不要求已有申請記錄。\n防濫用依賴 file 驗證（5 MB 上限 + magic bytes）。",
+        "operationId": "me_upload_image_api_me_vendor_upload_image_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_me_upload_image_api_me_vendor_upload_image_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/inquiries/{inquiry_id}/status": {
+      "patch": {
+        "summary": "Me Vendor Inquiry Status",
+        "operationId": "me_vendor_inquiry_status_api_me_vendor_inquiries__inquiry_id__status_patch",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inquiry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inquiry Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InquiryStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/leads": {
+      "get": {
+        "summary": "Me Vendor Leads",
+        "operationId": "me_vendor_leads_api_me_vendor_leads_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/inquiries/{inquiry_id}/reply": {
+      "post": {
+        "summary": "Me Vendor Reply",
+        "operationId": "me_vendor_reply_api_me_vendor_inquiries__inquiry_id__reply_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inquiry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inquiry Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorReplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/inquiries": {
+      "get": {
+        "summary": "Me Inquiries",
+        "description": "用戶查看自己送出的詢價（含廠商回覆與評價狀態）。",
+        "operationId": "me_inquiries_api_me_inquiries_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/inquiries/{inquiry_id}/review": {
+      "post": {
+        "summary": "Me Add Review",
+        "operationId": "me_add_review_api_me_inquiries__inquiry_id__review_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inquiry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inquiry Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/inquiries/{inquiry_id}/message": {
+      "post": {
+        "summary": "Me Add Inquiry Message",
+        "description": "用戶對已有詢價追加訊息。",
+        "operationId": "me_add_inquiry_message_api_me_inquiries__inquiry_id__message_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inquiry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inquiry Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InquiryMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/inquiries/{inquiry_id}/messages": {
+      "get": {
+        "summary": "Me Inquiry Messages",
+        "operationId": "me_inquiry_messages_api_me_inquiries__inquiry_id__messages_get",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inquiry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inquiry Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/inquiries/{inquiry_id}/read": {
+      "post": {
+        "summary": "Me Mark Inquiry Read",
+        "operationId": "me_mark_inquiry_read_api_me_inquiries__inquiry_id__read_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inquiry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inquiry Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/me/vendor/inquiries/{inquiry_id}/read": {
+      "post": {
+        "summary": "Me Vendor Mark Inquiry Read",
+        "operationId": "me_vendor_mark_inquiry_read_api_me_vendor_inquiries__inquiry_id__read_post",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "inquiry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Inquiry Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "User Account"
+        ]
+      }
+    },
+    "/api/region-potential/{towncode}": {
+      "get": {
+        "summary": "Get Region Potential Api",
+        "description": "回傳單一鄉鎮市的潛力資訊，供 Results 頁顯示地區 badge。\ntowncode 格式：8 碼帶前導零（例如 06300100）。",
+        "operationId": "get_region_potential_api_api_region_potential__towncode__get",
+        "parameters": [
+          {
+            "name": "towncode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Towncode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Terrain & Climate"
+        ]
+      }
+    },
+    "/api/region-all": {
+      "get": {
+        "summary": "Get All Regions Api",
+        "description": "回傳全部 368 鄉鎮的座標 + 分數，供 /map 頁地圖初始載入。",
+        "operationId": "get_all_regions_api_api_region_all_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "Terrain & Climate"
+        ]
+      }
+    },
+    "/api/topsis": {
+      "post": {
+        "summary": "Recompute Topsis Api",
+        "description": "以用戶自訂權重重新跑 TOPSIS，回傳新排名。\n供 /map 頁 slider 即時更新。",
+        "operationId": "recompute_topsis_api_api_topsis_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopsisWeights"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Terrain & Climate"
+        ]
+      }
+    },
+    "/api/address-township": {
+      "get": {
+        "summary": "Get Address Township",
+        "description": "根據座標查詢鄉鎮市代碼，供前端取得 townshipCode 後查詢地區潛力。\n優先使用 SHP point-in-polygon 精確判定，沿岸/離島 fallback 至 DB 近心距離。",
+        "operationId": "get_address_township_api_address_township_get",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Lng"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Places"
+        ]
+      }
+    },
+    "/api/places/autocomplete": {
+      "get": {
+        "summary": "Places Autocomplete",
+        "operationId": "places_autocomplete_api_places_autocomplete_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Places"
+        ]
+      }
+    },
+    "/api/places/details": {
+      "get": {
+        "summary": "Places Details",
+        "operationId": "places_details_api_places_details_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Places"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccountRoleRequest": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "AccountRoleRequest"
+      },
+      "AssessmentRequest": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lng"
+          },
+          "county": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "County"
+          },
+          "roof_area_ping": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roof Area Ping"
+          },
+          "monthly_kwh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Kwh"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal"
+          },
+          "capacity_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Kw"
+          },
+          "total_cost": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cost"
+          },
+          "subsidy_amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subsidy Amount"
+          },
+          "out_of_pocket": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Of Pocket"
+          },
+          "annual_kwh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Kwh"
+          },
+          "self_sufficiency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Sufficiency"
+          },
+          "payback_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payback Years"
+          },
+          "total_20yr": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total 20Yr"
+          },
+          "annual_revenue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Revenue"
+          },
+          "best_angle": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Angle"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "AssessmentRequest"
+      },
+      "AuthRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AuthRequest"
+      },
+      "AuthResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "user_id",
+          "email",
+          "role"
+        ],
+        "title": "AuthResponse"
+      },
+      "Body_me_upload_image_api_me_vendor_upload_image_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_me_upload_image_api_me_vendor_upload_image_post"
+      },
+      "Body_me_upload_logo_api_me_vendor_logo_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_me_upload_logo_api_me_vendor_logo_post"
+      },
+      "BuildingFeature": {
+        "properties": {
+          "footprint": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Footprint"
+          },
+          "height": {
+            "type": "number",
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "footprint",
+          "height"
+        ],
+        "title": "BuildingFeature"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InquireRequest": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "county": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "County"
+          },
+          "capacity_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Kw"
+          },
+          "annual_kwh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Kwh"
+          },
+          "payback_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payback Years"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "title": "InquireRequest"
+      },
+      "InquiryMessageRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "InquiryMessageRequest"
+      },
+      "InquiryStatusRequest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "InquiryStatusRequest"
+      },
+      "PortfolioCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "meta": {
+            "type": "string",
+            "title": "Meta"
+          },
+          "capacityKw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacitykw"
+          },
+          "completedYear": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedyear"
+          },
+          "photoUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photourl"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "meta"
+        ],
+        "title": "PortfolioCreateRequest"
+      },
+      "PortfolioUpdateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "meta": {
+            "type": "string",
+            "title": "Meta"
+          },
+          "capacityKw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacitykw"
+          },
+          "completedYear": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedyear"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "photoUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photourl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "meta"
+        ],
+        "title": "PortfolioUpdateRequest"
+      },
+      "ReviewRequest": {
+        "properties": {
+          "vendor_id": {
+            "type": "string",
+            "title": "Vendor Id"
+          },
+          "rating": {
+            "type": "integer",
+            "title": "Rating"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vendor_id",
+          "rating"
+        ],
+        "title": "ReviewRequest"
+      },
+      "ShadowFromFeaturesRequest": {
+        "properties": {
+          "buildings": {
+            "items": {
+              "$ref": "#/components/schemas/BuildingFeature"
+            },
+            "type": "array",
+            "title": "Buildings"
+          },
+          "lat": {
+            "type": "number",
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "title": "Lng"
+          },
+          "local_hour": {
+            "type": "integer",
+            "title": "Local Hour"
+          }
+        },
+        "type": "object",
+        "required": [
+          "buildings",
+          "lat",
+          "lng",
+          "local_hour"
+        ],
+        "title": "ShadowFromFeaturesRequest"
+      },
+      "ShadowRequest": {
+        "properties": {
+          "lat": {
+            "type": "number",
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "title": "Lng"
+          },
+          "local_hour": {
+            "type": "integer",
+            "title": "Local Hour"
+          },
+          "footprint": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Footprint"
+          },
+          "height": {
+            "type": "number",
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lat",
+          "lng",
+          "local_hour",
+          "footprint",
+          "height"
+        ],
+        "title": "ShadowRequest"
+      },
+      "ShadowResponse": {
+        "properties": {
+          "shadow": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shadow"
+          }
+        },
+        "type": "object",
+        "required": [
+          "shadow"
+        ],
+        "title": "ShadowResponse"
+      },
+      "TopsisWeights": {
+        "properties": {
+          "model_score": {
+            "type": "number",
+            "title": "Model Score",
+            "default": 0.55
+          },
+          "solar": {
+            "type": "number",
+            "title": "Solar",
+            "default": 0.2
+          },
+          "fit": {
+            "type": "number",
+            "title": "Fit",
+            "default": 0.15
+          },
+          "income": {
+            "type": "number",
+            "title": "Income",
+            "default": 0.1
+          }
+        },
+        "type": "object",
+        "title": "TopsisWeights"
+      },
+      "UsableFractionRequest": {
+        "properties": {
+          "target_footprint": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Target Footprint"
+          },
+          "lat": {
+            "type": "number",
+            "title": "Lat"
+          },
+          "lng": {
+            "type": "number",
+            "title": "Lng"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_footprint",
+          "lat",
+          "lng"
+        ],
+        "title": "UsableFractionRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VendorApplicationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "companyTaxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companytaxid"
+          },
+          "contactName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contactname"
+          },
+          "counties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Counties"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "licenseNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Licensenote"
+          },
+          "applicationStatus": {
+            "type": "string",
+            "title": "Applicationstatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "counties",
+          "phone",
+          "email",
+          "applicationStatus",
+          "createdAt"
+        ],
+        "title": "VendorApplicationResponse"
+      },
+      "VendorApplyRequest": {
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "title": "Company Name"
+          },
+          "company_tax_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Tax Id"
+          },
+          "contact_name": {
+            "type": "string",
+            "title": "Contact Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "counties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Counties"
+          },
+          "license_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License Note"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_name",
+          "contact_name",
+          "email",
+          "phone",
+          "counties"
+        ],
+        "title": "VendorApplyRequest"
+      },
+      "VendorDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "counties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Counties"
+          },
+          "portfolioTitle": {
+            "type": "string",
+            "title": "Portfoliotitle"
+          },
+          "portfolioMeta": {
+            "type": "string",
+            "title": "Portfoliometa"
+          },
+          "capacityKw": {
+            "type": "number",
+            "title": "Capacitykw"
+          },
+          "rating": {
+            "type": "number",
+            "title": "Rating"
+          },
+          "reviewCount": {
+            "type": "integer",
+            "title": "Reviewcount"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "logoUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logourl"
+          },
+          "approved": {
+            "type": "boolean",
+            "title": "Approved"
+          },
+          "subscriptionStatus": {
+            "type": "string",
+            "title": "Subscriptionstatus"
+          },
+          "portfolios": {
+            "items": {
+              "$ref": "#/components/schemas/VendorPortfolioResponse"
+            },
+            "type": "array",
+            "title": "Portfolios"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "counties",
+          "portfolioTitle",
+          "portfolioMeta",
+          "capacityKw",
+          "rating",
+          "reviewCount",
+          "phone",
+          "email",
+          "tags",
+          "approved",
+          "subscriptionStatus",
+          "portfolios"
+        ],
+        "title": "VendorDetailResponse"
+      },
+      "VendorPortfolioResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "meta": {
+            "type": "string",
+            "title": "Meta"
+          },
+          "capacityKw": {
+            "type": "number",
+            "title": "Capacitykw"
+          },
+          "completedYear": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedyear"
+          },
+          "isFeatured": {
+            "type": "boolean",
+            "title": "Isfeatured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "meta",
+          "capacityKw",
+          "isFeatured"
+        ],
+        "title": "VendorPortfolioResponse"
+      },
+      "VendorRejectRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "title": "VendorRejectRequest"
+      },
+      "VendorReplyRequest": {
+        "properties": {
+          "reply": {
+            "type": "string",
+            "title": "Reply"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reply"
+        ],
+        "title": "VendorReplyRequest"
+      },
+      "VendorResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "counties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Counties"
+          },
+          "portfolioTitle": {
+            "type": "string",
+            "title": "Portfoliotitle"
+          },
+          "portfolioMeta": {
+            "type": "string",
+            "title": "Portfoliometa"
+          },
+          "capacityKw": {
+            "type": "number",
+            "title": "Capacitykw"
+          },
+          "rating": {
+            "type": "number",
+            "title": "Rating"
+          },
+          "reviewCount": {
+            "type": "integer",
+            "title": "Reviewcount"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "logoUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logourl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "counties",
+          "portfolioTitle",
+          "portfolioMeta",
+          "capacityKw",
+          "rating",
+          "reviewCount",
+          "phone",
+          "email",
+          "tags"
+        ],
+        "title": "VendorResponse"
+      },
+      "VendorUpdateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "counties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Counties"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "remove_logo": {
+            "type": "boolean",
+            "title": "Remove Logo",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "phone",
+          "email",
+          "counties",
+          "tags"
+        ],
+        "title": "VendorUpdateRequest"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT from POST /api/auth/login"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://solarmoney.up.railway.app",
+      "description": "Production"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Admin",
+      "description": "Admin-only operations (JWT or X-Admin-Secret)"
+    },
+    {
+      "name": "Assessments",
+      "description": "Anonymous and authenticated assessment records"
+    },
+    {
+      "name": "Authentication",
+      "description": "User registration and login"
+    },
+    {
+      "name": "Buildings",
+      "description": "Building footprint queries (GBA DB → fallback → OSM)"
+    },
+    {
+      "name": "Health",
+      "description": "Service health checks"
+    },
+    {
+      "name": "Places",
+      "description": "Address autocomplete and geocoding proxies"
+    },
+    {
+      "name": "Shadows",
+      "description": "Shadow geometry and usable roof area"
+    },
+    {
+      "name": "Terrain & Climate",
+      "description": "DEM tiles, township climate, and tilt optimization"
+    },
+    {
+      "name": "User Account",
+      "description": "Endpoints for logged-in users (JWT required)"
+    },
+    {
+      "name": "Vendors",
+      "description": "Vendor listings, applications, and inquiries"
+    }
+  ]
+}

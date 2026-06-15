@@ -1,0 +1,316 @@
+@import url("https://cdn.jsdelivr.net/npm/chiron-go-round-tc-webfont@1.0.10/css/vf.min.css");
+
+:root {
+  --brand-primary: #2e6a4e;
+  --brand-secondary: #f7b716;
+  --brand-primary-dark: #1e4a36;
+}
+
+/* ── Navbar: logo + site name lockup ───────────────────────── */
+
+header a:has(> img.nav-logo) {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+header a:has(> img.nav-logo)::after {
+  content: "屋頂日光";
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.dark header a:has(> img.nav-logo)::after {
+  color: #f3f4f6;
+}
+
+header a:has(> img.nav-logo) img.nav-logo {
+  height: 1.75rem;
+  width: auto;
+}
+
+html,
+body,
+#navbar,
+#sidebar,
+#content,
+#content-container,
+article,
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+li,
+td,
+th,
+span,
+a,
+button,
+input,
+textarea,
+select,
+.callout,
+.card,
+.accordion,
+footer {
+  font-family: "Chiron GoRound TC WS", "Chiron GoRound TC", "PingFang TC",
+    "Microsoft JhengHei", sans-serif !important;
+}
+
+/* ── Chart reading hint (info box) ─────────────────────────── */
+
+.chart-hint {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.875rem 1rem;
+  margin: 1rem 0 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(247, 183, 22, 0.45);
+  background: rgba(247, 183, 22, 0.12);
+  color: #000000;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.chart-hint p {
+  margin: 0;
+}
+
+.chart-hint strong {
+  color: #000000;
+  font-weight: 700;
+}
+
+.chart-hint__icon {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(247, 183, 22, 0.3);
+  border: 1px solid rgba(247, 183, 22, 0.5);
+  color: #000000;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.dark .chart-hint {
+  background: rgba(247, 183, 22, 0.1);
+  border-color: rgba(247, 183, 22, 0.4);
+  color: #f5f5f5;
+}
+
+.dark .chart-hint strong,
+.dark .chart-hint__icon {
+  color: #f5f5f5;
+}
+
+/* Indented detail text under a bullet point */
+.list-detail {
+  padding-left: 2rem;
+  margin: 0.5rem 0 1rem;
+}
+
+/* ── Full-width tables (match prose width) ─────────────────── */
+
+article table,
+#content-container table,
+.prose table,
+[class*="table"] table {
+  width: 100% !important;
+  max-width: 100%;
+  table-layout: auto;
+}
+
+article .overflow-x-auto,
+#content-container .overflow-x-auto,
+[class*="table-container"],
+[class*="TableContainer"] {
+  width: 100%;
+  max-width: 100%;
+}
+
+article th,
+article td {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* ── Mermaid workflow diagrams ─────────────────────────────── */
+
+[data-component-name="mermaid-container"] {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-height: 8rem;
+  margin: 0.75rem 0 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  overflow: hidden !important;
+  isolation: isolate;
+}
+
+[data-component-name="mermaid-container"] .mermaid {
+  overflow: hidden;
+  max-width: 100%;
+}
+
+[data-component-name="mermaid-container"] svg {
+  display: block;
+  max-width: 100% !important;
+  height: auto;
+}
+
+/* Label clipping fixes — scoped to SVG labels only, not the zoom viewport */
+[data-component-name="mermaid-container"] .nodeLabel foreignObject,
+[data-component-name="mermaid-container"] .cluster-label foreignObject,
+[data-component-name="mermaid-container"] .cluster .label foreignObject,
+[data-component-name="mermaid-container"] .edgeLabel foreignObject {
+  overflow: visible !important;
+}
+
+[data-component-name="mermaid-container"] .cluster-label foreignObject > div {
+  padding: 6px 12px !important;
+  line-height: 1.4 !important;
+  text-align: center !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+[data-component-name="mermaid-container"] .edgeLabel foreignObject {
+  overflow: visible !important;
+}
+
+[data-component-name="mermaid-container"] .cluster-label,
+[data-component-name="mermaid-container"] .cluster-label text,
+[data-component-name="mermaid-container"] .cluster-label span,
+[data-component-name="mermaid-container"] .cluster-label foreignObject > div {
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  text-align: center !important;
+}
+
+/* Rounded corners for flowchart nodes and subgraph boxes */
+[data-component-name="mermaid-container"] .node:not(.stadium) rect,
+[data-component-name="mermaid-container"] .cluster rect {
+  rx: 8px !important;
+  ry: 8px !important;
+}
+
+/* ── Profit comparison bar chart (案例淨利) ─────────────────── */
+
+.profit-compare {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 1rem 0 1.25rem;
+  padding: 1.125rem 1.25rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(46, 106, 78, 0.18);
+  background: rgba(46, 106, 78, 0.04);
+}
+
+.profit-compare__title {
+  margin: 0 0 1rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.profit-compare__row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) 1fr minmax(5rem, auto);
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.625rem;
+}
+
+.profit-compare__row--result {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+.profit-compare__label {
+  font-size: 0.875rem;
+  color: #333;
+  white-space: nowrap;
+}
+
+.profit-compare__bar-wrap {
+  min-width: 0;
+  height: 0.875rem;
+  display: flex;
+  align-items: center;
+}
+
+.profit-compare__bar {
+  height: 100%;
+  border-radius: 999px;
+  min-width: 0.25rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.profit-compare__bar--income {
+  background: linear-gradient(
+    90deg,
+    #3d8a66 0%,
+    var(--brand-primary) 55%,
+    var(--brand-primary-dark) 100%
+  );
+}
+
+.profit-compare__bar--cost {
+  background: linear-gradient(90deg, #a8b0bc 0%, #8a9aaa 50%, #6f7a88 100%);
+}
+
+.profit-compare__bar--diff {
+  background: linear-gradient(
+    90deg,
+    #ffd45a 0%,
+    var(--brand-secondary) 50%,
+    #e5a50f 100%
+  );
+}
+
+.profit-compare__value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+  text-align: right;
+  min-width: 5.5rem;
+}
+
+.profit-compare__divider {
+  margin: 0.75rem 0 0;
+  border: none;
+  border-top: 1px dashed rgba(46, 106, 78, 0.28);
+}
+
+.dark .profit-compare {
+  background: rgba(46, 106, 78, 0.08);
+  border-color: rgba(46, 106, 78, 0.28);
+}
+
+.dark .profit-compare__title,
+.dark .profit-compare__value {
+  color: #f5f5f5;
+}
+
+.dark .profit-compare__label {
+  color: #d4d4d4;
+}

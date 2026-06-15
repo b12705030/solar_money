@@ -1,1 +1,136 @@
-
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "屋頂日光",
+  "description": "台灣屋頂太陽能自助評估 — 陰影分析、投資試算、廠商媒合",
+  "logo": {
+    "light": "/logo-nav.png",
+    "dark": "/logo-nav.png"
+  },
+  "favicon": {
+    "light": "/favicon.png",
+    "dark": "/favicon.png"
+  },
+  "colors": {
+    "primary": "#2e6a4e",
+    "light": "#f7b716",
+    "dark": "#1e4a36"
+  },
+  "css": "custom.css",
+  "api": {
+    "mdx": {
+      "server": "https://solarmoney.up.railway.app"
+    },
+    "playground": {
+      "display": "interactive",
+      "proxy": true
+    },
+    "examples": {
+      "languages": ["curl", "python", "javascript"],
+      "prefill": true
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "使用指南",
+        "groups": [
+          {
+            "group": "使用指南",
+            "pages": ["index", "guide/region-analysis", "guide/business-model"]
+          }
+        ]
+      },
+      {
+        "tab": "開發者指南",
+        "groups": [
+          {
+            "group": "開發者指南",
+            "pages": [
+              "developer-guide/data-pipeline",
+              "developer-guide/architecture",
+              "developer-guide/installation"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API 參考",
+        "openapi": "openapi.json",
+        "groups": [
+          {
+            "group": "總覽",
+            "pages": ["developer-guide/api-reference"]
+          },
+          {
+            "group": "Health",
+            "pages": ["GET /healthz"]
+          },
+          {
+            "group": "Buildings & Shadows",
+            "pages": [
+              "GET /api/buildings",
+              "POST /api/shadow",
+              "GET /api/shadows",
+              "POST /api/shadows/from-features",
+              "POST /api/shadows/precompute",
+              "POST /api/usable-fraction"
+            ]
+          },
+          {
+            "group": "Terrain & Climate",
+            "pages": [
+              "GET /api/township",
+              "GET /api/climate/{township_code}",
+              "GET /api/dem/tile/{z}/{x}/{y}.png",
+              "GET /api/sun-times/taiwan"
+            ]
+          },
+          {
+            "group": "Assessments",
+            "pages": [
+              "POST /api/assessments",
+              "GET /api/assessments"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "POST /api/auth/register",
+              "POST /api/auth/login"
+            ]
+          },
+          {
+            "group": "User Account",
+            "pages": [
+              "GET /api/me/assessments",
+              "POST /api/me/claim",
+              "GET /api/me/inquiries"
+            ]
+          },
+          {
+            "group": "Vendors",
+            "pages": [
+              "GET /api/vendors",
+              "GET /api/vendors/{vendor_id}",
+              "POST /api/vendors/apply",
+              "POST /api/vendors/{vendor_id}/inquire"
+            ]
+          },
+          {
+            "group": "Places",
+            "pages": [
+              "GET /api/places/autocomplete",
+              "GET /api/places/details"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/b12705030/solar_money"
+    }
+  }
+}
