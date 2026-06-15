@@ -1,72 +1,71 @@
 ---
 title: "API 參考"
-description: "FastAPI 後端 REST API 端點總覽"
+description: "FastAPI 後端 REST API 總覽與互動式測試"
 ---
 
-後端預設位於 `http://localhost:8000`（本地開發）。正式環境由 `NEXT_PUBLIC_API_URL` 指定。
+後端正式環境：`https://solarmoney.up.railway.app`。本地開發為 `http://localhost:8000`。
 
-互動式 API 文件：`http://localhost:8000/docs`
+本節左側導覽列出可互動測試的端點頁面。Playground 預設使用 **Production** server；在本機預覽且後端跑在本機時，請改選 **Local development**。
 
-## 健康檢查
+## 快速開始
 
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| `GET` | `/healthz` | 服務健康檢查 |
-
-## 建物資料
-
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| `GET` | `/api/buildings` | 指定範圍建物（GBA DB → fallback → OSM）<br/>參數：`lat`, `lng`, `radius_m` 或 bbox |
-
-## 陰影計算
-
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| `POST` | `/api/shadow` | 單一建物陰影 |
-| `GET` | `/api/shadows` | bbox 內所有建物陰影 |
-| `POST` | `/api/shadows/from-features` | 前端送建物清單，計算當前時刻陰影 |
-| `POST` | `/api/shadows/precompute` | 預計算 6–19 時全天陰影並快取 |
-
-## DEM 與氣候
-
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| `GET` | `/api/dem/tile/{z}/{x}/{y}.png` | Mapbox terrain-rgb 格式 DEM tile |
-| `GET` | `/api/township` | 依座標查鄉鎮氣候與最佳傾角 |
-| `GET` | `/api/climate/{township_code}` | 鄉鎮年均統計與 12 月 GHI |
-
-## 評估紀錄
-
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| `POST` | `/api/assessments` | 儲存匿名評估 |
-| `GET` | `/api/assessments` | 查詢匿名 user 歷史（`user_id` 參數） |
-
-## 廠商
-
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| `GET` | `/api/vendors` | 依縣市推薦廠商 |
-| `GET` | `/api/vendors/{id}` | 廠商詳情與作品集 |
-| `POST` | `/api/vendors/apply` | 廠商入駐申請 |
-| `POST` | `/api/vendors/{id}/inquire` | 民眾詢價 |
-
-## 會員認證
-
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| `POST` | `/api/auth/register` | 註冊 |
-| `POST` | `/api/auth/login` | 登入，回傳 JWT |
-
-## 需 JWT 的端點
-
-部分端點需在 `Authorization: Bearer <token>` 帶入 JWT：
-
-- **用戶**（`role=user`）：`/api/me/assessments`、`/api/me/inquiries` 等
-- **廠商**（`role=vendor`）：`/api/me/vendor/*`
-- **管理員**（`role=admin` 或 `X-Admin-Secret`）：`/api/admin/*`
+1. 在任一端點頁面確認 Server 為 **Production**（`https://solarmoney.up.railway.app`）。
+2. 按 **Send** 測試（例如 [GET /healthz](/api-reference/health/health) 應回傳 `{"status":"ok"}`）。
+3. 需登入的端點（`/api/me/*`）請先呼叫 **POST /api/auth/login** 取得 JWT，再在 playground 的 **Authorization** 欄位貼上 token。
 
 <Note>
-  完整端點列表與參數說明見專案 `README.md`。
+  本機開發時請啟動後端（見[安裝指南](/developer-guide/installation)），並將 Server 改為 **Local development**。FastAPI Swagger UI：`http://localhost:8000/docs`。
 </Note>
+
+## 端點分類
+
+| 分類 | 說明 |
+|------|------|
+| **Health** | 服務健康檢查 |
+| **Buildings** | 建物查詢（GBA DB → fallback → OSM） |
+| **Shadows** | 陰影幾何、可裝設面積、預計算快取 |
+| **Terrain & Climate** | DEM tile、鄉鎮氣候、最佳傾角 |
+| **Assessments** | 匿名評估紀錄 |
+| **Authentication** | 註冊與登入 |
+| **User Account** | 登入後的評估、詢價（需 JWT） |
+| **Vendors** | 廠商列表、入駐、詢價 |
+
+## 認證方式
+
+| 方式 | 適用端點 |
+|------|----------|
+| 無 | 多數公開查詢（建物、氣候、廠商列表等） |
+| `Authorization: Bearer <JWT>` | `/api/me/*` |
+| `Authorization: Bearer <JWT>` 或 `X-Admin-Secret` | `/api/admin/*` |
+
+## Playground 如何運作
+
+Playground 請求預設經 Mintlify proxy 轉發（`proxy: true`），以避免瀏覽器 CORS 限制。若要在後端直接接受瀏覽器請求，請在 Railway 的 `CORS_ORIGINS` 加入文件站網址（例如 `http://localhost:3333`、你的 Mintlify 網域）。
+
+| 情境 | 要選的 Server | 必要條件 |
+|------|---------------|----------|
+| 本機預覽文件（`mint dev`） | `https://solarmoney.up.railway.app`（預設） | 可直接測試正式後端；若要連本機後端，見下方 |
+
+<Warning>
+  Playground 預設連線至 `https://solarmoney.up.railway.app`。若仍看到 `localhost`，代表文件站尚未部署最新的 `docs/openapi.json`。
+</Warning>
+
+### 本機後端測試（選用）
+
+若要改測本機後端，重新匯出 OpenAPI 並加入 localhost server：
+
+```bash
+DOCS_INCLUDE_LOCAL=1 python scripts/export_openapi.py
+```
+
+然後啟動本機後端與 `mint dev`。
+
+## 更新 OpenAPI 規格
+
+端點變更後，在專案根目錄執行：
+
+```bash
+python scripts/export_openapi.py
+```
+
+會重新產生 `docs/openapi.json`（預設含 Production：`https://solarmoney.up.railway.app`）。
