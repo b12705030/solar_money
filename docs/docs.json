@@ -3,6 +3,14 @@
   "theme": "mint",
   "name": "屋頂日光",
   "description": "台灣屋頂太陽能自助評估 — 陰影分析、投資試算、廠商媒合",
+  "logo": {
+    "light": "/logo-nav.png",
+    "dark": "/logo-nav.png"
+  },
+  "favicon": {
+    "light": "/favicon.png",
+    "dark": "/favicon.png"
+  },
   "colors": {
     "primary": "#2e6a4e",
     "light": "#f7b716",

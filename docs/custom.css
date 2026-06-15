@@ -6,6 +6,32 @@
   --brand-primary-dark: #1e4a36;
 }
 
+/* ── Navbar: logo + site name lockup ───────────────────────── */
+
+header a:has(> img.nav-logo) {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+header a:has(> img.nav-logo)::after {
+  content: "屋頂日光";
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.dark header a:has(> img.nav-logo)::after {
+  color: #f3f4f6;
+}
+
+header a:has(> img.nav-logo) img.nav-logo {
+  height: 1.75rem;
+  width: auto;
+}
+
 html,
 body,
 #navbar,
