@@ -8,6 +8,7 @@
     "light": "#f7b716",
     "dark": "#1e4a36"
   },
+  "css": "custom.css",
   "api": {
     "mdx": {
       "server": "https://solarmoney.up.railway.app"
@@ -28,7 +29,7 @@
         "groups": [
           {
             "group": "使用指南",
-            "pages": ["index", "guide/region-analysis"]
+            "pages": ["index", "guide/region-analysis", "guide/business-model"]
           }
         ]
       },
@@ -38,9 +39,9 @@
           {
             "group": "開發者指南",
             "pages": [
-              "developer-guide/installation",
               "developer-guide/data-pipeline",
-              "developer-guide/architecture"
+              "developer-guide/architecture",
+              "developer-guide/installation"
             ]
           }
         ]
